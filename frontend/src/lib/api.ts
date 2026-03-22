@@ -4,11 +4,23 @@ import type { Specialist, Service, Booking, TimeSlot } from '../types';
 const BASE = `${import.meta.env.VITE_API_URL || ''}/api`;
 
 async function req<T>(path: string, opts?: RequestInit): Promise<T> {
+  const token = localStorage.getItem('bookingai_token');
+  const { headers: extraHeaders, ...restOpts } = opts ?? {};
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...opts,
+    ...restOpts,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(extraHeaders ?? {}),
+    },
   });
-  const json = await res.json();
+
+  const text = await res.text();
+  if (!text) throw new Error('Empty response from server');
+  let json: any;
+  try { json = JSON.parse(text); }
+  catch { throw new Error(`Server error ${res.status}: ${text.slice(0, 100)}`); }
+
   if (!json.success) throw new Error(json.error || 'API error');
   return json.data as T;
 }
