@@ -10,7 +10,10 @@ import { adminRouter } from './routes/admin.js';
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(cors({ origin: 'http://localhost:5173', credentials: true }));
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production' ? '*' : 'http://localhost:5173',
+  credentials: true
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
@@ -27,7 +30,7 @@ app.use('/whatsapp', whatsappRouter);
 
 async function start() {
   await runMigrations();
-  app.listen(PORT, () => {
+  app.listen(Number(PORT), '0.0.0.0', () => {
     console.log(`\n🚀 BookingAI backend running at http://localhost:${PORT}`);
     console.log(`   API:       http://localhost:${PORT}/api`);
     console.log(`   WhatsApp:  http://localhost:${PORT}/whatsapp/webhook`);
