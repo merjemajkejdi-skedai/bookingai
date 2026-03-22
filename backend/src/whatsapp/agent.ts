@@ -482,6 +482,40 @@ async function callClaudeWithRetry(
 }
 
 // ---------------------------------------------------------------------------
+// Model routing — simple messages use Haiku (25x cheaper than Sonnet)
+// Complex messages (tool use, availability, booking) use Sonnet
+// ---------------------------------------------------------------------------
+const HAIKU_MODEL  = 'claude-haiku-4-5-20251001';
+const SONNET_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
+
+// Patterns that indicate a simple message safe for Haiku
+const SIMPLE_PATTERNS = [
+  // Greetings
+  /^(hi|hello|hey|hej|allo|pershendetje|miredita|mirembrema|mirenat)/i,
+  // Confirmations / yes / no
+  /^(po|yes|ok|okay|sipo|jo|no|nope|sure|confirm|konfirmoj|konfirmo|dakord)/i,
+  // Thanks
+  /^(faleminderit|faleminderit shume|thanks|thank you|ty|thx|mersi)/i,
+  // Simple acknowledgements
+  /^(ok+|k|kk|👍|✅|done|mire|mire\s)/i,
+  // Goodbyes
+  /^(bye|ciao|mirupafshim|gjer|dag)/i,
+];
+
+function pickModel(message: string, hasHistory: boolean): string {
+  const text = message.trim();
+
+  // Very short messages with no booking intent → Haiku
+  if (text.length < 30 && SIMPLE_PATTERNS.some(p => p.test(text))) {
+    console.log(`🪶 Routing to Haiku: "${text.slice(0, 40)}"`);
+    return HAIKU_MODEL;
+  }
+
+  // Everything else → Sonnet (booking logic, availability, tool use)
+  return SONNET_MODEL;
+}
+
+// ---------------------------------------------------------------------------
 // Main agent function — runs the agentic loop with tool use + auto retry
 // ---------------------------------------------------------------------------
 export async function runBookingAgent(
@@ -496,7 +530,7 @@ export async function runBookingAgent(
 
   while (true) {
     const response = await callClaudeWithRetry({
-      model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-6',
+      model: pickModel(customerMessage, conversationHistory.length > 0),
       max_tokens: 1024,
       // Prompt caching — cached for 5 min by Anthropic, 0.1x price on cache hits
       system: [{ type: 'text' as const, text: await buildSystemPrompt(), cache_control: { type: 'ephemeral' } }],
