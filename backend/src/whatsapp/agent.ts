@@ -140,23 +140,34 @@ async function executeTool(name: string, input: Record<string, unknown>, custome
 
       const booked = await dbAll("SELECT starts_at,ends_at FROM bookings WHERE specialist_id=? AND starts_at LIKE ? AND status!='cancelled'", specialist_id, `${date}%`) as any[];
 
-      // Normalize timestamps — PostgreSQL returns with tz offset, strip to plain local time
-      const normalize = (ts: string) => ts.slice(0, 19).replace('T', 'T');
+      // Log raw DB values so we can debug timezone issues
+      console.log(`🔍 check_availability: date=${date}, specialist=${specialist_id}`);
+      console.log(`🔍 booked raw:`, JSON.stringify(booked));
+
+      // Normalize: strip timezone offset and use only first 19 chars e.g. "2026-03-24T09:00:00"
+      const norm = (ts: string) => String(ts).slice(0, 19);
 
       const slots: string[] = [];
       let cur = new Date(`${date}T${wh.start_time}:00`);
       const end = new Date(`${date}T${wh.end_time}:00`);
 
+      console.log(`🔍 working hours: ${wh.start_time} - ${wh.end_time}, dayOfWeek=${dayOfWeek}`);
+
       while (new Date(cur.getTime() + duration_mins * 60000) <= end) {
         const slotEnd = new Date(cur.getTime() + duration_mins * 60000);
+        const curStr = format(cur, "yyyy-MM-dd'T'HH:mm:ss");
+        const endStr = format(slotEnd, "yyyy-MM-dd'T'HH:mm:ss");
         const busy = booked.some((b: any) => {
-          const bs = new Date(normalize(b.starts_at)), be = new Date(normalize(b.ends_at));
-          return cur < be && slotEnd > bs;
+          const bs = norm(b.starts_at), be = norm(b.ends_at);
+          const overlap = curStr < be && endStr > bs;
+          if (overlap) console.log(`🔍 slot ${curStr} blocked by booking ${bs} - ${be}`);
+          return overlap;
         });
         if (!busy) slots.push(format(cur, 'HH:mm'));
         cur = new Date(cur.getTime() + 15 * 60000);
       }
 
+      console.log(`🔍 available slots:`, slots);
       return JSON.stringify({ date, specialist_id, available_slots: slots.slice(0, 12), total_available: slots.length });
     }
 
