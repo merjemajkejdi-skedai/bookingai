@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 const TOKEN_KEY = 'bookingai_token';
 const USER_KEY  = 'bookingai_user';
 

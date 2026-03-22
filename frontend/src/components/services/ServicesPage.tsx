@@ -113,7 +113,7 @@ function ServiceForm({ service, onClose, onSaved }: {
     try {
       const data = { name, durationMins: parseInt(durationMins), price: parseInt(price), color, isActive: true };
       if (service) { await api.updateService(service.id, data); }
-      else { await api.createService({ ...data, tenantId: 'tenant-demo-001' }); }
+      else { await api.createService({ ...data }); }
       onSaved();
     } catch (e: any) { setError(e.message); }
     finally { setSaving(false); }

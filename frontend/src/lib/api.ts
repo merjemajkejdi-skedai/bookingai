@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import type { Specialist, Service, Booking, TimeSlot } from '../types';
 
 const BASE = `${import.meta.env.VITE_API_URL || ''}/api`;

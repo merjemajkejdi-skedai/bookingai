@@ -170,7 +170,7 @@ function CreateTenantModal({ onClose, onSaved }: { onClose: () => void; onSaved:
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
           <Input label="Shop name" value={form.name} onChange={set('name')} placeholder="Gentian's Barbershop" />
-          <Select label="Type" value={form.type} onChange={set('type')}>
+          <Select label="Type" value={form.type} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setForm(f => ({ ...f, type: e.target.value }))}>
             {TYPES.map(t => <option key={t} value={t} className="capitalize">{t}</option>)}
           </Select>
         </div>
@@ -218,18 +218,18 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
     <Modal title={`Edit — ${tenant.name}`} onClose={onClose} wide>
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
-          <Input label="Shop name" value={name} onChange={e => setName(e.target.value)} />
-          <Select label="Type" value={type} onChange={e => setType(e.target.value)}>
+          <Input label="Shop name" value={name} onChange={(e: any) => setName(e.target.value)} />
+          <Select label="Type" value={type} onChange={(e: any) => setType(e.target.value)}>
             {TYPES.map(t => <option key={t} value={t} className="capitalize">{t}</option>)}
           </Select>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Input label="WhatsApp number" value={whatsapp} onChange={e => setWhatsapp(e.target.value)} placeholder="+355691234567" />
-          <Select label="Plan" value={plan} onChange={e => setPlan(e.target.value)}>
+          <Input label="WhatsApp number" value={whatsapp} onChange={(e: any) => setWhatsapp(e.target.value)} placeholder="+355691234567" />
+          <Select label="Plan" value={plan} onChange={(e: any) => setPlan(e.target.value)}>
             {PLANS.map(p => <option key={p} value={p} className="capitalize">{p}</option>)}
           </Select>
         </div>
-        <Input label="Billing email" value={billingEmail} onChange={e => setBilling(e.target.value)} />
+        <Input label="Billing email" value={billingEmail} onChange={(e: any) => setBilling(e.target.value)} />
         {error && <p className="text-sm text-red-500">{error}</p>}
         <div className="flex justify-end gap-2 pt-2 border-t">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
@@ -268,7 +268,7 @@ function ResetPasswordModal({ tenant, onClose, onSaved }: { tenant: any; onClose
         ) : (
           <>
             <p className="text-sm text-slate-500">Set a new password for <strong>{tenant.owner_email}</strong></p>
-            <Input label="New password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="min 8 characters" />
+            <Input label="New password" type="password" value={password} onChange={(e: any) => setPassword(e.target.value)} placeholder="min 8 characters" />
             {error && <p className="text-sm text-red-500">{error}</p>}
             <div className="flex justify-end gap-2 pt-2 border-t">
               <Button variant="ghost" onClick={onClose}>Cancel</Button>
