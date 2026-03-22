@@ -1,0 +1,24 @@
+export interface Specialist {
+  id: string; tenantId: string; name: string; role: string;
+  color: string; isActive: boolean; createdAt: string;
+  workingHours: WorkingHours[];
+}
+export interface WorkingHours {
+  id: string; specialistId: string; dayOfWeek: number;
+  startTime: string; endTime: string; isWorking: boolean;
+}
+export interface Service {
+  id: string; tenantId: string; name: string;
+  durationMins: number; price: number; color: string; isActive: boolean;
+}
+export interface Booking {
+  id: string; tenantId: string;
+  specialistId: string; specialistName?: string; specialistColor?: string;
+  serviceId: string; serviceName?: string; serviceDurationMins?: number; servicePrice?: number;
+  customerName: string; customerPhone: string;
+  startsAt: string; endsAt: string;
+  status: 'confirmed' | 'cancelled' | 'completed' | 'no_show';
+  notes: string; createdAt: string;
+}
+export interface TimeSlot { startsAt: string; endsAt: string; available: boolean; }
+export type View = 'day' | 'week';
