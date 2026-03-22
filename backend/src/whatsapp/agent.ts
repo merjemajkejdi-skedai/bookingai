@@ -140,6 +140,9 @@ async function executeTool(name: string, input: Record<string, unknown>, custome
 
       const booked = await dbAll("SELECT starts_at,ends_at FROM bookings WHERE specialist_id=? AND starts_at LIKE ? AND status!='cancelled'", specialist_id, `${date}%`) as any[];
 
+      // Normalize timestamps — PostgreSQL returns with tz offset, strip to plain local time
+      const normalize = (ts: string) => ts.slice(0, 19).replace('T', 'T');
+
       const slots: string[] = [];
       let cur = new Date(`${date}T${wh.start_time}:00`);
       const end = new Date(`${date}T${wh.end_time}:00`);
@@ -147,7 +150,7 @@ async function executeTool(name: string, input: Record<string, unknown>, custome
       while (new Date(cur.getTime() + duration_mins * 60000) <= end) {
         const slotEnd = new Date(cur.getTime() + duration_mins * 60000);
         const busy = booked.some((b: any) => {
-          const bs = new Date(b.starts_at), be = new Date(b.ends_at);
+          const bs = new Date(normalize(b.starts_at)), be = new Date(normalize(b.ends_at));
           return cur < be && slotEnd > bs;
         });
         if (!busy) slots.push(format(cur, 'HH:mm'));
@@ -164,7 +167,8 @@ async function executeTool(name: string, input: Record<string, unknown>, custome
 
       const endsAt = format(new Date(new Date(starts_at).getTime() + svc.duration_mins * 60000), "yyyy-MM-dd'T'HH:mm:ss");
 
-      const conflict = await dbGet("SELECT id FROM bookings WHERE specialist_id=? AND status!='cancelled' AND starts_at < ? AND ends_at > ?", specialist_id, endsAt, starts_at);
+      // Use text comparison - both values are plain ISO strings without tz
+      const conflict = await dbGet("SELECT id FROM bookings WHERE specialist_id=? AND status!='cancelled' AND LEFT(starts_at,19) < ? AND LEFT(ends_at,19) > ?", specialist_id, endsAt.slice(0,19), starts_at.slice(0,19));
       if (conflict) return JSON.stringify({ error: 'This slot was just taken. Please check availability again.' });
 
       const spec = await dbGet('SELECT name FROM specialists WHERE id=?', specialist_id) as any;

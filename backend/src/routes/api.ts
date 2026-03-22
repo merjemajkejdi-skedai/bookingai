@@ -211,7 +211,7 @@ router.get('/bookings', async (req: Request, res: Response) => {
     serviceId: r.service_id, serviceName: r.service_name,
     serviceDurationMins: r.service_duration_mins, servicePrice: r.service_price,
     customerName: r.customer_name, customerPhone: r.customer_phone,
-    startsAt: r.starts_at, endsAt: r.ends_at,
+    startsAt: r.starts_at?.slice(0,19), endsAt: r.ends_at?.slice(0,19),
     status: r.status, notes: r.notes, createdAt: r.created_at,
   })));
 });

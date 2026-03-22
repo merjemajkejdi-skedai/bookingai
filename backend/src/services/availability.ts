@@ -26,8 +26,10 @@ export async function getAvailableSlots(
   if (!wh || !wh.is_working) return [];
 
   const existing = await getExistingBookings(specialistId, date) as any[];
+  // Slice to 19 chars to strip PostgreSQL timezone offset (e.g. +00) before parsing
   const bookedSlots: BookedSlot[] = existing.map(b => ({
-    startsAt: parseISO(b.starts_at), endsAt: parseISO(b.ends_at),
+    startsAt: parseISO((b.starts_at as string).slice(0, 19)),
+    endsAt:   parseISO((b.ends_at as string).slice(0, 19)),
   }));
 
   const [startH, startM] = wh.start_time.split(':').map(Number);
