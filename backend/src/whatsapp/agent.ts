@@ -168,7 +168,7 @@ async function executeTool(name: string, input: Record<string, unknown>, custome
       }
 
       console.log(`🔍 available slots:`, slots);
-      return JSON.stringify({ date, specialist_id, available_slots: slots.slice(0, 12), total_available: slots.length });
+      return JSON.stringify({ date, specialist_id, available_slots: slots, total_available: slots.length });
     }
 
     case 'create_booking': {
