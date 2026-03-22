@@ -53,9 +53,9 @@ export const api = {
     specialistId: string; serviceId: string; customerName: string;
     customerPhone: string; startsAt: string; notes: string;
   }) => req<Booking>('/bookings', { method: 'POST', body: JSON.stringify(data) }),
-  updateBooking: (id: string, data: Partial<Booking>) =>
+  updateBooking: (id: string, data: Partial<Booking> & { reason?: string }) =>
     req<Booking>(`/bookings/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  cancelBooking: (id: string) =>
+  cancelBooking: (id: string, reason?: string) =>
     req(`/bookings/${id}`, { method: 'DELETE' }),
 
   // Availability

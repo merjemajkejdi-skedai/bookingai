@@ -259,10 +259,11 @@ router.put('/bookings/:id', async (req: Request, res: Response) => {
     status: z.enum(['confirmed','cancelled','completed','no_show']).optional(),
     notes: z.string().optional(), startsAt: z.string().optional(),
     specialistId: z.string().optional(), serviceId: z.string().optional(),
+    reason: z.string().optional(),
   }).safeParse(req.body);
   if (!parsed.success) return err(res, parsed.error.message);
 
-  const { status, notes, startsAt, serviceId } = parsed.data;
+  const { status, notes, startsAt, serviceId, reason } = parsed.data;
   let endsAt: string | null = null;
   if (startsAt && serviceId) {
     const svc = await dbGet('SELECT duration_mins FROM services WHERE id=?', serviceId) as any;
@@ -282,17 +283,23 @@ router.put('/bookings/:id', async (req: Request, res: Response) => {
   `, req.params.id) as any;
 
   if (status === 'cancelled' && updated?.customer_phone) {
-    const msg = `Hi ${updated.customer_name}, your ${updated.service_name} appointment with ${updated.specialist_name} on ${format(parseISO(updated.starts_at),'EEEE d MMMM')} at ${format(parseISO(updated.starts_at),'HH:mm')} has been cancelled. We apologise for any inconvenience.`;
+    const dateStr = format(parseISO(updated.starts_at.slice(0,19)), 'EEEE d MMMM');
+    const timeStr = format(parseISO(updated.starts_at.slice(0,19)), 'HH:mm');
+    const reasonPart = reason ? `\nReason: ${reason}` : '';
+    const msg = `Hi ${updated.customer_name}, your ${updated.service_name} appointment with ${updated.specialist_name} on ${dateStr} at ${timeStr} has been cancelled.${reasonPart} We apologise for any inconvenience. Please contact us to rebook.`;
     notifyCustomer(updated.customer_phone, msg);
   }
   if (startsAt && status !== 'cancelled' && updated?.customer_phone) {
-    const msg = `Hi ${updated.customer_name}, your ${updated.service_name} appointment with ${updated.specialist_name} has been rescheduled to ${format(parseISO(updated.starts_at),'EEEE d MMMM')} at ${format(parseISO(updated.starts_at),'HH:mm')}. See you then!`;
+    const newDateStr = format(parseISO(updated.starts_at.slice(0,19)), 'EEEE d MMMM');
+    const newTimeStr = format(parseISO(updated.starts_at.slice(0,19)), 'HH:mm');
+    const msg = `Hi ${updated.customer_name}, your ${updated.service_name} appointment with ${updated.specialist_name} has been rescheduled to ${newDateStr} at ${newTimeStr}. See you then!`;
     notifyCustomer(updated.customer_phone, msg);
   }
   ok(res, updated);
 });
 
 router.delete('/bookings/:id', async (req: Request, res: Response) => {
+  const { reason } = req.body as { reason?: string };
   const booking = await dbGet(`
     SELECT b.*, s.name AS specialist_name, sv.name AS service_name
     FROM bookings b JOIN specialists s ON s.id=b.specialist_id JOIN services sv ON sv.id=b.service_id
@@ -303,7 +310,10 @@ router.delete('/bookings/:id', async (req: Request, res: Response) => {
   await dbRun("UPDATE bookings SET status='cancelled' WHERE id=?", req.params.id);
 
   if (booking.customer_phone) {
-    const msg = `Hi ${booking.customer_name}, your ${booking.service_name} appointment with ${booking.specialist_name} on ${format(parseISO(booking.starts_at),'EEEE d MMMM')} at ${format(parseISO(booking.starts_at),'HH:mm')} has been cancelled. We apologise for any inconvenience.`;
+    const dateStr = format(parseISO(booking.starts_at.slice(0,19)), 'EEEE d MMMM');
+    const timeStr = format(parseISO(booking.starts_at.slice(0,19)), 'HH:mm');
+    const reasonPart = reason ? `\nReason: ${reason}` : '';
+    const msg = `Hi ${booking.customer_name}, your ${booking.service_name} appointment with ${booking.specialist_name} on ${dateStr} at ${timeStr} has been cancelled.${reasonPart} We apologise for any inconvenience. Please contact us to rebook.`;
     notifyCustomer(booking.customer_phone, msg);
   }
   ok(res, { id: req.params.id });

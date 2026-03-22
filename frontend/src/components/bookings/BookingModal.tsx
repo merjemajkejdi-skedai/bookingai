@@ -21,6 +21,8 @@ type Mode = 'view' | 'edit' | 'create';
 export function BookingModal({ booking, prefillDate, prefillSpecialistId, specialists, services, onClose, onSaved }: Props) {
   const isNew = !booking;
   const [mode, setMode] = useState<Mode>(isNew ? 'create' : 'view');
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
 
   // Form state
   const [specialistId, setSpecialistId] = useState(
@@ -79,8 +81,9 @@ export function BookingModal({ booking, prefillDate, prefillSpecialistId, specia
 
   async function handleCancel() {
     if (!booking) return;
+    if (!showCancelConfirm) { setShowCancelConfirm(true); return; }
     setSaving(true);
-    try { await api.cancelBooking(booking.id); onSaved(); }
+    try { await api.cancelBooking(booking.id, cancelReason); onSaved(); }
     catch (e: any) { setError(e.message); }
     finally { setSaving(false); }
   }
@@ -161,9 +164,30 @@ export function BookingModal({ booking, prefillDate, prefillSpecialistId, specia
                 <Button variant="outline" size="sm" onClick={() => handleStatusChange('no_show')}>
                   No-show
                 </Button>
-                <Button variant="danger" size="sm" onClick={handleCancel} disabled={saving}>
-                  <XCircle size={13} /> Cancel
-                </Button>
+                {!showCancelConfirm ? (
+                  <Button variant="danger" size="sm" onClick={handleCancel} disabled={saving}>
+                    <XCircle size={13} /> Cancel booking
+                  </Button>
+                ) : (
+                  <div className="flex flex-col gap-2 w-full mt-2">
+                    <p className="text-xs text-red-600 font-medium">Confirm cancellation?</p>
+                    <input
+                      type="text"
+                      placeholder="Reason (optional — sent to customer)"
+                      value={cancelReason}
+                      onChange={(e: any) => setCancelReason(e.target.value)}
+                      className="text-sm border border-slate-200 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-red-300"
+                    />
+                    <div className="flex gap-2">
+                      <Button variant="danger" size="sm" onClick={handleCancel} disabled={saving}>
+                        {saving ? 'Cancelling...' : 'Yes, cancel'}
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setShowCancelConfirm(false)}>
+                        Keep booking
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </>

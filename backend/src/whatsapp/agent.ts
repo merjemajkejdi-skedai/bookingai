@@ -60,13 +60,11 @@ const tools: Anthropic.Tool[] = [
   },
   {
     name: 'get_booking',
-    description: 'Look up an existing booking by customer phone number',
+    description: 'Look up the customer\'s upcoming bookings in the next 30 days. Always call this first when customer mentions cancel or modify. Phone is injected automatically — no input needed.',
     input_schema: {
       type: 'object' as const,
-      properties: {
-        customer_phone: { type: 'string', description: 'Customer WhatsApp phone number' },
-      },
-      required: ['customer_phone'],
+      properties: {},
+      required: [],
     },
   },
   {
@@ -76,8 +74,21 @@ const tools: Anthropic.Tool[] = [
       type: 'object' as const,
       properties: {
         booking_id: { type: 'string', description: 'The booking ID to cancel' },
+        reason: { type: 'string', description: 'Reason for cancellation to send to customer' },
       },
       required: ['booking_id'],
+    },
+  },
+  {
+    name: 'reschedule_booking',
+    description: 'Reschedule an existing booking to a new date and time. First call check_availability to confirm the new slot is free.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        booking_id: { type: 'string', description: 'The booking ID to reschedule' },
+        new_starts_at: { type: 'string', description: 'New start time in ISO format: YYYY-MM-DDTHH:mm:ss' },
+      },
+      required: ['booking_id', 'new_starts_at'],
     },
     // Cache the tools schema — it never changes between calls
     cache_control: { type: 'ephemeral' } as const,
@@ -197,39 +208,120 @@ async function executeTool(name: string, input: Record<string, unknown>, custome
     }
 
     case 'get_booking': {
-      const { customer_phone } = input as { customer_phone: string };
-      const rows = await dbAll(`
-        SELECT b.id,b.starts_at,b.ends_at,b.status,s.name as specialist,sv.name as service
-        FROM bookings b
-        JOIN specialists s ON s.id=b.specialist_id
-        JOIN services sv ON sv.id=b.service_id
-        WHERE b.customer_phone=? AND b.status='confirmed'
-        ORDER BY b.starts_at DESC LIMIT 3
-      `, customer_phone) as any[];
+      // Phone is injected automatically from the WhatsApp request — no need to ask customer
+      const now = format(new Date(), "yyyy-MM-dd'T'HH:mm:ss");
+      const in30 = format(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), "yyyy-MM-dd'T'HH:mm:ss");
 
-      if (!rows.length) return JSON.stringify({ message: 'No upcoming bookings found for this number' });
-      return JSON.stringify(rows.map((r: any) => ({
-        id: r.id, service: r.service, specialist: r.specialist,
-        date: format(new Date(r.starts_at), 'EEEE d MMMM'),
-        time: `${format(new Date(r.starts_at), 'HH:mm')} – ${format(new Date(r.ends_at), 'HH:mm')}`,
-        status: r.status,
-      })));
+      const rows = await dbAll(`
+        SELECT b.id, b.starts_at, b.ends_at, b.status, b.specialist_id, b.service_id,
+               s.name as specialist, sv.name as service, sv.duration_mins
+        FROM bookings b
+        JOIN specialists s ON s.id = b.specialist_id
+        JOIN services sv ON sv.id = b.service_id
+        WHERE b.customer_phone = ?
+          AND b.status = 'confirmed'
+          AND b.starts_at >= ?
+          AND b.starts_at <= ?
+        ORDER BY b.starts_at ASC
+        LIMIT 5
+      `, customerPhone, now, in30) as any[];
+
+      if (!rows.length) return JSON.stringify({
+        found: false,
+        message: 'No confirmed bookings found for your number in the next 30 days.'
+      });
+
+      return JSON.stringify({
+        found: true,
+        bookings: rows.map((r: any) => ({
+          id: r.id,
+          service: r.service,
+          specialist: r.specialist,
+          specialist_id: r.specialist_id,
+          service_id: r.service_id,
+          duration_mins: r.duration_mins,
+          date: format(new Date(r.starts_at.slice(0,19)), 'EEEE d MMMM yyyy'),
+          time: format(new Date(r.starts_at.slice(0,19)), 'HH:mm'),
+          starts_at: r.starts_at.slice(0,19),
+          ends_at: r.ends_at.slice(0,19),
+        }))
+      });
     }
 
     case 'cancel_booking': {
-      const { booking_id } = input as { booking_id: string };
+      const { booking_id, reason = '' } = input as { booking_id: string; reason?: string };
       const booking = await dbGet(`
-        SELECT b.*,s.name as specialist,sv.name as service
+        SELECT b.*, s.name as specialist, sv.name as service
         FROM bookings b
-        JOIN specialists s ON s.id=b.specialist_id
-        JOIN services sv ON sv.id=b.service_id
-        WHERE b.id=?
+        JOIN specialists s ON s.id = b.specialist_id
+        JOIN services sv ON sv.id = b.service_id
+        WHERE b.id = ?
       `, booking_id) as any;
       if (!booking) return JSON.stringify({ error: 'Booking not found' });
+
       await dbRun("UPDATE bookings SET status='cancelled' WHERE id=?", booking_id);
+
+      const dateStr = format(new Date(booking.starts_at.slice(0,19)), 'EEEE d MMMM');
+      const timeStr = format(new Date(booking.starts_at.slice(0,19)), 'HH:mm');
+
+      // No need to send WhatsApp — the customer IS the one cancelling via WhatsApp
+      // We just confirm back to them in the conversation
+
       return JSON.stringify({
         success: true,
-        message: `Cancelled: ${booking.service} with ${booking.specialist} on ${format(new Date(booking.starts_at), 'EEEE d MMMM')} at ${format(new Date(booking.starts_at), 'HH:mm')}`,
+        message: `Cancelled: ${booking.service} with ${booking.specialist} on ${dateStr} at ${timeStr}.`,
+        date: dateStr,
+        time: timeStr,
+      });
+    }
+
+    case 'reschedule_booking': {
+      const { booking_id, new_starts_at } = input as { booking_id: string; new_starts_at: string };
+
+      const booking = await dbGet(`
+        SELECT b.*, s.name as specialist, sv.name as service, sv.duration_mins
+        FROM bookings b
+        JOIN specialists s ON s.id = b.specialist_id
+        JOIN services sv ON sv.id = b.service_id
+        WHERE b.id = ? AND b.status = 'confirmed'
+      `, booking_id) as any;
+      if (!booking) return JSON.stringify({ error: 'Booking not found or already cancelled' });
+
+      // Calculate new end time
+      const newEndsAt = format(
+        new Date(new Date(new_starts_at).getTime() + booking.duration_mins * 60000),
+        "yyyy-MM-dd'T'HH:mm:ss"
+      );
+
+      // Double-check no conflict (excluding this booking)
+      const conflict = await dbGet(`
+        SELECT id FROM bookings
+        WHERE specialist_id = ?
+          AND id != ?
+          AND status != 'cancelled'
+          AND LEFT(starts_at,19) < ?
+          AND LEFT(ends_at,19) > ?
+      `, booking.specialist_id, booking_id, newEndsAt, new_starts_at) as any;
+
+      if (conflict) return JSON.stringify({
+        error: 'That slot is no longer available. Please check availability and choose another time.'
+      });
+
+      await dbRun(
+        'UPDATE bookings SET starts_at=?, ends_at=? WHERE id=?',
+        new_starts_at, newEndsAt, booking_id
+      );
+
+      const newDateStr = format(new Date(new_starts_at), 'EEEE d MMMM yyyy');
+      const newTimeStr = format(new Date(new_starts_at), 'HH:mm');
+
+      return JSON.stringify({
+        success: true,
+        service: booking.service,
+        specialist: booking.specialist,
+        new_date: newDateStr,
+        new_time: newTimeStr,
+        message: `Rescheduled: ${booking.service} with ${booking.specialist} → ${newDateStr} at ${newTimeStr}`,
       });
     }
 
@@ -276,6 +368,9 @@ ${serviceList}
 4. NEVER skip steps. Even if the customer says "same as last time" — still verify availability.
 5. If a slot is taken, ALWAYS suggest at least 2 alternative times from check_availability results.
 6. ALWAYS ask for the customer's name before creating a booking if you don't already know it. The customer's phone number is already captured automatically — never ask for it.
+7. When customer mentions CANCEL or MODIFY or RESCHEDULE — ALWAYS call get_booking FIRST. No input needed. Never ask for booking ID or phone number.
+8. NEVER cancel or reschedule without showing booking details and getting explicit confirmation.
+9. After rescheduling always call check_availability for the new slot BEFORE calling reschedule_booking.
 
 === BOOKING FLOW — FOLLOW THIS EXACT ORDER ===
 Step 1 — Greet and ask what service they want (match to service list above)
@@ -288,6 +383,22 @@ Step 5 — Read the tool result carefully: the "available_slots" array contains 
 Step 6 — Show summary, ask for name if needed, wait for confirmation
 Step 7 — Only after explicit confirmation: call create_booking
 Step 8 — Send confirmation message with: service, specialist, date, time, price
+
+=== CANCELLATION FLOW ===
+Step 1 — Call get_booking (no input needed — phone is injected automatically)
+Step 2 — Show booking(s) found, ask which to cancel if more than one
+Step 3 — Ask "Are you sure you want to cancel?" and wait for yes/no
+Step 4 — Only after confirmation: call cancel_booking with the booking_id
+Step 5 — Confirm cancellation clearly with service, specialist, date and time
+
+=== RESCHEDULE / MODIFY FLOW ===
+Step 1 — Call get_booking (no input needed — phone is injected automatically)
+Step 2 — Show booking(s) found, ask which to reschedule if more than one
+Step 3 — Ask what new date and time they prefer
+Step 4 — Call check_availability for same specialist_id, new date, same duration_mins
+Step 5 — If new slot available: show summary (old time → new time) and ask to confirm
+Step 6 — Only after confirmation: call reschedule_booking with booking_id and new_starts_at
+Step 7 — Confirm reschedule clearly: old date/time → new date/time
 
 === HOW TO READ check_availability RESULTS ===
 The tool returns: { "available_slots": ["09:00", "09:15", "10:00", ...] }
