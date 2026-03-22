@@ -1,33 +1,26 @@
 // ---------------------------------------------------------------------------
 // database.ts — PostgreSQL (production) + SQLite (local dev)
-//
-// LOCAL:  DATABASE_URL not set → sql.js SQLite, no install needed
-// PROD:   DATABASE_URL set     → pg PostgreSQL on Railway/AWS RDS
-//
-// Routes use: prepare().run/get/all  (sync, SQLite only)
-//             query/queryOne/queryRun (async, works on both)
+// Detects environment via DATABASE_URL env var
 // ---------------------------------------------------------------------------
 import fs from 'fs';
 import path from 'path';
 
 export const isPg = !!process.env.DATABASE_URL;
 
-// ── Shared types ─────────────────────────────────────────────────────────────
 export interface Stmt {
   run: (...params: unknown[]) => void;
   get: (...params: unknown[]) => Record<string, unknown> | undefined;
   all: (...params: unknown[]) => Record<string, unknown>[];
 }
 
-// ── PostgreSQL pool ───────────────────────────────────────────────────────────
+// ── PostgreSQL ────────────────────────────────────────────────────────────────
 let pgPool: any = null;
 async function getPool() {
   if (!pgPool) {
     const { Pool } = await import('pg');
     pgPool = new Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: process.env.DATABASE_URL?.includes('localhost')
-        ? false : { rejectUnauthorized: false },
+      ssl: { rejectUnauthorized: false },
       max: 10,
     });
   }
@@ -38,7 +31,6 @@ function toPg(sql: string): string {
   let i = 0; return sql.replace(/\?/g, () => `$${++i}`);
 }
 
-// Async helpers — use these in routes when running on PostgreSQL
 export async function query(sql: string, params: unknown[] = []) {
   const pool = await getPool();
   const r = await pool.query(toPg(sql), params.map(p => p ?? null));
@@ -52,51 +44,70 @@ export async function queryRun(sql: string, params: unknown[] = []) {
   await pool.query(toPg(sql), params.map(p => p ?? null));
 }
 
-// ── SQLite (sql.js) ───────────────────────────────────────────────────────────
-import initSqlJs, { type Database as SqlJsDb } from 'sql.js';
+// ── SQLite (local dev only — dynamically imported so it never loads in prod) ──
+let _sqliteDb: any = null;
 const DB_PATH = process.env.DB_PATH || path.join(process.cwd(), 'data', 'bookingai.db');
-fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
-let _db: SqlJsDb | null = null;
 
-function persist() { if (_db) fs.writeFileSync(DB_PATH, Buffer.from(_db.export())); }
-async function initSqlite() {
-  if (_db) return _db;
-  const SQL = await initSqlJs();
-  _db = fs.existsSync(DB_PATH) ? new SQL.Database(fs.readFileSync(DB_PATH)) : new SQL.Database();
-  return _db;
+function persist() {
+  if (_sqliteDb) fs.writeFileSync(DB_PATH, Buffer.from(_sqliteDb.export()));
 }
-function db() { if (!_db) throw new Error('DB not initialised'); return _db; }
 
-// ── Unified sync API (SQLite) / fire-and-forget run (pg) ─────────────────────
+async function initSqlite() {
+  if (_sqliteDb) return _sqliteDb;
+  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+  const { default: initSqlJs } = await import('sql.js');
+  const SQL = await initSqlJs();
+  _sqliteDb = fs.existsSync(DB_PATH)
+    ? new SQL.Database(fs.readFileSync(DB_PATH))
+    : new SQL.Database();
+  return _sqliteDb;
+}
+
+function getDb() {
+  if (!_sqliteDb) throw new Error('DB not initialised — call runMigrations() first');
+  return _sqliteDb;
+}
+
+// ── Unified API ───────────────────────────────────────────────────────────────
 export function prepare(sql: string): Stmt {
   if (isPg) return {
-    run(...p) { getPool().then(pool => pool.query(toPg(sql), p.map(v => v ?? null))).catch(e => console.error('pg run:', e.message)); },
+    run(...p) {
+      getPool()
+        .then(pool => pool.query(toPg(sql), p.map(v => v ?? null)))
+        .catch(e => console.error('pg run:', e.message, sql.slice(0, 60)));
+    },
     get() { throw new Error('Use queryOne() for pg reads'); },
     all() { throw new Error('Use query() for pg reads'); },
   };
   return {
-    run(...p) { db().run(sql, p.map(v => v === undefined ? null : v) as any); persist(); },
+    run(...p) { getDb().run(sql, p.map(v => v === undefined ? null : v)); persist(); },
     get(...p) {
-      const s = db().prepare(sql); s.bind(p.map(v => v === undefined ? null : v) as any);
-      const row = s.step() ? s.getAsObject() as Record<string,unknown> : undefined;
+      const s = getDb().prepare(sql);
+      s.bind(p.map(v => v === undefined ? null : v));
+      const row = s.step() ? s.getAsObject() : undefined;
       s.free(); return row;
     },
     all(...p) {
-      const s = db().prepare(sql); s.bind(p.map(v => v === undefined ? null : v) as any);
-      const rows: Record<string,unknown>[] = [];
-      while (s.step()) rows.push(s.getAsObject() as Record<string,unknown>);
+      const s = getDb().prepare(sql);
+      s.bind(p.map(v => v === undefined ? null : v));
+      const rows: Record<string, unknown>[] = [];
+      while (s.step()) rows.push(s.getAsObject());
       s.free(); return rows;
     },
   };
 }
 
 export function exec(sql: string) {
-  if (isPg) { getPool().then(p => p.query(sql)).catch(e => console.error('pg exec:', e.message)); return; }
-  db().run(sql); persist();
+  if (isPg) {
+    getPool().then(p => p.query(sql)).catch(e => console.error('pg exec:', e.message));
+    return;
+  }
+  getDb().run(sql); persist();
 }
-export function getDb() { return { prepare, exec }; }
 
-// ── Migrations ────────────────────────────────────────────────────────────────
+export function getDb2() { return { prepare, exec }; }
+
+// ── Schema ────────────────────────────────────────────────────────────────────
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS tenants (
     id TEXT PRIMARY KEY, name TEXT NOT NULL,
@@ -157,7 +168,7 @@ export async function runMigrations() {
     return;
   }
   await initSqlite();
-  db().run(SCHEMA); persist();
+  getDb().run(SCHEMA); persist();
 
   // Safe ALTER for existing local DBs
   const cols = prepare("SELECT name FROM pragma_table_info('tenants')")
@@ -167,7 +178,7 @@ export async function runMigrations() {
     ['plan',            "plan TEXT NOT NULL DEFAULT 'starter'"],
     ['is_active',       'is_active INTEGER NOT NULL DEFAULT 1'],
     ['billing_email',   "billing_email TEXT NOT NULL DEFAULT ''"],
-  ] as [string, string][]) {
+  ] as [string,string][]) {
     if (!cols.includes(col)) exec(`ALTER TABLE tenants ADD COLUMN ${def}`);
   }
   console.log('✅ SQLite migrations complete');
