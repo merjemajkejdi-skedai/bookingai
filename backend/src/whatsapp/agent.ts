@@ -1,6 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { format, addDays, parseISO } from 'date-fns';
-import { prepare } from '../db/database.js';
+import { prepare, isPg, query, queryOne, queryRun } from '../db/database.js';
+
+async function dbAll(sql: string, ...p: unknown[]) { return isPg ? query(sql, p) : prepare(sql).all(...p); }
+async function dbGet(sql: string, ...p: unknown[]) { return isPg ? queryOne(sql, p) : prepare(sql).get(...p); }
+async function dbRun(sql: string, ...p: unknown[]) { if (isPg) return queryRun(sql, p); prepare(sql).run(...p); }
 
 const client = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
 
@@ -48,7 +52,7 @@ const tools: Anthropic.Tool[] = [
         specialist_id: { type: 'string', description: 'The specialist ID' },
         service_id: { type: 'string', description: 'The service ID' },
         customer_name: { type: 'string', description: 'Full name of the customer' },
-        starts_at: { type: 'string', description: 'Start time in ISO format: YYYY-MM-DDTHH:mm:ss' },
+        starts_at: { type: 'string', description: 'Start time in ISO format: YYYY-MM-DDTHH:mm:ss (e.g. 2026-03-23T09:00:00). Always use 2-digit hour, e.g. 09:00 not 9:00' },
         notes: { type: 'string', description: 'Any additional notes' },
       },
       required: ['specialist_id', 'service_id', 'customer_name', 'starts_at'],
@@ -88,39 +92,42 @@ async function executeTool(name: string, input: Record<string, unknown>, custome
 
   switch (name) {
     case 'get_specialists': {
-      const rows = prepare(`
-        SELECT s.id, s.name, s.role,
-          json_group_array(json_object(
-            'day', wh.day_of_week,
-            'start', wh.start_time,
-            'end', wh.end_time,
-            'working', wh.is_working
-          )) as hours
-        FROM specialists s
-        LEFT JOIN working_hours wh ON wh.specialist_id = s.id
-        WHERE s.tenant_id = ? AND s.is_active = 1
-        GROUP BY s.id
-      `).all(tenantId);
-
-      const specialists = rows.map((r: any) => ({
+      let rows: any[];
+      if (isPg) {
+        rows = await query(`
+          SELECT s.id, s.name, s.role,
+            json_agg(json_build_object('day',wh.day_of_week,'start',wh.start_time,'end',wh.end_time,'working',wh.is_working))
+            FILTER (WHERE wh.id IS NOT NULL) AS hours
+          FROM specialists s
+          LEFT JOIN working_hours wh ON wh.specialist_id = s.id
+          WHERE s.tenant_id = $1 AND s.is_active = 1
+          GROUP BY s.id
+        `, [tenantId]);
+      } else {
+        rows = prepare(`
+          SELECT s.id, s.name, s.role,
+            json_group_array(json_object('day',wh.day_of_week,'start',wh.start_time,'end',wh.end_time,'working',wh.is_working)) as hours
+          FROM specialists s
+          LEFT JOIN working_hours wh ON wh.specialist_id = s.id
+          WHERE s.tenant_id = ? AND s.is_active = 1
+          GROUP BY s.id
+        `).all(tenantId);
+      }
+      return JSON.stringify(rows.map((r: any) => ({
         id: r.id, name: r.name, role: r.role,
-        workingHours: JSON.parse(r.hours as string)
+        workingHours: (isPg ? (r.hours||[]) : JSON.parse(r.hours||'[]'))
           .filter((h: any) => h.working)
           .map((h: any) => `${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][h.day]}: ${h.start}–${h.end}`)
           .join(', '),
-      }));
-      return JSON.stringify(specialists);
+      })));
     }
 
     case 'get_services': {
-      const rows = prepare(`
-        SELECT id, name, duration_mins, price FROM services
-        WHERE tenant_id = ? AND is_active = 1 ORDER BY name
-      `).all(tenantId);
+      const rows = await dbAll('SELECT id,name,duration_mins,price FROM services WHERE tenant_id=? AND is_active=1 ORDER BY name', tenantId);
       return JSON.stringify(rows.map((r: any) => ({
         id: r.id, name: r.name,
         duration: `${r.duration_mins} min`,
-        price: `${(r.price / 100).toFixed(0)} ALL`,
+        price: `${r.price} ALL`,
       })));
     }
 
@@ -128,31 +135,18 @@ async function executeTool(name: string, input: Record<string, unknown>, custome
       const { specialist_id, date, duration_mins } = input as { specialist_id: string; date: string; duration_mins: number };
       const dayOfWeek = new Date(date).getDay();
 
-      const wh = prepare(`
-        SELECT start_time, end_time, is_working FROM working_hours
-        WHERE specialist_id = ? AND day_of_week = ?
-      `).get(specialist_id, dayOfWeek) as any;
+      const wh = await dbGet('SELECT start_time,end_time,is_working FROM working_hours WHERE specialist_id=? AND day_of_week=?', specialist_id, dayOfWeek) as any;
+      if (!wh || !wh.is_working) return JSON.stringify({ available: false, message: 'Specialist does not work on this day' });
 
-      if (!wh || !wh.is_working) {
-        return JSON.stringify({ available: false, message: 'Specialist does not work on this day' });
-      }
+      const booked = await dbAll("SELECT starts_at,ends_at FROM bookings WHERE specialist_id=? AND starts_at LIKE ? AND status!='cancelled'", specialist_id, `${date}%`) as any[];
 
-      // Get booked slots for the day
-      const booked = prepare(`
-        SELECT starts_at, ends_at FROM bookings
-        WHERE specialist_id = ? AND date(starts_at) = ? AND status != 'cancelled'
-      `).all(specialist_id, date) as any[];
-
-      // Generate 15-min grid slots
-      const [sh, sm] = wh.start_time.split(':').map(Number);
-      const [eh, em] = wh.end_time.split(':').map(Number);
       const slots: string[] = [];
       let cur = new Date(`${date}T${wh.start_time}:00`);
       const end = new Date(`${date}T${wh.end_time}:00`);
 
       while (new Date(cur.getTime() + duration_mins * 60000) <= end) {
         const slotEnd = new Date(cur.getTime() + duration_mins * 60000);
-        const busy = booked.some(b => {
+        const busy = booked.some((b: any) => {
           const bs = new Date(b.starts_at), be = new Date(b.ends_at);
           return cur < be && slotEnd > bs;
         });
@@ -160,67 +154,46 @@ async function executeTool(name: string, input: Record<string, unknown>, custome
         cur = new Date(cur.getTime() + 15 * 60000);
       }
 
-      return JSON.stringify({
-        date, specialist_id,
-        available_slots: slots.slice(0, 12), // Return first 12 slots to keep response concise
-        total_available: slots.length,
-      });
+      return JSON.stringify({ date, specialist_id, available_slots: slots.slice(0, 12), total_available: slots.length });
     }
 
     case 'create_booking': {
       const { specialist_id, service_id, customer_name, starts_at, notes } = input as any;
-      const customer_phone = customerPhone;
-
-      const svc = prepare('SELECT duration_mins, name FROM services WHERE id = ?').get(service_id) as any;
+      const svc = await dbGet('SELECT duration_mins,name FROM services WHERE id=?', service_id) as any;
       if (!svc) return JSON.stringify({ error: 'Service not found' });
 
-      const endsAt = format(
-        new Date(new Date(starts_at).getTime() + svc.duration_mins * 60000),
-        "yyyy-MM-dd'T'HH:mm:ss"
-      );
+      const endsAt = format(new Date(new Date(starts_at).getTime() + svc.duration_mins * 60000), "yyyy-MM-dd'T'HH:mm:ss");
 
-      // Double-check slot is still free
-      const conflict = prepare(`
-        SELECT id FROM bookings
-        WHERE specialist_id = ? AND status != 'cancelled'
-        AND starts_at < ? AND ends_at > ?
-      `).get(specialist_id, endsAt, starts_at);
+      const conflict = await dbGet("SELECT id FROM bookings WHERE specialist_id=? AND status!='cancelled' AND starts_at < ? AND ends_at > ?", specialist_id, endsAt, starts_at);
+      if (conflict) return JSON.stringify({ error: 'This slot was just taken. Please check availability again.' });
 
-      if (conflict) {
-        return JSON.stringify({ error: 'This slot was just taken. Please check availability again.' });
-      }
-
-      const spec = prepare('SELECT name FROM specialists WHERE id = ?').get(specialist_id) as any;
+      const spec = await dbGet('SELECT name FROM specialists WHERE id=?', specialist_id) as any;
       const id = crypto.randomUUID();
 
-      prepare(`
-        INSERT INTO bookings(id,tenant_id,specialist_id,service_id,customer_name,customer_phone,starts_at,ends_at,status,notes)
-        VALUES (?,?,?,?,?,?,?,?,?,?)
-      `).run(id, tenantId, specialist_id, service_id, customer_name, customer_phone,
-        starts_at, endsAt, 'confirmed', notes || '');
+      await dbRun(
+        'INSERT INTO bookings(id,tenant_id,specialist_id,service_id,customer_name,customer_phone,starts_at,ends_at,status,notes) VALUES (?,?,?,?,?,?,?,?,?,?)',
+        id, tenantId, specialist_id, service_id, customer_name, customerPhone, starts_at, endsAt, 'confirmed', notes||''
+      );
 
       return JSON.stringify({
-        success: true,
-        booking_id: id,
+        success: true, booking_id: id,
         summary: `✅ Booked! ${svc.name} with ${spec?.name} on ${format(new Date(starts_at), 'EEEE d MMMM')} at ${format(new Date(starts_at), 'HH:mm')}`,
       });
     }
 
     case 'get_booking': {
       const { customer_phone } = input as { customer_phone: string };
-      const rows = prepare(`
-        SELECT b.id, b.starts_at, b.ends_at, b.status,
-               s.name as specialist, sv.name as service
+      const rows = await dbAll(`
+        SELECT b.id,b.starts_at,b.ends_at,b.status,s.name as specialist,sv.name as service
         FROM bookings b
-        JOIN specialists s ON s.id = b.specialist_id
-        JOIN services sv ON sv.id = b.service_id
-        WHERE b.customer_phone = ? AND b.status = 'confirmed'
+        JOIN specialists s ON s.id=b.specialist_id
+        JOIN services sv ON sv.id=b.service_id
+        WHERE b.customer_phone=? AND b.status='confirmed'
         ORDER BY b.starts_at DESC LIMIT 3
-      `).all(customer_phone) as any[];
+      `, customer_phone) as any[];
 
       if (!rows.length) return JSON.stringify({ message: 'No upcoming bookings found for this number' });
-
-      return JSON.stringify(rows.map(r => ({
+      return JSON.stringify(rows.map((r: any) => ({
         id: r.id, service: r.service, specialist: r.specialist,
         date: format(new Date(r.starts_at), 'EEEE d MMMM'),
         time: `${format(new Date(r.starts_at), 'HH:mm')} – ${format(new Date(r.ends_at), 'HH:mm')}`,
@@ -230,18 +203,15 @@ async function executeTool(name: string, input: Record<string, unknown>, custome
 
     case 'cancel_booking': {
       const { booking_id } = input as { booking_id: string };
-      const booking = prepare(`
-        SELECT b.*, s.name as specialist, sv.name as service
+      const booking = await dbGet(`
+        SELECT b.*,s.name as specialist,sv.name as service
         FROM bookings b
-        JOIN specialists s ON s.id = b.specialist_id
-        JOIN services sv ON sv.id = b.service_id
-        WHERE b.id = ?
-      `).get(booking_id) as any;
-
+        JOIN specialists s ON s.id=b.specialist_id
+        JOIN services sv ON sv.id=b.service_id
+        WHERE b.id=?
+      `, booking_id) as any;
       if (!booking) return JSON.stringify({ error: 'Booking not found' });
-
-      prepare("UPDATE bookings SET status = 'cancelled' WHERE id = ?").run(booking_id);
-
+      await dbRun("UPDATE bookings SET status='cancelled' WHERE id=?", booking_id);
       return JSON.stringify({
         success: true,
         message: `Cancelled: ${booking.service} with ${booking.specialist} on ${format(new Date(booking.starts_at), 'EEEE d MMMM')} at ${format(new Date(booking.starts_at), 'HH:mm')}`,
@@ -256,25 +226,20 @@ async function executeTool(name: string, input: Record<string, unknown>, custome
 // ---------------------------------------------------------------------------
 // System prompt — strict booking flow, customise this to change agent behaviour
 // ---------------------------------------------------------------------------
-function buildSystemPrompt(): string {
+async function buildSystemPrompt(): Promise<string> {
   const tenantId = process.env.TENANT_ID || 'tenant-demo-001';
-  const tenant = prepare('SELECT name, type FROM tenants WHERE id = ?').get(tenantId) as any;
+  const tenant = await dbGet('SELECT name, type FROM tenants WHERE id = ?', tenantId) as any;
   const now = format(new Date(), "EEEE d MMMM yyyy, HH:mm");
 
-  const specialists = prepare(`
-    SELECT id, name, role FROM specialists WHERE tenant_id = ? AND is_active = 1
-  `).all(tenantId) as any[];
-
-  const services = prepare(`
-    SELECT id, name, duration_mins, price FROM services WHERE tenant_id = ? AND is_active = 1
-  `).all(tenantId) as any[];
+  const specialists = await dbAll('SELECT id, name, role FROM specialists WHERE tenant_id = ? AND is_active = 1', tenantId) as any[];
+  const services = await dbAll('SELECT id, name, duration_mins, price FROM services WHERE tenant_id = ? AND is_active = 1', tenantId) as any[];
 
   const specialistList = specialists
     .map((s: any) => `- ${s.name} (${s.role}) — id: ${s.id}`)
     .join('\n');
 
   const serviceList = services
-    .map((s: any) => `- ${s.name}, ${s.duration_mins} min, ${(s.price / 100).toFixed(0)} ALL — id: ${s.id}`)
+    .map((s: any) => `- ${s.name}, ${s.duration_mins} min, ${s.price} ALL — id: ${s.id}`)
     .join('\n');
 
   return `You are the booking assistant for ${tenant?.name || 'the salon'}, a ${tenant?.type || 'barbershop'}.
@@ -311,11 +276,23 @@ Step 7 — Send confirmation message with: service, specialist, date, time, pric
 - Ask which alternative they prefer
 - Do NOT call create_booking until customer picks one and confirms
 
+=== CONFIRMATION MESSAGE FORMAT ===
+When showing a booking summary before confirmation, use EXACTLY this format:
+Sherbimi: [service name]
+Specialisti: [specialist name]
+Data: [day name] [date] [month]
+Ora: [HH:mm] (e.g. 09:00, 14:30)
+Cmimi: [price] ALL
+Konfirmo? (Po/Jo)
+
+IMPORTANT: Write the time as HH:mm (e.g. 09:00). Never use quotes around the time. Never write just the hour digit alone.
+
 === MESSAGE STYLE ===
 - Short and conversational — this is WhatsApp, not email
 - Plain text only — no asterisks, no markdown, no bullet points
 - Use emojis sparingly (1-2 per message max)
-- Be warm and friendly but efficient`;
+- Be warm and friendly but efficient
+- Always write times in HH:mm format (e.g. 09:00, 14:30) — never abbreviated`;
 }
 
 // ---------------------------------------------------------------------------
@@ -368,7 +345,7 @@ export async function runBookingAgent(
       model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-6',
       max_tokens: 1024,
       // Prompt caching — cached for 5 min by Anthropic, 0.1x price on cache hits
-      system: [{ type: 'text' as const, text: buildSystemPrompt(), cache_control: { type: 'ephemeral' } }],
+      system: [{ type: 'text' as const, text: await buildSystemPrompt(), cache_control: { type: 'ephemeral' } }],
       tools,
       messages,
     });
