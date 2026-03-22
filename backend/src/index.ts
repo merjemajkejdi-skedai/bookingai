@@ -23,17 +23,6 @@ app.get('/health', (_, res) => res.json({
   claude: !!process.env.CLAUDE_API_KEY,
 }));
 
-    const hash = bcrypt.default.hashSync('admin123456', 10);
-    await queryRun(
-      'INSERT INTO users(id,email,password_hash,role,tenant_id,is_active) VALUES($1,$2,$3,$4,$5,$6)',
-      [uuid(), 'admin@bookingai.com', hash, 'super_admin', null, 1]
-    );
-    res.json({ success: true, message: 'Admin created: admin@bookingai.com / admin123456' });
-  } catch(e: any) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
 app.use('/api', router);
 app.use('/auth', authRouter);
 app.use('/admin', adminRouter);
