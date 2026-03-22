@@ -230,8 +230,8 @@ router.post('/bookings', async (req: Request, res: Response) => {
 
   const endsAt = format(addMinutes(parseISO(parsed.data.startsAt), svc.duration_mins), "yyyy-MM-dd'T'HH:mm:ss");
 
-  if (!isSlotAvailable(parsed.data.specialistId, parsed.data.startsAt, svc.duration_mins)) {
-    const suggestions = suggestNextSlots(parsed.data.specialistId, parsed.data.startsAt, svc.duration_mins, 3);
+  if (!await isSlotAvailable(parsed.data.specialistId, parsed.data.startsAt, svc.duration_mins)) {
+    const suggestions = await suggestNextSlots(parsed.data.specialistId, parsed.data.startsAt, svc.duration_mins, 3);
     return res.status(409).json({ success: false, error: 'Slot not available', suggestions });
   }
 
@@ -310,16 +310,16 @@ router.delete('/bookings/:id', async (req: Request, res: Response) => {
 });
 
 // ── AVAILABILITY ─────────────────────────────────────────────────────────────
-router.get('/availability', (req: Request, res: Response) => {
+router.get('/availability', async (req: Request, res: Response) => {
   const { specialistId, date, durationMins } = req.query as Record<string,string>;
   if (!specialistId || !date || !durationMins)
     return err(res, 'specialistId, date and durationMins are required');
-  ok(res, { date, specialistId, slots: getAvailableSlots(specialistId, date, parseInt(durationMins)) });
+  ok(res, { date, specialistId, slots: await getAvailableSlots(specialistId, date, parseInt(durationMins)) });
 });
 
-router.get('/availability/suggest', (req: Request, res: Response) => {
+router.get('/availability/suggest', async (req: Request, res: Response) => {
   const { specialistId, fromDate, durationMins, count } = req.query as Record<string,string>;
   if (!specialistId || !fromDate || !durationMins)
     return err(res, 'specialistId, fromDate and durationMins are required');
-  ok(res, suggestNextSlots(specialistId, fromDate, parseInt(durationMins), parseInt(count||'3')));
+  ok(res, await suggestNextSlots(specialistId, fromDate, parseInt(durationMins), parseInt(count||'3')));
 });
