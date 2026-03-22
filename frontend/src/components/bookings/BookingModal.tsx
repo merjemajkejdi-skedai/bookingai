@@ -32,6 +32,10 @@ export function BookingModal({ booking, prefillDate, prefillSpecialistId, specia
   const [customerName, setCustomerName] = useState(booking?.customerName ?? '');
   const [customerPhone, setCustomerPhone] = useState(booking?.customerPhone ?? '');
   const [notes, setNotes] = useState(booking?.notes ?? '');
+  const [recurrence, setRecurrence] = useState<'none'|'weekly'|'biweekly'|'3weekly'|'4weekly'>(
+    (booking?.recurrenceRule as any) ?? 'none'
+  );
+  const [showSeriesCancel, setShowSeriesCancel] = useState(false);
   const [startsAt, setStartsAt] = useState(
     booking?.startsAt
       ? format(parseISO(booking.startsAt), "yyyy-MM-dd'T'HH:mm")
@@ -59,7 +63,7 @@ export function BookingModal({ booking, prefillDate, prefillSpecialistId, specia
     try {
       if (isNew || mode === 'create') {
         await api.createBooking({ specialistId, serviceId, customerName, customerPhone, notes,
-          startsAt: startsAt.replace('T', 'T').slice(0, 16) + ':00' });
+          startsAt: startsAt.replace('T', 'T').slice(0, 16) + ':00', recurrence });
       } else {
         await api.updateBooking(booking!.id, { specialistId, serviceId, customerName,
           customerPhone, notes, startsAt: startsAt + ':00' });
@@ -81,9 +85,16 @@ export function BookingModal({ booking, prefillDate, prefillSpecialistId, specia
 
   async function handleCancel() {
     if (!booking) return;
-    if (!showCancelConfirm) { setShowCancelConfirm(true); return; }
     setSaving(true);
     try { await api.cancelBooking(booking.id, cancelReason); onSaved(); }
+    catch (e: any) { setError(e.message); }
+    finally { setSaving(false); }
+  }
+
+  async function handleCancelSeries() {
+    if (!booking) return;
+    setSaving(true);
+    try { await api.cancelSeries(booking.id, cancelReason); onSaved(); }
     catch (e: any) { setError(e.message); }
     finally { setSaving(false); }
   }
@@ -155,6 +166,14 @@ export function BookingModal({ booking, prefillDate, prefillSpecialistId, specia
               </InfoRow>
             )}
 
+            {booking.recurrenceRule && booking.recurrenceRule !== 'none' && (
+              <InfoRow icon={<Clock size={14} />} label="Repeat">
+                <span className="text-xs bg-brand-50 text-brand-700 px-2 py-0.5 rounded-full font-medium">
+                  {{'weekly':'Every week','biweekly':'Every 2 weeks','3weekly':'Every 3 weeks','4weekly':'Every 4 weeks'}[booking.recurrenceRule] ?? booking.recurrenceRule}
+                </span>
+              </InfoRow>
+            )}
+
             {booking.status === 'confirmed' && (
               <div className="flex gap-2 pt-2 border-t">
                 <Button variant="outline" size="sm" onClick={() => setMode('edit')}>Reschedule / Edit</Button>
@@ -165,7 +184,7 @@ export function BookingModal({ booking, prefillDate, prefillSpecialistId, specia
                   No-show
                 </Button>
                 {!showCancelConfirm ? (
-                  <Button variant="danger" size="sm" onClick={handleCancel} disabled={saving}>
+                  <Button variant="danger" size="sm" onClick={() => setShowCancelConfirm(true)} disabled={saving}>
                     <XCircle size={13} /> Cancel booking
                   </Button>
                 ) : (
@@ -178,14 +197,22 @@ export function BookingModal({ booking, prefillDate, prefillSpecialistId, specia
                       onChange={(e: any) => setCancelReason(e.target.value)}
                       className="text-sm border border-slate-200 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-red-300"
                     />
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
                       <Button variant="danger" size="sm" onClick={handleCancel} disabled={saving}>
-                        {saving ? 'Cancelling...' : 'Yes, cancel'}
+                        {saving ? 'Cancelling...' : 'Cancel this one'}
                       </Button>
+                      {booking?.recurrenceGroupId && (
+                        <Button variant="danger" size="sm" onClick={handleCancelSeries} disabled={saving}>
+                          {saving ? 'Cancelling...' : 'Cancel all future'}
+                        </Button>
+                      )}
                       <Button variant="ghost" size="sm" onClick={() => setShowCancelConfirm(false)}>
                         Keep booking
                       </Button>
                     </div>
+                    {booking?.recurrenceGroupId && (
+                      <p className="text-xs text-slate-400">"Cancel all future" cancels this and all upcoming bookings in the series.</p>
+                    )}
                   </div>
                 )}
               </div>
@@ -231,6 +258,23 @@ export function BookingModal({ booking, prefillDate, prefillSpecialistId, specia
               <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
                 className="rounded-lg border border-slate-200 px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-brand-400/40 focus:border-brand-400" />
             </div>
+
+            {(isNew || mode === 'create') && (
+              <div className="flex flex-col gap-1.5">
+                <label className="font-medium text-slate-700">Repeat</label>
+                <select value={recurrence} onChange={(e: any) => setRecurrence(e.target.value)}
+                  className="rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400/40 focus:border-brand-400">
+                  <option value="none">No repeat — one time only</option>
+                  <option value="weekly">Every week (12 bookings)</option>
+                  <option value="biweekly">Every 2 weeks (12 bookings)</option>
+                  <option value="3weekly">Every 3 weeks (12 bookings)</option>
+                  <option value="4weekly">Every 4 weeks (12 bookings)</option>
+                </select>
+                {recurrence !== 'none' && (
+                  <p className="text-xs text-slate-400">Creates up to 12 recurring bookings. Slots already taken are skipped automatically.</p>
+                )}
+              </div>
+            )}
 
             {error && (
               <div className="flex items-start gap-2 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">

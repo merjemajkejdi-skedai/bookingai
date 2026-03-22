@@ -52,11 +52,14 @@ export const api = {
   createBooking: (data: {
     specialistId: string; serviceId: string; customerName: string;
     customerPhone: string; startsAt: string; notes: string;
+    recurrence?: 'none'|'weekly'|'biweekly'|'3weekly'|'4weekly';
   }) => req<Booking>('/bookings', { method: 'POST', body: JSON.stringify(data) }),
   updateBooking: (id: string, data: Partial<Booking> & { reason?: string }) =>
     req<Booking>(`/bookings/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   cancelBooking: (id: string, reason?: string) =>
-    req(`/bookings/${id}`, { method: 'DELETE' }),
+    req(`/bookings/${id}`, { method: 'DELETE', body: JSON.stringify({ reason }) }),
+  cancelSeries: (id: string, reason?: string) =>
+    req(`/bookings/${id}/series`, { method: 'DELETE', body: JSON.stringify({ reason }) }),
 
   // Availability
   getAvailability: (specialistId: string, date: string, durationMins: number) =>

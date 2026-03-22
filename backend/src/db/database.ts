@@ -143,6 +143,8 @@ const SCHEMA = `
     customer_name TEXT NOT NULL, customer_phone TEXT NOT NULL DEFAULT '',
     starts_at TEXT NOT NULL, ends_at TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'confirmed', notes TEXT NOT NULL DEFAULT '',
+    recurrence_rule TEXT NOT NULL DEFAULT 'none',
+    recurrence_group_id TEXT,
     created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
   );
   CREATE TABLE IF NOT EXISTS users (
@@ -173,6 +175,14 @@ export async function runMigrations() {
   // Safe ALTER for existing local DBs
   const cols = prepare("SELECT name FROM pragma_table_info('tenants')")
     .all().map((r: any) => r.name as string);
+  // Add recurrence columns if missing (safe on existing local DB)
+  const bookingCols = prepare("SELECT name FROM pragma_table_info('bookings')")
+    .all().map((r: any) => r.name as string);
+  if (!bookingCols.includes('recurrence_rule'))
+    exec("ALTER TABLE bookings ADD COLUMN recurrence_rule TEXT NOT NULL DEFAULT 'none'");
+  if (!bookingCols.includes('recurrence_group_id'))
+    exec('ALTER TABLE bookings ADD COLUMN recurrence_group_id TEXT');
+
   for (const [col, def] of [
     ['whatsapp_number', "whatsapp_number TEXT NOT NULL DEFAULT ''"],
     ['plan',            "plan TEXT NOT NULL DEFAULT 'starter'"],

@@ -19,6 +19,8 @@ export interface Booking {
   startsAt: string; endsAt: string;
   status: 'confirmed' | 'cancelled' | 'completed' | 'no_show';
   notes: string; createdAt: string;
+  recurrenceRule?: 'none' | 'weekly' | 'biweekly' | '3weekly' | '4weekly';
+  recurrenceGroupId?: string | null;
 }
 export interface TimeSlot { startsAt: string; endsAt: string; available: boolean; }
 export type View = 'day' | 'week';

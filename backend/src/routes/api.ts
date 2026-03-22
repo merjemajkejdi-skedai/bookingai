@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { v4 as uuid } from 'uuid';
 import { z } from 'zod';
-import { addMinutes, format, parseISO } from 'date-fns';
+import { addMinutes, addDays, format, parseISO } from 'date-fns';
 import { getAvailableSlots, suggestNextSlots, isSlotAvailable } from '../services/availability.js';
 import twilio from 'twilio';
 
@@ -213,6 +213,8 @@ router.get('/bookings', async (req: Request, res: Response) => {
     customerName: r.customer_name, customerPhone: r.customer_phone,
     startsAt: r.starts_at?.slice(0,19), endsAt: r.ends_at?.slice(0,19),
     status: r.status, notes: r.notes, createdAt: r.created_at,
+    recurrenceRule: r.recurrence_rule || 'none',
+    recurrenceGroupId: r.recurrence_group_id || null,
   })));
 });
 
@@ -222,36 +224,71 @@ router.post('/bookings', async (req: Request, res: Response) => {
     specialistId: z.string(), serviceId: z.string(),
     customerName: z.string().min(1), customerPhone: z.string().default(''),
     startsAt: z.string(), notes: z.string().default(''),
+    recurrence: z.enum(['none','weekly','biweekly','3weekly','4weekly']).default('none'),
   }).safeParse(req.body);
   if (!parsed.success) return err(res, parsed.error.message);
 
   const svc = await dbGet('SELECT duration_mins FROM services WHERE id=?', parsed.data.serviceId) as any;
   if (!svc) return err(res, 'Service not found', 404);
 
-  const endsAt = format(addMinutes(parseISO(parsed.data.startsAt), svc.duration_mins), "yyyy-MM-dd'T'HH:mm:ss");
-
+  // Check first slot is available
   if (!await isSlotAvailable(parsed.data.specialistId, parsed.data.startsAt, svc.duration_mins)) {
     const suggestions = await suggestNextSlots(parsed.data.specialistId, parsed.data.startsAt, svc.duration_mins, 3);
     return res.status(409).json({ success: false, error: 'Slot not available', suggestions });
   }
 
-  const id = uuid();
-  await dbRun(
-    'INSERT INTO bookings(id,tenant_id,specialist_id,service_id,customer_name,customer_phone,starts_at,ends_at,status,notes) VALUES (?,?,?,?,?,?,?,?,?,?)',
-    id, parsed.data.tenantId, parsed.data.specialistId, parsed.data.serviceId,
-    parsed.data.customerName, parsed.data.customerPhone,
-    parsed.data.startsAt, endsAt, 'confirmed', parsed.data.notes
-  );
+  // Calculate interval in days
+  const intervalDays: Record<string, number> = {
+    none: 0, weekly: 7, biweekly: 14, '3weekly': 21, '4weekly': 28
+  };
+  const interval = intervalDays[parsed.data.recurrence] ?? 0;
+  const occurrences = interval > 0 ? 12 : 1; // up to 12 weeks ahead
+  const groupId = interval > 0 ? uuid() : null;
 
+  const createdIds: string[] = [];
+
+  for (let i = 0; i < occurrences; i++) {
+    const startsAt = format(
+      addDays(parseISO(parsed.data.startsAt), i * interval),
+      "yyyy-MM-dd'T'HH:mm:ss"
+    );
+    const endsAt = format(addMinutes(parseISO(startsAt), svc.duration_mins), "yyyy-MM-dd'T'HH:mm:ss");
+
+    // Skip if slot not available (for recurring, skip conflicts silently)
+    if (i > 0 && !await isSlotAvailable(parsed.data.specialistId, startsAt, svc.duration_mins)) {
+      continue;
+    }
+
+    const id = uuid();
+    await dbRun(
+      'INSERT INTO bookings(id,tenant_id,specialist_id,service_id,customer_name,customer_phone,starts_at,ends_at,status,notes,recurrence_rule,recurrence_group_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+      id, parsed.data.tenantId, parsed.data.specialistId, parsed.data.serviceId,
+      parsed.data.customerName, parsed.data.customerPhone,
+      startsAt, endsAt, 'confirmed', parsed.data.notes,
+      parsed.data.recurrence, groupId
+    );
+    createdIds.push(id);
+  }
+
+  if (!createdIds.length) return err(res, 'Could not create any bookings — all slots unavailable');
+
+  // Return the first booking
   const booking = await dbGet(`
     SELECT b.*, s.name AS specialist_name, s.color AS specialist_color, sv.name AS service_name
     FROM bookings b
     JOIN specialists s ON s.id = b.specialist_id
     JOIN services sv ON sv.id = b.service_id
     WHERE b.id = ?
-  `, id) as any;
-  ok(res, { ...booking, specialistName: booking.specialist_name,
-    specialistColor: booking.specialist_color, serviceName: booking.service_name });
+  `, createdIds[0]) as any;
+
+  ok(res, {
+    ...booking,
+    specialistName: booking.specialist_name,
+    specialistColor: booking.specialist_color,
+    serviceName: booking.service_name,
+    recurrenceCount: createdIds.length,
+    recurrenceGroupId: groupId,
+  });
 });
 
 router.put('/bookings/:id', async (req: Request, res: Response) => {
@@ -317,6 +354,44 @@ router.delete('/bookings/:id', async (req: Request, res: Response) => {
     notifyCustomer(booking.customer_phone, msg);
   }
   ok(res, { id: req.params.id });
+});
+
+// ── CANCEL RECURRING SERIES ──────────────────────────────────────────────────
+router.delete('/bookings/:id/series', async (req: Request, res: Response) => {
+  const { reason } = req.body as { reason?: string };
+
+  // Get the booking to find its group
+  const booking = await dbGet(`
+    SELECT b.*, s.name AS specialist_name, sv.name AS service_name
+    FROM bookings b
+    JOIN specialists s ON s.id = b.specialist_id
+    JOIN services sv ON sv.id = b.service_id
+    WHERE b.id = ?
+  `, req.params.id) as any;
+
+  if (!booking) return err(res, 'Booking not found', 404);
+  if (!booking.recurrence_group_id) return err(res, 'This booking is not part of a series', 400);
+
+  // Cancel all future bookings in the group (including this one)
+  const now = format(new Date(), "yyyy-MM-dd'T'HH:mm:ss");
+  await dbRun(
+    "UPDATE bookings SET status='cancelled' WHERE recurrence_group_id=? AND starts_at >= ? AND status='confirmed'",
+    booking.recurrence_group_id, now
+  );
+
+  const cancelledCount = (await dbAll(
+    "SELECT id FROM bookings WHERE recurrence_group_id=? AND status='cancelled'",
+    booking.recurrence_group_id
+  )).length;
+
+  // Notify customer if they have a phone
+  if (booking.customer_phone) {
+    const reasonPart = reason ? `\nReason: ${reason}` : '';
+    const msg = `Hi ${booking.customer_name}, your recurring ${booking.service_name} appointments with ${booking.specialist_name} have been cancelled.${reasonPart} We apologise for any inconvenience.`;
+    notifyCustomer(booking.customer_phone, msg);
+  }
+
+  ok(res, { cancelled: cancelledCount, groupId: booking.recurrence_group_id });
 });
 
 // ── AVAILABILITY ─────────────────────────────────────────────────────────────
