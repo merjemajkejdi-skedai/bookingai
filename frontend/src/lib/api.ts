@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import type { Specialist, Service, ServiceGroup, Booking, TimeSlot } from '../types';
+import type { Specialist, Service, ServiceGroup, Booking, TimeSlot, ArtEvent, EventRegistration } from '../types';
 
 const BASE = `${import.meta.env.VITE_API_URL || ''}/api`;
 
@@ -79,4 +79,24 @@ export const api = {
     req<TimeSlot[]>(
       `/availability/suggest?specialistId=${specialistId}&fromDate=${fromDate}&durationMins=${durationMins}`
     ),
+
+  // Art Events
+  getEvents: (params: { start?: string; end?: string; teacherId?: string }) => {
+    const q = new URLSearchParams(params as Record<string,string>).toString();
+    return req<ArtEvent[]>(`/events${q ? '?' + q : ''}`);
+  },
+  createEvent: (data: Omit<ArtEvent, 'id'|'tenantId'|'isActive'|'createdAt'|'teacherName'|'teacherColor'|'registrationCount'>) =>
+    req<ArtEvent>('/events', { method: 'POST', body: JSON.stringify(data) }),
+  updateEvent: (id: string, data: Partial<ArtEvent>) =>
+    req<ArtEvent>(`/events/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteEvent: (id: string) =>
+    req(`/events/${id}`, { method: 'DELETE' }),
+
+  // Event Registrations
+  getRegistrations: (eventId: string) =>
+    req<EventRegistration[]>(`/events/${eventId}/registrations`),
+  createRegistration: (eventId: string, data: { participantName: string; parentPhone?: string; parentName?: string; notes?: string }) =>
+    req<EventRegistration>(`/events/${eventId}/registrations`, { method: 'POST', body: JSON.stringify(data) }),
+  deleteRegistration: (eventId: string, regId: string) =>
+    req(`/events/${eventId}/registrations/${regId}`, { method: 'DELETE' }),
 };

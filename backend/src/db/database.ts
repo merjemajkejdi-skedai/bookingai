@@ -160,11 +160,39 @@ const SCHEMA = `
     last_login TEXT,
     created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
   );
+  CREATE TABLE IF NOT EXISTS art_events (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    teacher_id TEXT,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    date TEXT NOT NULL,
+    start_time TEXT NOT NULL DEFAULT '10:00',
+    end_time TEXT NOT NULL DEFAULT '11:00',
+    age_min INTEGER,
+    age_max INTEGER,
+    max_capacity INTEGER,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE TABLE IF NOT EXISTS event_registrations (
+    id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL,
+    tenant_id TEXT NOT NULL,
+    participant_name TEXT NOT NULL,
+    parent_phone TEXT NOT NULL DEFAULT '',
+    parent_name TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    registered_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
   CREATE INDEX IF NOT EXISTS idx_bookings_spec   ON bookings(specialist_id, starts_at);
   CREATE INDEX IF NOT EXISTS idx_bookings_tenant ON bookings(tenant_id, starts_at);
   CREATE INDEX IF NOT EXISTS idx_wh_spec         ON working_hours(specialist_id);
   CREATE INDEX IF NOT EXISTS idx_users_email     ON users(email);
   CREATE INDEX IF NOT EXISTS idx_users_tenant    ON users(tenant_id);
+  CREATE INDEX IF NOT EXISTS idx_art_events_tenant ON art_events(tenant_id, date);
+  CREATE INDEX IF NOT EXISTS idx_event_regs_event  ON event_registrations(event_id);
+  CREATE INDEX IF NOT EXISTS idx_event_regs_phone  ON event_registrations(parent_phone);
 `;
 
 export async function runMigrations() {

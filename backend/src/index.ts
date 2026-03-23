@@ -6,6 +6,7 @@ import { router } from './routes/api.js';
 import { whatsappRouter } from './whatsapp/webhook.js';
 import { authRouter } from './routes/auth.js';
 import { adminRouter } from './routes/admin.js';
+import { eventsRouter } from './routes/events.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -24,6 +25,7 @@ app.get('/health', (_, res) => res.json({
 }));
 
 app.use('/api', router);
+app.use('/api', eventsRouter);
 app.use('/auth', authRouter);
 app.use('/admin', adminRouter);
 app.use('/whatsapp', whatsappRouter);

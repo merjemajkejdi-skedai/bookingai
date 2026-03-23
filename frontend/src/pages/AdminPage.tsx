@@ -5,7 +5,7 @@ import { Button, Modal, Input, Select, Spinner } from '../components/ui';
 import clsx from 'clsx';
 
 const PLANS = ['starter', 'growth', 'pro'];
-const TYPES = ['barbershop', 'salon', 'dentist', 'medical', 'hotel'];
+const TYPES = ['barbershop', 'salon', 'dentist', 'medical', 'hotel', 'art_class', 'art_event'];
 
 export function AdminPage() {
   const [tenants, setTenants]     = useState<any[]>([]);

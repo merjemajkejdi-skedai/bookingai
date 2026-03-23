@@ -11,7 +11,7 @@ const client = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
 // ---------------------------------------------------------------------------
 // Tools Claude can call to check availability and create bookings
 // ---------------------------------------------------------------------------
-const tools: Anthropic.Tool[] = [
+const bookingTools: Anthropic.Tool[] = [
   {
     name: 'get_specialists',
     description: 'Get the list of available specialists and their working hours',
@@ -92,6 +92,123 @@ const tools: Anthropic.Tool[] = [
     },
     // Cache the tools schema — it never changes between calls
     cache_control: { type: 'ephemeral' } as const,
+  },
+] as Anthropic.Tool[];
+
+const artClassTools: Anthropic.Tool[] = [
+  {
+    name: 'get_my_registrations',
+    description: 'Check existing art class registrations for this customer phone. Always call this first.',
+    input_schema: { type: 'object' as const, properties: {}, required: [] },
+  },
+  {
+    name: 'get_monthly_classes',
+    description: 'Get all art classes for a given month, optionally filtered by child age',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        month: { type: 'number', description: 'Month number (1-12)' },
+        year:  { type: 'number', description: 'Year (e.g. 2026)' },
+        age:   { type: 'number', description: 'Child age to filter classes by age group (optional)' },
+      },
+      required: ['month', 'year'],
+    },
+  },
+  {
+    name: 'check_class_capacity',
+    description: 'Check remaining spots for a specific class',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        event_id: { type: 'string', description: 'The class event ID' },
+      },
+      required: ['event_id'],
+    },
+  },
+  {
+    name: 'register_for_class',
+    description: 'Register a child for a single art class. Only call after explicit confirmation.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        event_id:         { type: 'string', description: 'The class event ID' },
+        participant_name: { type: 'string', description: "Child's name" },
+        parent_name:      { type: 'string', description: "Parent's name (optional)" },
+      },
+      required: ['event_id', 'participant_name'],
+    },
+    cache_control: { type: 'ephemeral' } as const,
+  },
+  {
+    name: 'register_for_recurring_classes',
+    description: 'Register a child for ALL classes of the same age group in the month. Only call after explicit confirmation.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        month:            { type: 'number', description: 'Month (1-12)' },
+        year:             { type: 'number', description: 'Year' },
+        age_min:          { type: 'number', description: 'Age group minimum' },
+        age_max:          { type: 'number', description: 'Age group maximum' },
+        participant_name: { type: 'string', description: "Child's name" },
+        parent_name:      { type: 'string', description: "Parent's name (optional)" },
+      },
+      required: ['month', 'year', 'participant_name'],
+    },
+  },
+] as Anthropic.Tool[];
+
+const artEventTools: Anthropic.Tool[] = [
+  {
+    name: 'get_my_registrations',
+    description: 'Check existing registrations for this customer phone. Always call this first.',
+    input_schema: { type: 'object' as const, properties: {}, required: [] },
+  },
+  {
+    name: 'get_events_for_date',
+    description: 'Get art events for a specific date with description and spots available',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        date: { type: 'string', description: 'Date in YYYY-MM-DD format' },
+      },
+      required: ['date'],
+    },
+  },
+  {
+    name: 'get_monthly_events',
+    description: 'Get all art events for a given month',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        month: { type: 'number', description: 'Month (1-12)' },
+        year:  { type: 'number', description: 'Year' },
+      },
+      required: ['month', 'year'],
+    },
+  },
+  {
+    name: 'register_for_event',
+    description: 'Register a customer for an art event. Only call after explicit confirmation.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        event_id:      { type: 'string', description: 'The event ID' },
+        customer_name: { type: 'string', description: "Customer's name" },
+      },
+      required: ['event_id', 'customer_name'],
+    },
+    cache_control: { type: 'ephemeral' } as const,
+  },
+  {
+    name: 'cancel_registration',
+    description: 'Cancel an existing registration by registration ID',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        registration_id: { type: 'string', description: 'The registration ID to cancel' },
+      },
+      required: ['registration_id'],
+    },
   },
 ] as Anthropic.Tool[];
 
@@ -325,6 +442,261 @@ async function executeTool(name: string, input: Record<string, unknown>, custome
       });
     }
 
+    case 'get_my_registrations': {
+      const rows = await dbAll(`
+        SELECT r.id, r.participant_name, r.parent_name, r.registered_at,
+               e.title, e.date, e.start_time, e.end_time, e.age_min, e.age_max
+        FROM event_registrations r
+        JOIN art_events e ON e.id = r.event_id
+        WHERE r.parent_phone = ? AND e.is_active = 1 AND e.date >= ?
+        ORDER BY e.date ASC
+        LIMIT 10
+      `, customerPhone, format(new Date(), 'yyyy-MM-dd')) as any[];
+
+      if (!rows.length) return JSON.stringify({ found: false, message: 'No upcoming registrations found for your number.' });
+      return JSON.stringify({
+        found: true,
+        registrations: rows.map((r: any) => ({
+          id: r.id,
+          class: r.title,
+          participant: r.participant_name,
+          parent: r.parent_name,
+          date: format(new Date(r.date), 'EEEE d MMMM yyyy'),
+          time: r.start_time,
+          age_group: r.age_min != null ? `${r.age_min}-${r.age_max} years` : null,
+        }))
+      });
+    }
+
+    case 'get_monthly_classes': {
+      const { month, year, age } = input as { month: number; year: number; age?: number };
+      const startDate = `${year}-${String(month).padStart(2,'0')}-01`;
+      const endDate   = `${year}-${String(month).padStart(2,'0')}-31`;
+
+      let sql = `
+        SELECT e.*, s.name as teacher_name,
+               COUNT(r.id) as registration_count
+        FROM art_events e
+        LEFT JOIN specialists s ON s.id = e.teacher_id
+        LEFT JOIN event_registrations r ON r.event_id = e.id
+        WHERE e.tenant_id = ? AND e.is_active = 1
+          AND e.date >= ? AND e.date <= ?
+      `;
+      const params: any[] = [tenantId, startDate, endDate];
+
+      if (age !== undefined) {
+        sql += ' AND (e.age_min IS NULL OR e.age_min <= ?) AND (e.age_max IS NULL OR e.age_max >= ?)';
+        params.push(age, age);
+      }
+      sql += ' GROUP BY e.id ORDER BY e.date, e.start_time';
+
+      const rows = await dbAll(sql, ...params) as any[];
+      if (!rows.length) return JSON.stringify({ found: false, message: `No classes found for ${month}/${year}${age !== undefined ? ` for age ${age}` : ''}.` });
+
+      return JSON.stringify({
+        found: true,
+        classes: rows.map((r: any) => ({
+          id: r.id,
+          title: r.title,
+          description: r.description,
+          date: format(new Date(r.date), 'EEEE d MMMM yyyy'),
+          date_raw: r.date,
+          time: `${r.start_time} - ${r.end_time}`,
+          teacher: r.teacher_name || 'TBD',
+          age_group: r.age_min != null ? `${r.age_min}-${r.age_max} years` : 'All ages',
+          spots_left: r.max_capacity ? Math.max(0, r.max_capacity - Number(r.registration_count)) : 'Unlimited',
+          is_full: r.max_capacity ? Number(r.registration_count) >= r.max_capacity : false,
+        }))
+      });
+    }
+
+    case 'check_class_capacity': {
+      const { event_id } = input as { event_id: string };
+      const ev = await dbGet('SELECT max_capacity, title FROM art_events WHERE id=?', event_id) as any;
+      if (!ev) return JSON.stringify({ error: 'Class not found' });
+      const cnt = await dbGet('SELECT COUNT(*) as cnt FROM event_registrations WHERE event_id=?', event_id) as any;
+      const used = Number(cnt?.cnt || 0);
+      const left = ev.max_capacity ? Math.max(0, ev.max_capacity - used) : null;
+      return JSON.stringify({
+        title: ev.title,
+        max_capacity: ev.max_capacity,
+        registered: used,
+        spots_left: left ?? 'Unlimited',
+        is_full: ev.max_capacity ? used >= ev.max_capacity : false,
+      });
+    }
+
+    case 'register_for_class': {
+      const { event_id, participant_name, parent_name = '' } = input as any;
+      const ev = await dbGet('SELECT * FROM art_events WHERE id=?', event_id) as any;
+      if (!ev) return JSON.stringify({ error: 'Class not found' });
+
+      if (ev.max_capacity) {
+        const cnt = await dbGet('SELECT COUNT(*) as cnt FROM event_registrations WHERE event_id=?', event_id) as any;
+        if (Number(cnt?.cnt || 0) >= ev.max_capacity)
+          return JSON.stringify({ error: 'This class is fully booked.' });
+      }
+
+      const id = crypto.randomUUID();
+      await dbRun(
+        'INSERT INTO event_registrations(id,event_id,tenant_id,participant_name,parent_phone,parent_name) VALUES(?,?,?,?,?,?)',
+        id, event_id, tenantId, participant_name, customerPhone, parent_name
+      );
+
+      return JSON.stringify({
+        success: true,
+        registration_id: id,
+        summary: `✅ Registered! ${participant_name} for ${ev.title} on ${format(new Date(ev.date), 'EEEE d MMMM')} at ${ev.start_time}`,
+      });
+    }
+
+    case 'register_for_recurring_classes': {
+      const { month, year, age_min, age_max, participant_name, parent_name = '' } = input as any;
+      const startDate = `${year}-${String(month).padStart(2,'0')}-01`;
+      const endDate   = `${year}-${String(month).padStart(2,'0')}-31`;
+
+      let sql = `
+        SELECT e.*, COUNT(r.id) as registration_count
+        FROM art_events e
+        LEFT JOIN event_registrations r ON r.event_id = e.id
+        WHERE e.tenant_id=? AND e.is_active=1 AND e.date>=? AND e.date<=?
+      `;
+      const params: any[] = [tenantId, startDate, endDate];
+      if (age_min != null) { sql += ' AND e.age_min=?'; params.push(age_min); }
+      if (age_max != null) { sql += ' AND e.age_max=?'; params.push(age_max); }
+      sql += ' GROUP BY e.id ORDER BY e.date';
+
+      const events = await dbAll(sql, ...params) as any[];
+      const registered: string[] = [];
+      const skipped: string[] = [];
+
+      for (const ev of events) {
+        if (ev.max_capacity && Number(ev.registration_count) >= ev.max_capacity) {
+          skipped.push(`${ev.title} on ${format(new Date(ev.date), 'd MMM')} (full)`);
+          continue;
+        }
+        const id = crypto.randomUUID();
+        await dbRun(
+          'INSERT INTO event_registrations(id,event_id,tenant_id,participant_name,parent_phone,parent_name) VALUES(?,?,?,?,?,?)',
+          id, ev.id, tenantId, participant_name, customerPhone, parent_name
+        );
+        registered.push(`${ev.title} on ${format(new Date(ev.date), 'd MMM')} at ${ev.start_time}`);
+      }
+
+      return JSON.stringify({
+        success: true,
+        registered_count: registered.length,
+        registered,
+        skipped,
+        message: `Registered ${participant_name} for ${registered.length} class(es).${skipped.length ? ` Skipped ${skipped.length} full class(es).` : ''}`,
+      });
+    }
+
+    case 'get_events_for_date': {
+      const { date } = input as { date: string };
+      const rows = await dbAll(`
+        SELECT e.*, s.name as teacher_name, COUNT(r.id) as registration_count
+        FROM art_events e
+        LEFT JOIN specialists s ON s.id = e.teacher_id
+        LEFT JOIN event_registrations r ON r.event_id = e.id
+        WHERE e.tenant_id=? AND e.is_active=1 AND e.date=?
+        GROUP BY e.id ORDER BY e.start_time
+      `, tenantId, date) as any[];
+
+      if (!rows.length) return JSON.stringify({ found: false, message: `No events on ${format(new Date(date), 'EEEE d MMMM yyyy')}.` });
+
+      return JSON.stringify({
+        found: true,
+        date: format(new Date(date), 'EEEE d MMMM yyyy'),
+        events: rows.map((r: any) => ({
+          id: r.id,
+          title: r.title,
+          description: r.description,
+          time: `${r.start_time} - ${r.end_time}`,
+          teacher: r.teacher_name || null,
+          spots_left: r.max_capacity ? Math.max(0, r.max_capacity - Number(r.registration_count)) : 'Unlimited',
+          max_capacity: r.max_capacity,
+          registered: Number(r.registration_count),
+          is_full: r.max_capacity ? Number(r.registration_count) >= r.max_capacity : false,
+        }))
+      });
+    }
+
+    case 'get_monthly_events': {
+      const { month, year } = input as { month: number; year: number };
+      const startDate = `${year}-${String(month).padStart(2,'0')}-01`;
+      const endDate   = `${year}-${String(month).padStart(2,'0')}-31`;
+
+      const rows = await dbAll(`
+        SELECT e.*, s.name as teacher_name, COUNT(r.id) as registration_count
+        FROM art_events e
+        LEFT JOIN specialists s ON s.id = e.teacher_id
+        LEFT JOIN event_registrations r ON r.event_id = e.id
+        WHERE e.tenant_id=? AND e.is_active=1 AND e.date>=? AND e.date<=?
+        GROUP BY e.id ORDER BY e.date, e.start_time
+      `, tenantId, startDate, endDate) as any[];
+
+      if (!rows.length) return JSON.stringify({ found: false, message: `No events in ${month}/${year}.` });
+
+      return JSON.stringify({
+        found: true,
+        events: rows.map((r: any) => ({
+          id: r.id,
+          title: r.title,
+          description: r.description,
+          date: format(new Date(r.date), 'EEEE d MMMM yyyy'),
+          date_raw: r.date,
+          time: `${r.start_time} - ${r.end_time}`,
+          teacher: r.teacher_name || null,
+          spots_left: r.max_capacity ? Math.max(0, r.max_capacity - Number(r.registration_count)) : 'Unlimited',
+          is_full: r.max_capacity ? Number(r.registration_count) >= r.max_capacity : false,
+        }))
+      });
+    }
+
+    case 'register_for_event': {
+      const { event_id, customer_name } = input as any;
+      const ev = await dbGet('SELECT * FROM art_events WHERE id=?', event_id) as any;
+      if (!ev) return JSON.stringify({ error: 'Event not found' });
+
+      if (ev.max_capacity) {
+        const cnt = await dbGet('SELECT COUNT(*) as cnt FROM event_registrations WHERE event_id=?', event_id) as any;
+        if (Number(cnt?.cnt || 0) >= ev.max_capacity)
+          return JSON.stringify({ error: 'This event is fully booked.' });
+      }
+
+      // Check duplicate registration from same phone
+      const existing = await dbGet('SELECT id FROM event_registrations WHERE event_id=? AND parent_phone=?', event_id, customerPhone) as any;
+      if (existing) return JSON.stringify({ error: 'You are already registered for this event.' });
+
+      const id = crypto.randomUUID();
+      await dbRun(
+        'INSERT INTO event_registrations(id,event_id,tenant_id,participant_name,parent_phone,parent_name) VALUES(?,?,?,?,?,?)',
+        id, event_id, tenantId, customer_name, customerPhone, customer_name
+      );
+
+      return JSON.stringify({
+        success: true,
+        registration_id: id,
+        summary: `✅ Registered! ${customer_name} for ${ev.title} on ${format(new Date(ev.date), 'EEEE d MMMM')} at ${ev.start_time}`,
+      });
+    }
+
+    case 'cancel_registration': {
+      const { registration_id } = input as { registration_id: string };
+      const reg = await dbGet(`
+        SELECT r.*, e.title, e.date, e.start_time
+        FROM event_registrations r JOIN art_events e ON e.id = r.event_id
+        WHERE r.id=?
+      `, registration_id) as any;
+      if (!reg) return JSON.stringify({ error: 'Registration not found' });
+      await dbRun('DELETE FROM event_registrations WHERE id=?', registration_id);
+      return JSON.stringify({
+        success: true,
+        message: `Cancelled registration for ${reg.participant_name} — ${reg.title} on ${format(new Date(reg.date), 'EEEE d MMMM')}`,
+      });
+    }
+
     default:
       return JSON.stringify({ error: `Unknown tool: ${name}` });
   }
@@ -343,6 +715,8 @@ async function buildSystemPrompt(): Promise<string> {
 
   const tenantTypeLower = (tenant?.type || 'barbershop').toLowerCase();
   const isBarber = tenantTypeLower.includes('barber');
+  const isArtClass = tenantTypeLower === 'art_class';
+  const isArtEvent = tenantTypeLower === 'art_event';
   const specialistPlural = isBarber ? 'barbers' : 'specialists';
 
   const terminologyBlock = isBarber
@@ -363,6 +737,92 @@ Adapt to the appropriate term in other languages if needed.`;
   const serviceList = services
     .map((s: any) => `- ${s.name}, ${s.duration_mins} min, ${s.price} ALL — id: ${s.id}`)
     .join('\n');
+
+  if (isArtClass) {
+    const teachers = specialists.map((s: any) => `- ${s.name} (${s.role}) — id: ${s.id}`).join('\n');
+    return `You are the art class registration assistant for ${tenant?.name || 'the studio'}.
+You ONLY help parents register their children for art classes. Do not discuss anything else.
+Always respond in the same language the customer writes in.
+Today is ${now}.
+
+=== OUR TEACHERS ===
+${teachers || 'No teachers listed'}
+
+=== STRICT RULES ===
+0. ALWAYS call get_my_registrations first on the customer's first message.
+   - If existing registration found: show it and ask if they want to keep it, cancel it, or register for something else.
+1. NEVER register a child for a full class (check spots_left before registering).
+2. ALWAYS confirm the child's name before calling register_for_class.
+3. NEVER call register_for_class without explicit confirmation from the parent.
+4. Phone is automatically captured — never ask for it.
+5. Always ask child's age before showing classes.
+
+=== REGISTRATION FLOW ===
+Step 0 — Call get_my_registrations to check existing registrations.
+Step 1 — Ask the child's age.
+Step 2 — Call get_monthly_classes with the current month, year, and child's age.
+Step 3 — Show available classes (date, time, teacher, age group, spots left). Skip full classes.
+Step 4 — Parent picks a date. Ask: "Would you also like to join all art_class classes for this age group this month?"
+Step 5 — Ask for child's name (and parent's name if not known).
+Step 6 — Show confirmation summary and ask parent to confirm.
+Step 7 — If single class: call register_for_class. If recurring: call register_for_recurring_classes.
+Step 8 — Confirm registration with class name, date, time.
+
+=== CANCELLATION FLOW ===
+Step 1 — Call get_my_registrations (phone auto-injected).
+Step 2 — Show registrations, ask which to cancel.
+Step 3 — Confirm cancellation.
+Step 4 — Call cancel_registration with registration_id.
+
+=== MESSAGE STYLE ===
+- Short and conversational — this is WhatsApp
+- Plain text only — no markdown, no bullet points
+- Warm and friendly
+- Always write times in HH:mm format`;
+  }
+
+  if (isArtEvent) {
+    const teachers = specialists.map((s: any) => `- ${s.name} — id: ${s.id}`).join('\n');
+    return `You are the event registration assistant for ${tenant?.name || 'the studio'}.
+You help customers register for art events.
+Always respond in the same language the customer writes in.
+Today is ${now}.
+
+=== OUR TEAM ===
+${teachers || 'No team listed'}
+
+=== STRICT RULES ===
+0. ALWAYS call get_my_registrations first on the customer's first message.
+   - If already registered for an event: show it and ask if they want to keep it or cancel.
+1. NEVER register for a full event (check is_full / spots_left).
+2. NEVER register without explicit confirmation from customer.
+3. ALWAYS ask for customer's name before registering.
+4. Phone is automatically captured — never ask for it.
+5. If customer asks for events without a specific date, call get_monthly_events for the current month.
+
+=== REGISTRATION FLOW ===
+Step 0 — Call get_my_registrations to check for existing registrations.
+Step 1 — If customer asks about a specific date: call get_events_for_date.
+         If no specific date: call get_monthly_events.
+Step 2 — Show event(s): title, description, time, spots left.
+         If event is full, say so and do not offer registration.
+Step 3 — If customer wants to register: ask their name.
+Step 4 — Show confirmation summary (event name, date, time) and ask to confirm.
+Step 5 — Call register_for_event only after confirmation.
+Step 6 — Confirm registration clearly.
+
+=== CANCELLATION FLOW ===
+Step 1 — Call get_my_registrations (phone auto-injected).
+Step 2 — Show registrations, ask which to cancel.
+Step 3 — Confirm cancellation.
+Step 4 — Call cancel_registration with registration_id.
+
+=== MESSAGE STYLE ===
+- Short and conversational — this is WhatsApp
+- Plain text only — no markdown
+- Warm and friendly
+- Always write times in HH:mm format`;
+  }
 
   return `You are the booking assistant for ${tenant?.name || 'the salon'}, a ${tenant?.type || 'barbershop'}.
 You ONLY help customers book, reschedule, cancel, or check appointments. Do not discuss anything else.
@@ -563,13 +1023,21 @@ export async function runBookingAgent(
     { role: 'user', content: customerMessage },
   ];
 
+  // Pick tools based on tenant type
+  const tenantId = process.env.TENANT_ID || 'tenant-demo-001';
+  const tenantRow = await dbGet('SELECT type FROM tenants WHERE id = ?', tenantId) as any;
+  const tenantTypeLower = (tenantRow?.type || 'barbershop').toLowerCase();
+  const activeTools = tenantTypeLower === 'art_class' ? artClassTools
+                    : tenantTypeLower === 'art_event'  ? artEventTools
+                    : bookingTools;
+
   while (true) {
     const response = await callClaudeWithRetry({
       model: pickModel(customerMessage, conversationHistory.length > 0),
       max_tokens: 1024,
       // Prompt caching — cached for 5 min by Anthropic, 0.1x price on cache hits
       system: [{ type: 'text' as const, text: await buildSystemPrompt(), cache_control: { type: 'ephemeral' } }],
-      tools,
+      tools: activeTools,
       messages,
     });
 

@@ -11,13 +11,17 @@ import { CalendarView } from './components/calendar/CalendarView';
 import { BookingModal } from './components/bookings/BookingModal';
 import { SpecialistsPage } from './components/specialists/SpecialistsPage';
 import { ServicesPage } from './components/services/ServicesPage';
+import { EventsPage } from './components/events/EventsPage';
 
-type Page = 'calendar' | 'specialists' | 'services' | 'admin';
+type Page = 'calendar' | 'specialists' | 'services' | 'admin' | 'events';
 
 export default function App() {
   const [authed, setAuthed] = useState(isAuthenticated());
   const currentUser = getStoredUser();
-  const [page, setPage] = useState<Page>('calendar');
+  const tenantType = currentUser?.tenant?.type ?? '';
+  const isArtShop  = /art_class|art_event/i.test(tenantType);
+  const isArtClass = /art_class/i.test(tenantType);
+  const [page, setPage] = useState<Page>(isArtShop ? 'events' : 'calendar');
   const [specialists, setSpecialists] = useState<Specialist[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -63,15 +67,22 @@ export default function App() {
     b.startsAt.slice(0, 10) === format(new Date(), 'yyyy-MM-dd') && b.status === 'confirmed'
   );
 
-  const tenantType = currentUser?.tenant?.type ?? '';
-  const specialistLabel = tenantType.toLowerCase().includes('barber') ? 'Barbers' : 'Specialists';
+  const specialistLabel = isArtShop
+    ? 'Teachers'
+    : tenantType.toLowerCase().includes('barber') ? 'Barbers' : 'Specialists';
 
-  const nav: { id: Page; label: string; icon: React.ReactNode }[] = [
-    { id: 'calendar',    label: 'Calendar',     icon: <Calendar size={16} /> },
-    { id: 'specialists', label: specialistLabel, icon: <Users size={16} /> },
-    { id: 'services',    label: 'Services',      icon: <Scissors size={16} /> },
-    ...(isAdmin() ? [{ id: 'admin' as Page, label: 'Admin', icon: <Shield size={16} /> }] : []),
-  ];
+  const nav: { id: Page; label: string; icon: React.ReactNode }[] = isArtShop
+    ? [
+        { id: 'events',      label: 'Events',   icon: <Calendar size={16} /> },
+        { id: 'specialists', label: 'Teachers', icon: <Users size={16} /> },
+        ...(isAdmin() ? [{ id: 'admin' as Page, label: 'Admin', icon: <Shield size={16} /> }] : []),
+      ]
+    : [
+        { id: 'calendar',    label: 'Calendar',     icon: <Calendar size={16} /> },
+        { id: 'specialists', label: specialistLabel, icon: <Users size={16} /> },
+        { id: 'services',    label: 'Services',      icon: <Scissors size={16} /> },
+        ...(isAdmin() ? [{ id: 'admin' as Page, label: 'Admin', icon: <Shield size={16} /> }] : []),
+      ];
 
   function handleLogout() {
     clearAuth();
@@ -139,8 +150,8 @@ export default function App() {
           ))}
         </nav>
 
-        {/* Specialist filter (calendar only) */}
-        {page === 'calendar' && (
+        {/* Specialist filter (calendar only, non-art shops) */}
+        {page === 'calendar' && !isArtShop && (
           <div className="px-3 pb-4 border-t border-slate-100 pt-3">
             <p className="text-xs font-medium text-slate-400 mb-2 px-1">Filter by specialist</p>
             <button
@@ -176,8 +187,8 @@ export default function App() {
       {/* ── Main content ───────────────────────────────────────────────────── */}
       <main className="flex-1 min-w-0 overflow-hidden flex flex-col gap-2 md:gap-4 p-2 md:p-4">
 
-        {/* Mobile specialist filter — shown on calendar page */}
-        {page === 'calendar' && specialists.length > 1 && (
+        {/* Mobile specialist filter — shown on calendar page for non-art shops */}
+        {page === 'calendar' && !isArtShop && specialists.length > 1 && (
           <div className="md:hidden flex gap-2 overflow-x-auto pb-1 flex-shrink-0 scrollbar-none">
             <button
               onClick={() => setSelectedSpecialistId(null)}
@@ -229,6 +240,12 @@ export default function App() {
             loading={loading}
             onRefresh={() => api.getServices().then(setServices)}
             isSalon={/salon|saloon/i.test(tenantType)}
+          />
+        )}
+        {page === 'events' && (
+          <EventsPage
+            specialists={specialists}
+            isArtClass={isArtClass}
           />
         )}
         {page === 'admin' && <AdminPage />}
