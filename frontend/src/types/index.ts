@@ -7,9 +7,13 @@ export interface WorkingHours {
   id: string; specialistId: string; dayOfWeek: number;
   startTime: string; endTime: string; isWorking: boolean;
 }
+export interface ServiceGroup {
+  id: string; tenantId: string; name: string; sortOrder: number;
+}
 export interface Service {
   id: string; tenantId: string; name: string;
   durationMins: number; price: number; color: string; isActive: boolean;
+  groupId?: string | null;
 }
 export interface Booking {
   id: string; tenantId: string;

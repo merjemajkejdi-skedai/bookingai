@@ -140,6 +140,46 @@ router.put('/specialists/:id/working-hours', async (req: Request, res: Response)
   ok(res, await dbAll('SELECT * FROM working_hours WHERE specialist_id=? ORDER BY day_of_week', req.params.id));
 });
 
+// ── SERVICE GROUPS ────────────────────────────────────────────────────────────
+router.get('/service-groups', async (req: Request, res: Response) => {
+  const tenantId = req.query.tenantId as string || 'tenant-demo-001';
+  const rows = await dbAll('SELECT * FROM service_groups WHERE tenant_id=? ORDER BY sort_order, name', tenantId);
+  ok(res, rows.map((r: any) => ({ id: r.id, tenantId: r.tenant_id, name: r.name, sortOrder: r.sort_order })));
+});
+
+router.post('/service-groups', async (req: Request, res: Response) => {
+  const parsed = z.object({
+    tenantId: z.string().default('tenant-demo-001'),
+    name: z.string().min(1),
+    sortOrder: z.number().default(0),
+  }).safeParse(req.body);
+  if (!parsed.success) return err(res, parsed.error.message);
+  const id = uuid();
+  await dbRun('INSERT INTO service_groups(id,tenant_id,name,sort_order) VALUES (?,?,?,?)',
+    id, parsed.data.tenantId, parsed.data.name, parsed.data.sortOrder);
+  ok(res, await dbGet('SELECT * FROM service_groups WHERE id=?', id));
+});
+
+router.put('/service-groups/:id', async (req: Request, res: Response) => {
+  const parsed = z.object({
+    name: z.string().min(1).optional(),
+    sortOrder: z.number().optional(),
+  }).safeParse(req.body);
+  if (!parsed.success) return err(res, parsed.error.message);
+  const { name, sortOrder } = parsed.data;
+  await dbRun(
+    'UPDATE service_groups SET name=COALESCE(?,name),sort_order=COALESCE(?,sort_order) WHERE id=?',
+    name??null, sortOrder??null, req.params.id
+  );
+  ok(res, await dbGet('SELECT * FROM service_groups WHERE id=?', req.params.id));
+});
+
+router.delete('/service-groups/:id', async (req: Request, res: Response) => {
+  await dbRun('UPDATE services SET group_id=NULL WHERE group_id=?', req.params.id);
+  await dbRun('DELETE FROM service_groups WHERE id=?', req.params.id);
+  ok(res, { id: req.params.id });
+});
+
 // ── SERVICES ─────────────────────────────────────────────────────────────────
 router.get('/services', async (req: Request, res: Response) => {
   const tenantId = req.query.tenantId as string || 'tenant-demo-001';
@@ -148,6 +188,7 @@ router.get('/services', async (req: Request, res: Response) => {
     id: r.id, tenantId: r.tenant_id, name: r.name,
     durationMins: r.duration_mins, price: r.price,
     color: r.color, isActive: !!r.is_active,
+    groupId: r.group_id ?? null,
   })));
 });
 
@@ -156,13 +197,14 @@ router.post('/services', async (req: Request, res: Response) => {
     tenantId: z.string().default('tenant-demo-001'),
     name: z.string().min(1), durationMins: z.number().min(5).max(480),
     price: z.number().min(0), color: z.string().default('#8b5cf6'),
+    groupId: z.string().nullable().optional(),
   }).safeParse(req.body);
   if (!parsed.success) return err(res, parsed.error.message);
 
   const id = uuid();
   await dbRun(
-    'INSERT INTO services(id,tenant_id,name,duration_mins,price,color,is_active) VALUES (?,?,?,?,?,?,1)',
-    id, parsed.data.tenantId, parsed.data.name, parsed.data.durationMins, parsed.data.price, parsed.data.color
+    'INSERT INTO services(id,tenant_id,name,duration_mins,price,color,is_active,group_id) VALUES (?,?,?,?,?,?,1,?)',
+    id, parsed.data.tenantId, parsed.data.name, parsed.data.durationMins, parsed.data.price, parsed.data.color, parsed.data.groupId ?? null
   );
   ok(res, await dbGet('SELECT * FROM services WHERE id=?', id));
 });
@@ -170,7 +212,8 @@ router.post('/services', async (req: Request, res: Response) => {
 router.put('/services/:id', async (req: Request, res: Response) => {
   const parsed = z.object({
     name: z.string().optional(), durationMins: z.number().optional(),
-    price: z.number().optional(), color: z.string().optional(), isActive: z.boolean().optional(),
+    price: z.number().optional(), color: z.string().optional(),
+    isActive: z.boolean().optional(), groupId: z.string().nullable().optional(),
   }).safeParse(req.body);
   if (!parsed.success) return err(res, parsed.error.message);
   const { name, durationMins, price, color, isActive } = parsed.data;
@@ -179,6 +222,9 @@ router.put('/services/:id', async (req: Request, res: Response) => {
     name??null, durationMins??null, price??null, color??null,
     isActive !== undefined ? (isActive?1:0) : null, req.params.id
   );
+  if ('groupId' in req.body) {
+    await dbRun('UPDATE services SET group_id=? WHERE id=?', parsed.data.groupId ?? null, req.params.id);
+  }
   ok(res, await dbGet('SELECT * FROM services WHERE id=?', req.params.id));
 });
 

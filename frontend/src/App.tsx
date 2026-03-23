@@ -182,6 +182,7 @@ export default function App() {
             services={services}
             loading={loading}
             onRefresh={() => api.getServices().then(setServices)}
+            isSalon={/salon|saloon/i.test(tenantType)}
           />
         )}
         {page === 'admin' && <AdminPage />}

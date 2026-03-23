@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import type { Specialist, Service, Booking, TimeSlot } from '../types';
+import type { Specialist, Service, ServiceGroup, Booking, TimeSlot } from '../types';
 
 const BASE = `${import.meta.env.VITE_API_URL || ''}/api`;
 
@@ -34,6 +34,15 @@ export const api = {
     req<Specialist>(`/specialists/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   updateWorkingHours: (id: string, hours: Specialist['workingHours']) =>
     req(`/specialists/${id}/working-hours`, { method: 'PUT', body: JSON.stringify(hours) }),
+
+  // Service groups
+  getServiceGroups: () => req<ServiceGroup[]>('/service-groups'),
+  createServiceGroup: (data: { name: string; sortOrder?: number }) =>
+    req<ServiceGroup>('/service-groups', { method: 'POST', body: JSON.stringify(data) }),
+  updateServiceGroup: (id: string, data: { name?: string; sortOrder?: number }) =>
+    req<ServiceGroup>(`/service-groups/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteServiceGroup: (id: string) =>
+    req(`/service-groups/${id}`, { method: 'DELETE' }),
 
   // Services
   getServices: () => req<Service[]>('/services'),

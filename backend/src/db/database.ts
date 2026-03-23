@@ -132,10 +132,15 @@ const SCHEMA = `
     end_time TEXT NOT NULL DEFAULT '18:00',
     is_working INTEGER NOT NULL DEFAULT 1
   );
+  CREATE TABLE IF NOT EXISTS service_groups (
+    id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL,
+    name TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0
+  );
   CREATE TABLE IF NOT EXISTS services (
     id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, name TEXT NOT NULL,
     duration_mins INTEGER NOT NULL DEFAULT 30, price REAL NOT NULL DEFAULT 0,
-    color TEXT NOT NULL DEFAULT '#8b5cf6', is_active INTEGER NOT NULL DEFAULT 1
+    color TEXT NOT NULL DEFAULT '#8b5cf6', is_active INTEGER NOT NULL DEFAULT 1,
+    group_id TEXT
   );
   CREATE TABLE IF NOT EXISTS bookings (
     id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL,
@@ -182,6 +187,11 @@ export async function runMigrations() {
     exec("ALTER TABLE bookings ADD COLUMN recurrence_rule TEXT NOT NULL DEFAULT 'none'");
   if (!bookingCols.includes('recurrence_group_id'))
     exec('ALTER TABLE bookings ADD COLUMN recurrence_group_id TEXT');
+
+  const svcCols = prepare("SELECT name FROM pragma_table_info('services')")
+    .all().map((r: any) => r.name as string);
+  if (!svcCols.includes('group_id'))
+    exec('ALTER TABLE services ADD COLUMN group_id TEXT');
 
   for (const [col, def] of [
     ['whatsapp_number', "whatsapp_number TEXT NOT NULL DEFAULT ''"],
