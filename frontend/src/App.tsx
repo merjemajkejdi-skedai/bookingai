@@ -89,7 +89,7 @@ export default function App() {
         {/* Logo */}
         <div className="px-5 py-4 border-b border-slate-100">
           <div className="flex items-center gap-2">
-            <img src="/logo.png" alt="SkedAI" className="h-7 w-auto" />
+            <img src="/logo.png" alt="SkedAI" className="h-12 w-auto" />
           </div>
           <p className="text-xs text-slate-400 mt-1 truncate">
             {currentUser?.tenant?.name || currentUser?.email || 'SkedAI'}
