@@ -30,7 +30,7 @@ export function LoginPage({ onLogin }: Props) {
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="flex justify-center mb-8">
-          <img src="/logo.png" alt="SkedAI" className="h-12 w-auto" />
+          <img src="/logo.png" alt="SkedAI" className="h-20 w-auto" />
         </div>
 
         {/* Card */}
