@@ -341,6 +341,11 @@ async function buildSystemPrompt(): Promise<string> {
   const specialists = await dbAll('SELECT id, name, role FROM specialists WHERE tenant_id = ? AND is_active = 1', tenantId) as any[];
   const services = await dbAll('SELECT id, name, duration_mins, price FROM services WHERE tenant_id = ? AND is_active = 1', tenantId) as any[];
 
+  const tenantTypeLower = (tenant?.type || 'barbershop').toLowerCase();
+  const specialistSingular = tenantTypeLower.includes('barber') ? 'barber' : 'specialist';
+  const specialistPlural   = tenantTypeLower.includes('barber') ? 'barbers' : 'specialists';
+  const specialistLabel    = tenantTypeLower.includes('barber') ? 'Barberi' : 'Specialisti'; // Albanian label for confirmation
+
   const specialistList = specialists
     .map((s: any) => `- ${s.name} (${s.role}) — id: ${s.id}`)
     .join('\n');
@@ -354,7 +359,7 @@ You ONLY help customers book, reschedule, cancel, or check appointments. Do not 
 Always respond in the same language the customer writes in.
 Today is ${now}.
 
-=== OUR TEAM ===
+=== OUR ${specialistPlural.toUpperCase()} ===
 ${specialistList}
 
 === OUR SERVICES ===
@@ -374,7 +379,7 @@ ${serviceList}
 
 === BOOKING FLOW — FOLLOW THIS EXACT ORDER ===
 Step 1 — Greet and ask what service they want (match to service list above)
-Step 2 — Ask which specialist they prefer, or offer "any available"
+Step 2 — Ask which ${specialistSingular} they prefer, or offer "any available"
 Step 3 — Ask their preferred date and time
 Step 4 — Call check_availability with the correct specialist_id, date, duration_mins
 Step 5 — Read the tool result carefully: the "available_slots" array contains EVERY slot that IS free.
@@ -423,7 +428,7 @@ Never say a slot is busy if it appears in available_slots. The tool is always co
 === CONFIRMATION MESSAGE FORMAT ===
 When showing a booking summary before confirmation, use EXACTLY this format:
 Sherbimi: [service name]
-Specialisti: [specialist name]
+${specialistLabel}: [${specialistSingular} name]
 Data: [day name] [date] [month]
 Ora: [HH:mm] (e.g. 09:00, 14:30)
 Cmimi: [price] ALL
@@ -433,10 +438,10 @@ IMPORTANT: Write the time as HH:mm (e.g. 09:00). Never use quotes around the tim
 
 === EFFICIENCY — REDUCE MESSAGE COUNT ===
 - On the FIRST message from a new customer, ask for ALL booking info at once in one message:
-  "Pershendetje! Cfare sherbimi deshironi, me cilin specialist dhe kur? (dita + ora)"
-  or in English: "Hi! What service, which specialist, and when? (day + time)"
+  "Pershendetje! Cfare sherbimi deshironi, me cilin ${specialistSingular} dhe kur? (dita + ora)"
+  or in English: "Hi! What service, which ${specialistSingular}, and when? (day + time)"
 - Never send one question per message if you can combine two into one
-- If customer says "haircut tomorrow" → assume any available specialist, check availability immediately — do not ask which specialist first
+- If customer says "haircut tomorrow" → assume any available ${specialistSingular}, check availability immediately — do not ask which ${specialistSingular} first
 - If customer says a time and date → go straight to check_availability, do not ask for confirmation first
 - Skip greetings after the first exchange — just answer efficiently
 - Confirmation summary must be ONE message only, never split across two

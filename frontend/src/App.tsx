@@ -66,10 +66,13 @@ export default function App() {
     b.startsAt.slice(0, 10) === format(new Date(), 'yyyy-MM-dd') && b.status === 'confirmed'
   );
 
+  const tenantType = currentUser?.tenant?.type ?? '';
+  const specialistLabel = tenantType.toLowerCase().includes('barber') ? 'Barbers' : 'Specialists';
+
   const nav: { id: Page; label: string; icon: React.ReactNode }[] = [
-    { id: 'calendar',    label: 'Calendar',    icon: <Calendar size={16} /> },
-    { id: 'specialists', label: 'Specialists', icon: <Users size={16} /> },
-    { id: 'services',    label: 'Services',    icon: <Scissors size={16} /> },
+    { id: 'calendar',    label: 'Calendar',       icon: <Calendar size={16} /> },
+    { id: 'specialists', label: specialistLabel,   icon: <Users size={16} /> },
+    { id: 'services',    label: 'Services',        icon: <Scissors size={16} /> },
     ...(isAdmin() ? [{ id: 'admin' as Page, label: 'Admin', icon: <Shield size={16} /> }] : []),
   ];
 
@@ -171,6 +174,7 @@ export default function App() {
             specialists={specialists}
             loading={loading}
             onRefresh={() => api.getSpecialists().then(setSpecialists)}
+            label={specialistLabel}
           />
         )}
         {page === 'services' && (

@@ -12,9 +12,10 @@ interface Props {
   specialists: Specialist[];
   loading: boolean;
   onRefresh: () => void;
+  label?: string;
 }
 
-export function SpecialistsPage({ specialists, loading, onRefresh }: Props) {
+export function SpecialistsPage({ specialists, loading, onRefresh, label = 'Specialists' }: Props) {
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState<Specialist | null>(null);
   const [editingHours, setEditingHours] = useState<Specialist | null>(null);
@@ -25,10 +26,10 @@ export function SpecialistsPage({ specialists, loading, onRefresh }: Props) {
     <div className="p-6 max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-semibold">Specialists</h1>
+          <h1 className="text-xl font-semibold">{label}</h1>
           <p className="text-sm text-slate-400 mt-0.5">{specialists.length} team members</p>
         </div>
-        <Button onClick={() => setShowAdd(true)}><Plus size={14} /> Add specialist</Button>
+        <Button onClick={() => setShowAdd(true)}><Plus size={14} /> Add {label.slice(0, -1).toLowerCase()}</Button>
       </div>
 
       <div className="grid gap-3">
@@ -68,9 +69,9 @@ export function SpecialistsPage({ specialists, loading, onRefresh }: Props) {
         ))}
         {specialists.length === 0 && (
           <div className="text-center py-12 text-slate-400">
-            <p className="text-sm">No specialists yet.</p>
+            <p className="text-sm">No {label.toLowerCase()} yet.</p>
             <Button variant="outline" size="sm" className="mt-3" onClick={() => setShowAdd(true)}>
-              Add your first specialist
+              Add your first {label.slice(0, -1).toLowerCase()}
             </Button>
           </div>
         )}
@@ -80,6 +81,7 @@ export function SpecialistsPage({ specialists, loading, onRefresh }: Props) {
       {(showAdd || editing) && (
         <SpecialistForm
           specialist={editing}
+          label={label}
           onClose={() => { setShowAdd(false); setEditing(null); }}
           onSaved={() => { setShowAdd(false); setEditing(null); onRefresh(); }}
         />
@@ -98,8 +100,8 @@ export function SpecialistsPage({ specialists, loading, onRefresh }: Props) {
 }
 
 // --- Specialist form --------------------------------------------------------
-function SpecialistForm({ specialist, onClose, onSaved }: {
-  specialist?: Specialist | null; onClose: () => void; onSaved: () => void;
+function SpecialistForm({ specialist, label = 'Specialists', onClose, onSaved }: {
+  specialist?: Specialist | null; label?: string; onClose: () => void; onSaved: () => void;
 }) {
   const [name, setName] = useState(specialist?.name ?? '');
   const [role, setRole] = useState(specialist?.role ?? '');
@@ -122,7 +124,7 @@ function SpecialistForm({ specialist, onClose, onSaved }: {
   }
 
   return (
-    <Modal title={specialist ? 'Edit specialist' : 'Add specialist'} onClose={onClose}>
+    <Modal title={specialist ? `Edit ${label.slice(0, -1).toLowerCase()}` : `Add ${label.slice(0, -1).toLowerCase()}`} onClose={onClose}>
       <div className="space-y-4">
         <Input label="Full name" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Gentian Hoxha" />
         <Input label="Role / title" value={role} onChange={e => setRole(e.target.value)} placeholder="e.g. Senior Barber" />
