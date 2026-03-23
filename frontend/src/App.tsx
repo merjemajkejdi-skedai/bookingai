@@ -25,7 +25,6 @@ export default function App() {
   const [bookingsLoading, setBookingsLoading] = useState(false);
   const [selectedSpecialistId, setSelectedSpecialistId] = useState<string | null>(null);
 
-  // Modal state
   const [bookingModal, setBookingModal] = useState<{
     open: boolean;
     booking?: Booking;
@@ -33,14 +32,12 @@ export default function App() {
     prefillSpecialistId?: string;
   }>({ open: false });
 
-  // Load specialists + services once
   useEffect(() => {
     Promise.all([api.getSpecialists(), api.getServices()])
       .then(([specs, svcs]) => { setSpecialists(specs); setServices(svcs); })
       .finally(() => setLoading(false));
   }, []);
 
-  // Load bookings for current + next week
   const loadBookings = useCallback(async () => {
     setBookingsLoading(true);
     const now = new Date();
@@ -70,9 +67,9 @@ export default function App() {
   const specialistLabel = tenantType.toLowerCase().includes('barber') ? 'Barbers' : 'Specialists';
 
   const nav: { id: Page; label: string; icon: React.ReactNode }[] = [
-    { id: 'calendar',    label: 'Calendar',       icon: <Calendar size={16} /> },
-    { id: 'specialists', label: specialistLabel,   icon: <Users size={16} /> },
-    { id: 'services',    label: 'Services',        icon: <Scissors size={16} /> },
+    { id: 'calendar',    label: 'Calendar',     icon: <Calendar size={16} /> },
+    { id: 'specialists', label: specialistLabel, icon: <Users size={16} /> },
+    { id: 'services',    label: 'Services',      icon: <Scissors size={16} /> },
     ...(isAdmin() ? [{ id: 'admin' as Page, label: 'Admin', icon: <Shield size={16} /> }] : []),
   ];
 
@@ -86,8 +83,26 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen bg-slate-100 overflow-hidden">
-      {/* Sidebar — hidden on mobile */}
+    <div className="flex flex-col md:flex-row h-screen bg-slate-100 overflow-hidden">
+
+      {/* ── Mobile top bar ─────────────────────────────────────────────────── */}
+      <header className="md:hidden flex items-center justify-between px-4 py-2 bg-white border-b border-slate-200 flex-shrink-0">
+        <img src="/logo.png" alt="SkedAI" className="h-10 w-auto" />
+        <div className="flex items-center gap-2">
+          {currentUser?.tenant?.name && (
+            <span className="text-xs text-slate-500 truncate max-w-[130px]">{currentUser.tenant.name}</span>
+          )}
+          <button
+            onClick={handleLogout}
+            className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors"
+            title="Sign out"
+          >
+            <LogOut size={18} />
+          </button>
+        </div>
+      </header>
+
+      {/* ── Desktop sidebar ────────────────────────────────────────────────── */}
       <aside className="hidden md:flex w-56 flex-shrink-0 flex-col bg-white border-r border-slate-200">
         {/* Logo */}
         <div className="px-5 py-4 border-b border-slate-100">
@@ -147,6 +162,7 @@ export default function App() {
             ))}
           </div>
         )}
+
         {/* Logout */}
         <div className="px-3 pb-3 border-t border-slate-100 pt-3 mt-auto">
           <button onClick={handleLogout}
@@ -157,8 +173,38 @@ export default function App() {
         </div>
       </aside>
 
-      {/* Main content */}
-      <main className="flex-1 min-w-0 overflow-hidden flex flex-col p-4 gap-4">
+      {/* ── Main content ───────────────────────────────────────────────────── */}
+      <main className="flex-1 min-w-0 overflow-hidden flex flex-col gap-2 md:gap-4 p-2 md:p-4">
+
+        {/* Mobile specialist filter — shown on calendar page */}
+        {page === 'calendar' && specialists.length > 1 && (
+          <div className="md:hidden flex gap-2 overflow-x-auto pb-1 flex-shrink-0 scrollbar-none">
+            <button
+              onClick={() => setSelectedSpecialistId(null)}
+              className={clsx(
+                'px-3 py-1.5 rounded-full text-xs whitespace-nowrap border font-medium transition-colors flex-shrink-0',
+                !selectedSpecialistId
+                  ? 'bg-brand-500 text-white border-brand-500'
+                  : 'bg-white text-slate-600 border-slate-200'
+              )}>
+              All
+            </button>
+            {specialists.map(sp => (
+              <button key={sp.id}
+                onClick={() => setSelectedSpecialistId(sp.id === selectedSpecialistId ? null : sp.id)}
+                className={clsx(
+                  'px-3 py-1.5 rounded-full text-xs whitespace-nowrap border flex items-center gap-1.5 font-medium transition-colors flex-shrink-0',
+                  selectedSpecialistId === sp.id
+                    ? 'bg-brand-500 text-white border-brand-500'
+                    : 'bg-white text-slate-600 border-slate-200'
+                )}>
+                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: sp.color }} />
+                {sp.name.split(' ')[0]}
+              </button>
+            ))}
+          </div>
+        )}
+
         {page === 'calendar' && (
           <CalendarView
             bookings={bookings}
@@ -187,6 +233,28 @@ export default function App() {
         )}
         {page === 'admin' && <AdminPage />}
       </main>
+
+      {/* ── Mobile bottom navigation ───────────────────────────────────────── */}
+      <nav className="md:hidden flex items-center bg-white border-t border-slate-200 flex-shrink-0">
+        {nav.map(item => (
+          <button key={item.id} onClick={() => setPage(item.id)}
+            className={clsx(
+              'flex-1 flex flex-col items-center gap-1 py-3 text-[10px] font-medium transition-colors',
+              page === item.id ? 'text-brand-600' : 'text-slate-400 hover:text-slate-600'
+            )}>
+            <span className={clsx('transition-colors', page === item.id ? 'text-brand-500' : 'text-slate-400')}>
+              {item.icon}
+            </span>
+            {item.label}
+          </button>
+        ))}
+        <button
+          onClick={handleLogout}
+          className="flex-1 flex flex-col items-center gap-1 py-3 text-[10px] font-medium text-slate-400 hover:text-slate-600 transition-colors">
+          <LogOut size={16} className="text-slate-400" />
+          Sign out
+        </button>
+      </nav>
 
       {/* Booking modal */}
       {bookingModal.open && (

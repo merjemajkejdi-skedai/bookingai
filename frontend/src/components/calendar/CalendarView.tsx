@@ -9,7 +9,6 @@ const HOUR_H = 64; // px per hour
 const DAY_START = 8; // 8am
 const DAY_END = 20;  // 8pm
 const TOTAL_HOURS = DAY_END - DAY_START;
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 interface Props {
   bookings: Booking[];
@@ -27,11 +26,9 @@ export function CalendarView({ bookings, specialists, selectedSpecialistId, onBo
   const [currentDate, setCurrentDate] = useState(new Date());
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Scroll to 8am on mount
+  // Scroll to top on mount
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = 0;
-    }
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, []);
 
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
@@ -48,7 +45,6 @@ export function CalendarView({ bookings, specialists, selectedSpecialistId, onBo
     [specialists, selectedSpecialistId]
   );
 
-  // Group bookings by day+specialist for positioning
   const bookingMap = useMemo(() => {
     const map = new Map<string, Booking[]>();
     for (const b of bookings) {
@@ -83,14 +79,17 @@ export function CalendarView({ bookings, specialists, selectedSpecialistId, onBo
     const totalMins = (y / HOUR_H) * 60;
     const h = DAY_START + Math.floor(totalMins / 60);
     const m = Math.floor((totalMins % 60) / 15) * 15;
-    const slotDate = setMinutes(setHours(day, h), m);
-    onSlotClick(slotDate, specialistId);
+    onSlotClick(setMinutes(setHours(day, h), m), specialistId);
   }
 
   const isToday = (d: Date) => isSameDay(d, new Date());
 
+  // Whether we need horizontal scrolling (week view with content)
+  const needsHScroll = view === 'week';
+
   return (
     <div className="flex flex-col h-full bg-white rounded-2xl border border-slate-200 overflow-hidden">
+
       {/* Toolbar */}
       <div className="flex items-center justify-between px-3 md:px-5 py-2 md:py-3 border-b border-slate-100 flex-shrink-0 gap-2 flex-wrap">
         <div className="flex items-center gap-1.5 md:gap-2 min-w-0">
@@ -112,13 +111,10 @@ export function CalendarView({ bookings, specialists, selectedSpecialistId, onBo
         <div className="flex items-center gap-1.5 md:gap-2">
           <div className="flex border border-slate-200 rounded-lg overflow-hidden text-sm">
             {(['week', 'day'] as View[]).map(v => (
-              <button
-                key={v}
-                onClick={() => setView(v)}
+              <button key={v} onClick={() => setView(v)}
                 className={clsx('px-2 md:px-3 py-1.5 capitalize transition-colors text-xs md:text-sm',
                   view === v ? 'bg-brand-500 text-white' : 'hover:bg-slate-50 text-slate-600'
-                )}
-              >
+                )}>
                 {v}
               </button>
             ))}
@@ -129,135 +125,140 @@ export function CalendarView({ bookings, specialists, selectedSpecialistId, onBo
         </div>
       </div>
 
-      {/* Day headers */}
-      <div className={clsx('flex border-b border-slate-100 flex-shrink-0 overflow-x-auto', view === 'week' && 'min-w-[600px]')}>
-        <div className="w-14 flex-shrink-0" />
-        {days.map(day => (
-          <div key={day.toISOString()} className="flex-1 min-w-0 border-l border-slate-100 px-2 py-2 text-center">
-            <div className={clsx('inline-flex flex-col items-center gap-0.5')}>
-              <span className="text-xs text-slate-400 uppercase tracking-wide">
-                {format(day, 'EEE')}
-              </span>
-              <span className={clsx(
-                'text-sm font-semibold w-7 h-7 flex items-center justify-center rounded-full',
-                isToday(day) ? 'bg-brand-500 text-white' : 'text-slate-700'
-              )}>
-                {format(day, 'd')}
-              </span>
-            </div>
-          </div>
-        ))}
-      </div>
+      {/* Everything below toolbar scrolls horizontally together on week view */}
+      <div className={clsx('flex-1 flex flex-col min-h-0 overflow-hidden', needsHScroll && 'overflow-x-auto')}>
+        <div className={clsx('flex flex-col flex-1 min-h-0', needsHScroll && 'min-w-[600px]')}>
 
-      {/* Specialist labels (multi-specialist per day in week view) */}
-      {view === 'week' && visibleSpecialists.length > 1 && (
-        <div className="flex border-b border-slate-100 bg-slate-50/60 flex-shrink-0 min-w-[600px]">
-          <div className="w-14 flex-shrink-0" />
-          {days.map(day => (
-            <div key={day.toISOString()} className="flex-1 min-w-0 border-l border-slate-100 flex">
-              {visibleSpecialists.map(sp => (
-                <div key={sp.id} className="flex-1 min-w-0 px-1 py-1 flex items-center justify-center gap-1">
-                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: sp.color }} />
-                  <span className="text-[10px] text-slate-500 truncate font-medium">{sp.name.split(' ')[0]}</span>
+          {/* Day headers */}
+          <div className="flex border-b border-slate-100 flex-shrink-0">
+            <div className="w-14 flex-shrink-0" />
+            {days.map(day => (
+              <div key={day.toISOString()} className="flex-1 min-w-0 border-l border-slate-100 px-2 py-2 text-center">
+                <div className="inline-flex flex-col items-center gap-0.5">
+                  <span className="text-xs text-slate-400 uppercase tracking-wide">
+                    {format(day, 'EEE')}
+                  </span>
+                  <span className={clsx(
+                    'text-sm font-semibold w-7 h-7 flex items-center justify-center rounded-full',
+                    isToday(day) ? 'bg-brand-500 text-white' : 'text-slate-700'
+                  )}>
+                    {format(day, 'd')}
+                  </span>
                 </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Scrollable grid */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-auto scrollbar-thin">
-        <div className={clsx('flex', view === 'week' ? 'min-w-[600px]' : 'min-w-full')}>
-          {/* Time gutter */}
-          <div className="w-14 flex-shrink-0 relative">
-            {hours.map(h => (
-              <div key={h} style={{ height: HOUR_H }} className="relative">
-                <span className="absolute -top-2.5 right-2 text-[10px] text-slate-400 font-mono">
-                  {h === 12 ? '12pm' : h > 12 ? `${h-12}pm` : `${h}am`}
-                </span>
               </div>
             ))}
           </div>
 
-          {/* Day columns */}
-          {days.map(day => (
-            <div key={day.toISOString()} className="flex-1 min-w-0 border-l border-slate-100 flex">
-              {visibleSpecialists.map((sp, spIdx) => {
-                const key = `${format(day, 'yyyy-MM-dd')}_${sp.id}`;
-                const dayBookings = bookingMap.get(key) || [];
-
-                return (
-                  <div
-                    key={sp.id}
-                    className={clsx(
-                      'flex-1 min-w-0 relative cursor-pointer',
-                      spIdx > 0 && 'border-l border-slate-100/60'
-                    )}
-                    style={{ height: TOTAL_HOURS * HOUR_H }}
-                    onClick={e => handleColumnClick(e, day, sp.id)}
-                  >
-                    {/* Hour lines */}
-                    {hours.map(h => (
-                      <div key={h} style={{ top: (h - DAY_START) * HOUR_H }}
-                        className="absolute inset-x-0 border-t border-slate-100 pointer-events-none" />
-                    ))}
-                    {/* Half-hour lines */}
-                    {hours.map(h => (
-                      <div key={`${h}h`} style={{ top: (h - DAY_START) * HOUR_H + HOUR_H / 2 }}
-                        className="absolute inset-x-0 border-t border-dashed border-slate-100/70 pointer-events-none" />
-                    ))}
-
-                    {/* Bookings */}
-                    {dayBookings.map(b => {
-                      const { top, height } = positionBooking(b);
-                      if (b.status === 'cancelled') return null;
-                      return (
-                        <div
-                          key={b.id}
-                          style={{ top, height, background: sp.color + '22', borderColor: sp.color }}
-                          className="absolute inset-x-0.5 rounded-md border-l-[3px] px-1.5 py-1 overflow-hidden cursor-pointer hover:brightness-95 transition-all z-10"
-                          onClick={e => { e.stopPropagation(); onBookingClick(b); }}
-                        >
-                          <p className="text-[11px] font-semibold leading-tight truncate" style={{ color: sp.color }}>
-                            {b.customerName}
-                          </p>
-                          {height > 30 && (
-                            <p className="text-[10px] text-slate-500 truncate leading-tight mt-0.5">
-                              {b.serviceName}
-                            </p>
-                          )}
-                          {height > 44 && (
-                            <p className="text-[10px] text-slate-400 font-mono">
-                              {format(parseISO(b.startsAt), 'HH:mm')}
-                            </p>
-                          )}
-                        </div>
-                      );
-                    })}
-
-                    {/* Today line */}
-                    {isToday(day) && (() => {
-                      const now = new Date();
-                      const mins = (now.getHours() - DAY_START) * 60 + now.getMinutes();
-                      if (mins < 0 || mins > TOTAL_HOURS * 60) return null;
-                      return (
-                        <div
-                          style={{ top: (mins / 60) * HOUR_H }}
-                          className="absolute inset-x-0 z-20 pointer-events-none"
-                        >
-                          <div className="flex items-center">
-                            <div className="w-2 h-2 rounded-full bg-red-400 -ml-1 flex-shrink-0" />
-                            <div className="flex-1 h-px bg-red-400" />
-                          </div>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                );
-              })}
+          {/* Specialist column headers — shown whenever multiple specialists are visible */}
+          {visibleSpecialists.length > 1 && (
+            <div className="flex border-b border-slate-100 bg-slate-50/60 flex-shrink-0">
+              <div className="w-14 flex-shrink-0" />
+              {days.map(day => (
+                <div key={day.toISOString()} className="flex-1 min-w-0 border-l border-slate-100 flex">
+                  {visibleSpecialists.map(sp => (
+                    <div key={sp.id} className="flex-1 min-w-0 px-1 py-1.5 flex items-center justify-center gap-1">
+                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: sp.color }} />
+                      <span className="text-[11px] text-slate-600 truncate font-medium">{sp.name.split(' ')[0]}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
             </div>
-          ))}
+          )}
+
+          {/* Vertically scrollable time grid */}
+          <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-thin">
+            <div className="flex">
+              {/* Time gutter */}
+              <div className="w-14 flex-shrink-0 relative">
+                {hours.map(h => (
+                  <div key={h} style={{ height: HOUR_H }} className="relative">
+                    <span className="absolute -top-2.5 right-2 text-[10px] text-slate-400 font-mono">
+                      {h === 12 ? '12pm' : h > 12 ? `${h - 12}pm` : `${h}am`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Day columns */}
+              {days.map(day => (
+                <div key={day.toISOString()} className="flex-1 min-w-0 border-l border-slate-100 flex">
+                  {visibleSpecialists.map((sp, spIdx) => {
+                    const key = `${format(day, 'yyyy-MM-dd')}_${sp.id}`;
+                    const dayBookings = bookingMap.get(key) || [];
+
+                    return (
+                      <div
+                        key={sp.id}
+                        className={clsx(
+                          'flex-1 min-w-0 relative cursor-pointer',
+                          spIdx > 0 && 'border-l border-slate-100/60'
+                        )}
+                        style={{ height: TOTAL_HOURS * HOUR_H }}
+                        onClick={e => handleColumnClick(e, day, sp.id)}
+                      >
+                        {/* Hour lines */}
+                        {hours.map(h => (
+                          <div key={h} style={{ top: (h - DAY_START) * HOUR_H }}
+                            className="absolute inset-x-0 border-t border-slate-100 pointer-events-none" />
+                        ))}
+                        {/* Half-hour lines */}
+                        {hours.map(h => (
+                          <div key={`${h}h`} style={{ top: (h - DAY_START) * HOUR_H + HOUR_H / 2 }}
+                            className="absolute inset-x-0 border-t border-dashed border-slate-100/70 pointer-events-none" />
+                        ))}
+
+                        {/* Bookings */}
+                        {dayBookings.map(b => {
+                          const { top, height } = positionBooking(b);
+                          if (b.status === 'cancelled') return null;
+                          return (
+                            <div
+                              key={b.id}
+                              style={{ top, height, background: sp.color + '22', borderColor: sp.color }}
+                              className="absolute inset-x-0.5 rounded-md border-l-[3px] px-1.5 py-1 overflow-hidden cursor-pointer hover:brightness-95 transition-all z-10"
+                              onClick={e => { e.stopPropagation(); onBookingClick(b); }}
+                            >
+                              <p className="text-[11px] font-semibold leading-tight truncate" style={{ color: sp.color }}>
+                                {b.customerName}
+                              </p>
+                              {height > 30 && (
+                                <p className="text-[10px] text-slate-500 truncate leading-tight mt-0.5">
+                                  {b.serviceName}
+                                </p>
+                              )}
+                              {height > 44 && (
+                                <p className="text-[10px] text-slate-400 font-mono">
+                                  {format(parseISO(b.startsAt), 'HH:mm')}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        {/* Today line */}
+                        {isToday(day) && (() => {
+                          const now = new Date();
+                          const mins = (now.getHours() - DAY_START) * 60 + now.getMinutes();
+                          if (mins < 0 || mins > TOTAL_HOURS * 60) return null;
+                          return (
+                            <div style={{ top: (mins / 60) * HOUR_H }}
+                              className="absolute inset-x-0 z-20 pointer-events-none">
+                              <div className="flex items-center">
+                                <div className="w-2 h-2 rounded-full bg-red-400 -ml-1 flex-shrink-0" />
+                                <div className="flex-1 h-px bg-red-400" />
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+
         </div>
       </div>
 
