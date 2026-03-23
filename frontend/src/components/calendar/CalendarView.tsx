@@ -21,7 +21,9 @@ interface Props {
 }
 
 export function CalendarView({ bookings, specialists, selectedSpecialistId, onBookingClick, onSlotClick, loading }: Props) {
-  const [view, setView] = useState<View>('week');
+  const [view, setView] = useState<View>(() =>
+    typeof window !== 'undefined' && window.innerWidth < 768 ? 'day' : 'week'
+  );
   const [currentDate, setCurrentDate] = useState(new Date());
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -90,8 +92,8 @@ export function CalendarView({ bookings, specialists, selectedSpecialistId, onBo
   return (
     <div className="flex flex-col h-full bg-white rounded-2xl border border-slate-200 overflow-hidden">
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 flex-shrink-0">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between px-3 md:px-5 py-2 md:py-3 border-b border-slate-100 flex-shrink-0 gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5 md:gap-2 min-w-0">
           <Button variant="ghost" size="sm" onClick={goToday}>Today</Button>
           <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden">
             <button onClick={() => navigate(-1)} className="px-2 py-1.5 hover:bg-slate-50 border-r border-slate-200">
@@ -101,19 +103,19 @@ export function CalendarView({ bookings, specialists, selectedSpecialistId, onBo
               <ChevronRight size={16} className="text-slate-500" />
             </button>
           </div>
-          <span className="text-sm font-semibold text-slate-800">
+          <span className="text-xs md:text-sm font-semibold text-slate-800 truncate max-w-[140px] md:max-w-none">
             {view === 'week'
-              ? `${format(weekStart, 'MMM d')} – ${format(addDays(weekStart, 6), 'MMM d, yyyy')}`
-              : format(currentDate, 'EEEE, MMMM d, yyyy')}
+              ? `${format(weekStart, 'MMM d')} – ${format(addDays(weekStart, 6), 'MMM d')}`
+              : format(currentDate, 'EEE, MMM d')}
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 md:gap-2">
           <div className="flex border border-slate-200 rounded-lg overflow-hidden text-sm">
             {(['week', 'day'] as View[]).map(v => (
               <button
                 key={v}
                 onClick={() => setView(v)}
-                className={clsx('px-3 py-1.5 capitalize transition-colors',
+                className={clsx('px-2 md:px-3 py-1.5 capitalize transition-colors text-xs md:text-sm',
                   view === v ? 'bg-brand-500 text-white' : 'hover:bg-slate-50 text-slate-600'
                 )}
               >
@@ -122,13 +124,13 @@ export function CalendarView({ bookings, specialists, selectedSpecialistId, onBo
             ))}
           </div>
           <Button size="sm" onClick={() => onSlotClick(currentDate)}>
-            <Plus size={14} /> New booking
+            <Plus size={14} /> <span className="hidden sm:inline">New booking</span>
           </Button>
         </div>
       </div>
 
       {/* Day headers */}
-      <div className="flex border-b border-slate-100 flex-shrink-0">
+      <div className={clsx('flex border-b border-slate-100 flex-shrink-0 overflow-x-auto', view === 'week' && 'min-w-[600px]')}>
         <div className="w-14 flex-shrink-0" />
         {days.map(day => (
           <div key={day.toISOString()} className="flex-1 min-w-0 border-l border-slate-100 px-2 py-2 text-center">
@@ -149,7 +151,7 @@ export function CalendarView({ bookings, specialists, selectedSpecialistId, onBo
 
       {/* Specialist labels (multi-specialist per day in week view) */}
       {view === 'week' && visibleSpecialists.length > 1 && (
-        <div className="flex border-b border-slate-100 bg-slate-50/60 flex-shrink-0">
+        <div className="flex border-b border-slate-100 bg-slate-50/60 flex-shrink-0 min-w-[600px]">
           <div className="w-14 flex-shrink-0" />
           {days.map(day => (
             <div key={day.toISOString()} className="flex-1 min-w-0 border-l border-slate-100 flex">
@@ -165,8 +167,8 @@ export function CalendarView({ bookings, specialists, selectedSpecialistId, onBo
       )}
 
       {/* Scrollable grid */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-thin">
-        <div className="flex">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-auto scrollbar-thin">
+        <div className={clsx('flex', view === 'week' ? 'min-w-[600px]' : 'min-w-full')}>
           {/* Time gutter */}
           <div className="w-14 flex-shrink-0 relative">
             {hours.map(h => (

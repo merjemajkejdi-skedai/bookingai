@@ -87,12 +87,12 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-slate-100 overflow-hidden">
-      {/* Sidebar */}
-      <aside className="w-56 flex-shrink-0 flex flex-col bg-white border-r border-slate-200">
+      {/* Sidebar — hidden on mobile */}
+      <aside className="hidden md:flex w-56 flex-shrink-0 flex-col bg-white border-r border-slate-200">
         {/* Logo */}
         <div className="px-5 py-4 border-b border-slate-100">
           <div className="flex items-center gap-2">
-            <img src="/logo.png" alt="SkedAI" className="h-28 w-auto" />
+            <img src="/logo.png" alt="SkedAI" className="h-36 w-auto" />
           </div>
           <p className="text-xs text-slate-400 mt-1 truncate">
             {currentUser?.tenant?.name || currentUser?.email || 'SkedAI'}
