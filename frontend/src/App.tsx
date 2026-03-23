@@ -89,14 +89,11 @@ export default function App() {
         {/* Logo */}
         <div className="px-5 py-4 border-b border-slate-100">
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-brand-500 flex items-center justify-center">
-              <Calendar size={14} className="text-white" />
-            </div>
-            <span className="font-semibold text-slate-800 tracking-tight">BookingAI</span>
+            <img src="/logo.png" alt="SkedAI" className="h-7 w-auto" />
           </div>
           <p className="text-xs text-slate-400 mt-1 truncate">
-          {currentUser?.tenant?.name || currentUser?.email || 'BookingAI'}
-        </p>
+            {currentUser?.tenant?.name || currentUser?.email || 'SkedAI'}
+          </p>
         </div>
 
         {/* Today stats */}

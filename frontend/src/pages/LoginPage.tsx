@@ -29,16 +29,8 @@ export function LoginPage({ onLogin }: Props) {
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         {/* Logo */}
-        <div className="flex items-center gap-2.5 justify-center mb-8">
-          <div className="w-9 h-9 rounded-xl bg-brand-500 flex items-center justify-center">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round">
-              <rect x="3" y="4" width="18" height="18" rx="2"/>
-              <line x1="16" y1="2" x2="16" y2="6"/>
-              <line x1="8" y1="2" x2="8" y2="6"/>
-              <line x1="3" y1="10" x2="21" y2="10"/>
-            </svg>
-          </div>
-          <span className="text-xl font-semibold text-slate-800 tracking-tight">BookingAI</span>
+        <div className="flex justify-center mb-8">
+          <img src="/logo.png" alt="SkedAI" className="h-12 w-auto" />
         </div>
 
         {/* Card */}
@@ -93,7 +85,7 @@ export function LoginPage({ onLogin }: Props) {
         </div>
 
         <p className="text-center text-xs text-slate-400 mt-6">
-          BookingAI · Forgot your password? Contact your administrator.
+          SkedAI · Forgot your password? Contact your administrator.
         </p>
       </div>
     </div>
