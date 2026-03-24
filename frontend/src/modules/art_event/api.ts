@@ -55,7 +55,7 @@ export const api = {
 
   // Templates
   getTemplates: () => req<EventTemplate[]>('/event-templates'),
-  createTemplate: (data: Omit<EventTemplate, 'id'|'tenantId'|'createdAt'|'teacherName'|'teacherColor'>) =>
+  createTemplate: (data: Omit<EventTemplate, 'id'|'tenantId'|'createdAt'|'teacherName'|'teacherColor'|'ageMin'|'ageMax'>) =>
     req<EventTemplate>('/event-templates', { method: 'POST', body: JSON.stringify(data) }),
   updateTemplate: (id: string, data: Partial<EventTemplate>) =>
     req<EventTemplate>(`/event-templates/${id}`, { method: 'PUT', body: JSON.stringify(data) }),

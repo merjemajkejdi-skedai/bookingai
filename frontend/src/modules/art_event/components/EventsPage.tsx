@@ -54,8 +54,6 @@ function EventFormModal({
       ...f,
       title:       tmpl.title,
       description: tmpl.description,
-      startTime:   tmpl.startTime,
-      endTime:     tmpl.endTime,
       maxCapacity: tmpl.maxCapacity != null ? String(tmpl.maxCapacity) : '',
     }));
     setShowTmplPicker(false);
@@ -109,7 +107,7 @@ function EventFormModal({
                     <button key={t.id} onClick={() => applyTemplate(t)}
                       className="flex items-center justify-between w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white hover:shadow-sm transition-all group">
                       <span className="font-medium text-slate-700 group-hover:text-brand-600">{t.title}</span>
-                      <span className="text-xs text-slate-400">{t.startTime}–{t.endTime}</span>
+                      {t.maxCapacity != null && <span className="text-xs text-slate-400">{t.maxCapacity} spots</span>}
                     </button>
                   ))}
                 </div>

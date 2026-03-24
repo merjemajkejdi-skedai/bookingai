@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Pencil, Trash2, AlertCircle, BookTemplate, Clock, Users } from 'lucide-react';
+import { Plus, Pencil, Trash2, AlertCircle, BookTemplate, Users } from 'lucide-react';
 import { api } from '../api';
 import type { EventTemplate } from '../types';
 import { Button, Modal, Input } from '../ui';
@@ -15,8 +15,6 @@ function TemplateFormModal({
   const [form, setForm] = useState({
     title:       template?.title       ?? '',
     description: template?.description ?? '',
-    startTime:   template?.startTime   ?? '10:00',
-    endTime:     template?.endTime     ?? '11:00',
     maxCapacity: template?.maxCapacity != null ? String(template.maxCapacity) : '',
   });
   const [saving, setSaving] = useState(false);
@@ -32,8 +30,6 @@ function TemplateFormModal({
     const payload = {
       title:       form.title.trim(),
       description: form.description.trim(),
-      startTime:   form.startTime,
-      endTime:     form.endTime,
       teacherId:   null,
       ageMin:      null,
       ageMax:      null,
@@ -74,11 +70,6 @@ function TemplateFormModal({
             placeholder="Describe what this class is about..."
           />
         </label>
-
-        <div className="grid grid-cols-2 gap-3">
-          <Input label="Default start time" type="time" value={form.startTime} onChange={e => set('startTime', e.target.value)} />
-          <Input label="Default end time"   type="time" value={form.endTime}   onChange={e => set('endTime',   e.target.value)} />
-        </div>
 
         <Input
           label="Default max capacity (optional)"
@@ -197,18 +188,14 @@ export function TemplatesPage() {
                   <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">{tmpl.description}</p>
                 )}
 
-                <div className="flex items-center gap-3 mt-auto pt-2 border-t border-slate-100">
-                  <span className="flex items-center gap-1 text-xs text-slate-500">
-                    <Clock size={11} className="text-slate-400" />
-                    {tmpl.startTime}–{tmpl.endTime}
-                  </span>
-                  {tmpl.maxCapacity != null && (
+                {tmpl.maxCapacity != null && (
+                  <div className="flex items-center gap-1 mt-auto pt-2 border-t border-slate-100">
                     <span className="flex items-center gap-1 text-xs text-slate-500">
                       <Users size={11} className="text-slate-400" />
-                      {tmpl.maxCapacity} spots
+                      {tmpl.maxCapacity} spots max
                     </span>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
