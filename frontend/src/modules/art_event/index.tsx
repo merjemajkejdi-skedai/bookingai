@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Users, Shield, LogOut } from 'lucide-react';
+import { Calendar, Users, Shield, LogOut, BookTemplate } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from './api';
 import type { Specialist } from './types';
 import { EventsPage } from './components/EventsPage';
+import { TemplatesPage } from './components/TemplatesPage';
 import { SpecialistsPage } from './components/SpecialistsPage';
 import { AdminPage } from '../../pages/AdminPage';
 import { isAdmin, getStoredUser, clearAuth } from '../../shared/lib/auth';
 
-type Page = 'events' | 'specialists' | 'admin';
+type Page = 'events' | 'templates' | 'specialists' | 'admin';
 interface Props { onLogout: () => void; }
 
 export function ArtEventModule({ onLogout }: Props) {
@@ -30,7 +31,8 @@ export function ArtEventModule({ onLogout }: Props) {
   }
 
   const nav: { id: Page; label: string; icon: React.ReactNode }[] = [
-    { id: 'events',      label: 'Events',   icon: <Calendar size={16} /> },
+    { id: 'events',      label: 'Events',    icon: <Calendar size={16} /> },
+    { id: 'templates',   label: 'Templates', icon: <BookTemplate size={16} /> },
     { id: 'specialists', label: 'Teachers',  icon: <Users size={16} /> },
     ...(isAdmin() ? [{ id: 'admin' as Page, label: 'Admin', icon: <Shield size={16} /> }] : []),
   ];
@@ -84,6 +86,7 @@ export function ArtEventModule({ onLogout }: Props) {
       {/* Main content */}
       <main className="flex-1 min-w-0 overflow-hidden flex flex-col p-2 md:p-4">
         {page === 'events' && <EventsPage specialists={specialists} />}
+        {page === 'templates' && <TemplatesPage />}
         {page === 'specialists' && (
           <SpecialistsPage
             specialists={specialists}

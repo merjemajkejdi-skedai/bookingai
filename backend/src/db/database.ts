@@ -190,9 +190,23 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_wh_spec         ON working_hours(specialist_id);
   CREATE INDEX IF NOT EXISTS idx_users_email     ON users(email);
   CREATE INDEX IF NOT EXISTS idx_users_tenant    ON users(tenant_id);
+  CREATE TABLE IF NOT EXISTS event_templates (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    teacher_id TEXT,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    start_time TEXT NOT NULL DEFAULT '10:00',
+    end_time TEXT NOT NULL DEFAULT '11:00',
+    age_min INTEGER,
+    age_max INTEGER,
+    max_capacity INTEGER,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
   CREATE INDEX IF NOT EXISTS idx_art_events_tenant ON art_events(tenant_id, date);
   CREATE INDEX IF NOT EXISTS idx_event_regs_event  ON event_registrations(event_id);
   CREATE INDEX IF NOT EXISTS idx_event_regs_phone  ON event_registrations(parent_phone);
+  CREATE INDEX IF NOT EXISTS idx_event_templates_tenant ON event_templates(tenant_id);
 `;
 
 export async function runMigrations() {

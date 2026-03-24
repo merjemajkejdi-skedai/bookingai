@@ -22,3 +22,12 @@ export interface EventRegistration {
   participantName: string; parentPhone: string; parentName: string;
   notes: string; registeredAt: string;
 }
+export interface EventTemplate {
+  id: string; tenantId: string;
+  teacherId?: string | null; teacherName?: string | null; teacherColor?: string | null;
+  title: string; description: string;
+  startTime: string; endTime: string;
+  ageMin?: number | null; ageMax?: number | null;
+  maxCapacity?: number | null;
+  createdAt: string;
+}

@@ -193,3 +193,89 @@ artClassRouter.delete('/events/:id/registrations/:regId', requireAuth, async (re
     ok(res, { deleted: true });
   } catch (e: any) { err(res, e.message, 500); }
 });
+
+// ── GET /event-templates ──────────────────────────────────────────────────────
+artClassRouter.get('/event-templates', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = (req as any).user.tenantId;
+  try {
+    const rows = await dbAll(
+      `SELECT t.*, s.name AS teacher_name, s.color AS teacher_color
+       FROM event_templates t
+       LEFT JOIN specialists s ON s.id = t.teacher_id
+       WHERE t.tenant_id = ?
+       ORDER BY t.created_at DESC`,
+      tenantId
+    ) as any[];
+    ok(res, rows.map(r => ({
+      id: r.id, tenantId: r.tenant_id,
+      teacherId: r.teacher_id ?? null, teacherName: r.teacher_name ?? null, teacherColor: r.teacher_color ?? null,
+      title: r.title, description: r.description,
+      startTime: r.start_time, endTime: r.end_time,
+      ageMin: r.age_min ?? null, ageMax: r.age_max ?? null,
+      maxCapacity: r.max_capacity ?? null,
+      createdAt: r.created_at,
+    })));
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// ── POST /event-templates ─────────────────────────────────────────────────────
+artClassRouter.post('/event-templates', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = (req as any).user.tenantId;
+  const { title, description = '', startTime, endTime, teacherId, ageMin, ageMax, maxCapacity } = req.body;
+  if (!title) return err(res, 'title is required');
+  const id = crypto.randomUUID();
+  try {
+    await dbRun(
+      `INSERT INTO event_templates(id,tenant_id,teacher_id,title,description,start_time,end_time,age_min,age_max,max_capacity)
+       VALUES(?,?,?,?,?,?,?,?,?,?)`,
+      id, tenantId, teacherId ?? null, title, description,
+      startTime || '10:00', endTime || '11:00',
+      ageMin ?? null, ageMax ?? null, maxCapacity ?? null
+    );
+    const row = await dbGet('SELECT * FROM event_templates WHERE id=?', id) as any;
+    ok(res, {
+      id: row.id, tenantId: row.tenant_id, teacherId: row.teacher_id ?? null,
+      title: row.title, description: row.description,
+      startTime: row.start_time, endTime: row.end_time,
+      ageMin: row.age_min ?? null, ageMax: row.age_max ?? null,
+      maxCapacity: row.max_capacity ?? null, createdAt: row.created_at,
+    });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// ── PUT /event-templates/:id ──────────────────────────────────────────────────
+artClassRouter.put('/event-templates/:id', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = (req as any).user.tenantId;
+  const { id } = req.params;
+  const { title, description, startTime, endTime, teacherId, ageMin, ageMax, maxCapacity } = req.body;
+  const existing = await dbGet('SELECT id FROM event_templates WHERE id=? AND tenant_id=?', id, tenantId) as any;
+  if (!existing) return err(res, 'Template not found', 404);
+  try {
+    await dbRun(
+      `UPDATE event_templates SET title=?, description=?, start_time=?, end_time=?,
+       teacher_id=?, age_min=?, age_max=?, max_capacity=? WHERE id=?`,
+      title, description ?? '', startTime, endTime,
+      teacherId ?? null, ageMin ?? null, ageMax ?? null, maxCapacity ?? null, id
+    );
+    const row = await dbGet('SELECT * FROM event_templates WHERE id=?', id) as any;
+    ok(res, {
+      id: row.id, tenantId: row.tenant_id, teacherId: row.teacher_id ?? null,
+      title: row.title, description: row.description,
+      startTime: row.start_time, endTime: row.end_time,
+      ageMin: row.age_min ?? null, ageMax: row.age_max ?? null,
+      maxCapacity: row.max_capacity ?? null, createdAt: row.created_at,
+    });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// ── DELETE /event-templates/:id ───────────────────────────────────────────────
+artClassRouter.delete('/event-templates/:id', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = (req as any).user.tenantId;
+  const { id } = req.params;
+  const existing = await dbGet('SELECT id FROM event_templates WHERE id=? AND tenant_id=?', id, tenantId) as any;
+  if (!existing) return err(res, 'Template not found', 404);
+  try {
+    await dbRun('DELETE FROM event_templates WHERE id=?', id);
+    ok(res, { deleted: true });
+  } catch (e: any) { err(res, e.message, 500); }
+});

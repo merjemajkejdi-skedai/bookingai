@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import type { Specialist, ArtEvent, EventRegistration } from './types';
+import type { Specialist, ArtEvent, EventRegistration, EventTemplate } from './types';
 
 const BASE = `${import.meta.env.VITE_API_URL || ''}/api`;
 
@@ -52,4 +52,13 @@ export const api = {
     req<EventRegistration>(`/events/${eventId}/registrations`, { method: 'POST', body: JSON.stringify(data) }),
   deleteRegistration: (eventId: string, regId: string) =>
     req(`/events/${eventId}/registrations/${regId}`, { method: 'DELETE' }),
+
+  // Templates
+  getTemplates: () => req<EventTemplate[]>('/event-templates'),
+  createTemplate: (data: Omit<EventTemplate, 'id'|'tenantId'|'createdAt'|'teacherName'|'teacherColor'>) =>
+    req<EventTemplate>('/event-templates', { method: 'POST', body: JSON.stringify(data) }),
+  updateTemplate: (id: string, data: Partial<EventTemplate>) =>
+    req<EventTemplate>(`/event-templates/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteTemplate: (id: string) =>
+    req(`/event-templates/${id}`, { method: 'DELETE' }),
 };

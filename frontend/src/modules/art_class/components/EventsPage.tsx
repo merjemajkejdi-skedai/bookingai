@@ -4,10 +4,10 @@ import {
   addMonths, subMonths, eachDayOfInterval, isSameMonth, isSameDay, isToday,
   parseISO,
 } from 'date-fns';
-import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, Users, X, AlertCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, Users, X, AlertCircle, BookTemplate } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../api';
-import type { ArtEvent, EventRegistration, Specialist } from '../types';
+import type { ArtEvent, EventRegistration, EventTemplate, Specialist } from '../types';
 import { Button, Modal, Input, Spinner } from '../ui';
 
 // Art Classes page — isArtClass is always true for this module
@@ -38,10 +38,30 @@ function ClassFormModal({
     ageMax:      event?.ageMax  != null ? String(event.ageMax)  : '',
     maxCapacity: event?.maxCapacity != null ? String(event.maxCapacity) : '',
   });
-  const [saving, setSaving] = useState(false);
-  const [error, setError]   = useState('');
+  const [saving, setSaving]         = useState(false);
+  const [error, setError]           = useState('');
+  const [templates, setTemplates]   = useState<EventTemplate[]>([]);
+  const [showTmplPicker, setShowTmplPicker] = useState(false);
+
+  useEffect(() => {
+    if (!event) {
+      api.getTemplates().then(setTemplates).catch(() => {});
+    }
+  }, [event]);
 
   function set(k: keyof typeof form, v: string) { setForm(f => ({ ...f, [k]: v })); }
+
+  function applyTemplate(tmpl: EventTemplate) {
+    setForm(f => ({
+      ...f,
+      title:       tmpl.title,
+      description: tmpl.description,
+      startTime:   tmpl.startTime,
+      endTime:     tmpl.endTime,
+      maxCapacity: tmpl.maxCapacity != null ? String(tmpl.maxCapacity) : '',
+    }));
+    setShowTmplPicker(false);
+  }
 
   async function handleSave() {
     if (!form.title.trim()) { setError('Title is required'); return; }
@@ -69,6 +89,39 @@ function ClassFormModal({
   return (
     <Modal title={event ? 'Edit Class' : 'New Class'} onClose={onClose}>
       <div className="flex flex-col gap-4">
+        {/* Template picker — only shown when creating a new class */}
+        {!event && templates.length > 0 && (
+          <div>
+            {showTmplPicker ? (
+              <div className="rounded-xl border border-brand-200 bg-brand-50/50 p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-semibold text-brand-700">Pick a template</span>
+                  <button onClick={() => setShowTmplPicker(false)} className="text-slate-400 hover:text-slate-600">
+                    <X size={13} />
+                  </button>
+                </div>
+                <div className="flex flex-col gap-1 max-h-40 overflow-y-auto">
+                  {templates.map(t => (
+                    <button key={t.id} onClick={() => applyTemplate(t)}
+                      className="flex items-center justify-between w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white hover:shadow-sm transition-all group">
+                      <span className="font-medium text-slate-700 group-hover:text-brand-600">{t.title}</span>
+                      <span className="text-xs text-slate-400">{t.startTime}–{t.endTime}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowTmplPicker(true)}
+                className="flex items-center gap-2 text-xs font-medium text-brand-600 hover:text-brand-700 px-3 py-2 rounded-lg border border-brand-200 bg-brand-50 hover:bg-brand-100 transition-colors w-full justify-center">
+                <BookTemplate size={13} />
+                Use a predefined template
+              </button>
+            )}
+          </div>
+        )}
+
         <Input label="Title *" value={form.title} onChange={e => set('title', e.target.value)}
           placeholder="e.g. Watercolour for Kids" autoFocus />
 
