@@ -34,18 +34,18 @@ async function resolveTenant(toNumber: string): Promise<{ id: string; type: stri
     console.warn('⚠️  whatsapp_number lookup failed (column may be missing):', e.message);
   }
 
-  // Fall back to TENANT_ID env var (single-tenant / dev setups)
-  const fallbackId = process.env.TENANT_ID;
-  if (fallbackId) {
-    try {
-      const fallback = await dbGet('SELECT id, type FROM tenants WHERE id = ?', fallbackId) as any;
-      if (fallback) return { id: fallback.id, type: (fallback.type || '').toLowerCase() };
-    } catch (e: any) {
-      console.warn('⚠️  TENANT_ID fallback lookup failed:', e.message);
-    }
+  // Fall back to TENANT_ID env var, then 'tenant-demo-001' (matches original agent behaviour)
+  const fallbackId = process.env.TENANT_ID || 'tenant-demo-001';
+  try {
+    const fallback = await dbGet('SELECT id, type FROM tenants WHERE id = ?', fallbackId) as any;
+    if (fallback) return { id: fallback.id, type: (fallback.type || '').toLowerCase() };
+  } catch (e: any) {
+    console.warn('⚠️  TENANT_ID fallback lookup failed:', e.message);
   }
 
-  return null;
+  // Absolute last resort — return the fallback ID with default type so the agent still runs
+  console.warn('⚠️  No tenant row found — running agent with fallback id:', fallbackId);
+  return { id: fallbackId, type: 'barbershop' };
 }
 
 // ---------------------------------------------------------------------------
