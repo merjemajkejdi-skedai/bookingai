@@ -3,10 +3,20 @@ import type { Specialist, ArtEvent, EventRegistration, EventTemplate } from './t
 
 const BASE = `${import.meta.env.VITE_API_URL || ''}/api`;
 
+function injectTenantId(path: string): string {
+  const raw = localStorage.getItem('bookingai_admin_tenant');
+  const user = JSON.parse(localStorage.getItem('bookingai_user') || 'null');
+  if (user?.role === 'super_admin' && raw) {
+    const { id } = JSON.parse(raw);
+    return path + (path.includes('?') ? '&' : '?') + `tenantId=${encodeURIComponent(id)}`;
+  }
+  return path;
+}
+
 async function req<T>(path: string, opts?: RequestInit): Promise<T> {
   const token = localStorage.getItem('bookingai_token');
   const { headers: extraHeaders, ...restOpts } = opts ?? {};
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${BASE}${injectTenantId(path)}`, {
     ...restOpts,
     headers: {
       'Content-Type': 'application/json',
