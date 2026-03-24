@@ -166,19 +166,35 @@ async function executeTool(
 
     case 'create_booking': {
       const { specialist_id, service_id, customer_name, starts_at, notes } = input as any;
+      console.log(`📅 create_booking called — tenant:${tenantId} specialist:${specialist_id} service:${service_id} starts_at:${starts_at} customer:${customer_name}`);
+
       const svc = await dbGet('SELECT duration_mins,name FROM services WHERE id=?', service_id) as any;
-      if (!svc) return JSON.stringify({ error: 'Service not found' });
+      if (!svc) {
+        console.error(`❌ create_booking: service not found id=${service_id}`);
+        return JSON.stringify({ error: 'Service not found' });
+      }
 
       const endsAt = format(new Date(new Date(starts_at).getTime() + svc.duration_mins * 60000), "yyyy-MM-dd'T'HH:mm:ss");
-      const conflict = await dbGet("SELECT id FROM bookings WHERE specialist_id=? AND status!='cancelled' AND LEFT(starts_at,19) < ? AND LEFT(ends_at,19) > ?", specialist_id, endsAt.slice(0, 19), starts_at.slice(0, 19));
+
+      // Conflict check — use SUBSTRING for cross-DB compat (PostgreSQL supports both LEFT and SUBSTRING)
+      const conflict = await dbGet(
+        "SELECT id FROM bookings WHERE specialist_id=? AND status!='cancelled' AND SUBSTRING(starts_at,1,19) < ? AND SUBSTRING(ends_at,1,19) > ?",
+        specialist_id, endsAt.slice(0, 19), starts_at.slice(0, 19)
+      );
       if (conflict) return JSON.stringify({ error: 'This slot was just taken. Please check availability again.' });
 
       const spec = await dbGet('SELECT name FROM specialists WHERE id=?', specialist_id) as any;
       const id = crypto.randomUUID();
-      await dbRun(
-        'INSERT INTO bookings(id,tenant_id,specialist_id,service_id,customer_name,customer_phone,starts_at,ends_at,status,notes) VALUES (?,?,?,?,?,?,?,?,?,?)',
-        id, tenantId, specialist_id, service_id, customer_name, customerPhone, starts_at, endsAt, 'confirmed', notes || ''
-      );
+      try {
+        await dbRun(
+          'INSERT INTO bookings(id,tenant_id,specialist_id,service_id,customer_name,customer_phone,starts_at,ends_at,status,notes,recurrence_rule) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+          id, tenantId, specialist_id, service_id, customer_name || 'Customer', customerPhone, starts_at, endsAt, 'confirmed', notes || '', 'none'
+        );
+        console.log(`✅ Booking created id=${id} tenant=${tenantId} starts_at=${starts_at}`);
+      } catch (insertErr: any) {
+        console.error(`❌ create_booking INSERT failed:`, insertErr.message);
+        return JSON.stringify({ error: `Failed to save booking: ${insertErr.message}` });
+      }
 
       return JSON.stringify({
         success: true, booking_id: id,
@@ -307,8 +323,10 @@ Never send one question per message.
 Once you have: name + service + specialist + date/time
 → Immediately call check_availability (do NOT ask permission first)
 → If the slot is free: show the summary and ask "Confirm? (Yes/No)" — ONE message
-→ If the customer says yes/po/ok/confirm → immediately call create_booking
-→ Send the confirmation. Done.
+→ If the customer says yes/po/ok/confirm/dakord/sure → YOU MUST call create_booking immediately.
+  DO NOT send any confirmation text without calling create_booking first.
+  The booking only exists after create_booking is called. Without calling the tool, nothing is saved.
+→ After create_booking returns success, THEN send the confirmation message. Done.
 
 If the requested slot is taken:
 → Pick 2-3 alternatives from check_availability results and offer them in ONE message
@@ -337,6 +355,8 @@ Customer says reschedule → call get_booking immediately
 - NEVER invent names, services, prices or durations — use the lists above only.
 - NEVER ask for confirmation more than once per booking.
 - If a slot is free and customer already said yes (or their first message implied confirmation) → book it.
+- NEVER send a booking confirmation text without first calling create_booking. The database is only updated when you call the tool — your text alone saves nothing.
+- If you see a conversation history showing a pre-booking summary and the customer just said yes/po/ok/dakord, you MUST call create_booking with the details from that summary before replying.
 
 === MESSAGE STYLE ===
 - Short and conversational — this is WhatsApp, not email
