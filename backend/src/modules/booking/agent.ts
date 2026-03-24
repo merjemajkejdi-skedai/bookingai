@@ -393,12 +393,13 @@ async function callClaudeWithRetry(
 const HAIKU_MODEL  = 'claude-haiku-4-5-20251001';
 const SONNET_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 
+// NOTE: agreement/confirmation words (yes/po/ok/confirm/dakord) are intentionally
+// excluded here — they look simple but trigger create_booking/cancel_booking tool
+// calls that Haiku handles unreliably. Only true greetings and sign-offs use Haiku.
 const SIMPLE_PATTERNS = [
-  /^(hi|hello|hey|hej|allo|pershendetje|miredita|mirembrema|mirenat)/i,
-  /^(po|yes|ok|okay|sipo|jo|no|nope|sure|confirm|konfirmoj|konfirmo|dakord)/i,
-  /^(faleminderit|thanks|thank you|ty|thx|mersi)/i,
-  /^(ok+|k|kk|👍|✅|done|mire|mire\s)/i,
-  /^(bye|ciao|mirupafshim|gjer|dag)/i,
+  /^(hi|hello|hey|hej|allo|pershendetje|miredita|mirembrema|mirenat)\b/i,
+  /^(faleminderit|thanks|thank you|ty|thx|mersi)\b/i,
+  /^(bye|ciao|mirupafshim|gjer|dag)\b/i,
 ];
 
 function pickModel(message: string): string {
