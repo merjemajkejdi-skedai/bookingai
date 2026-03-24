@@ -2,11 +2,12 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { runMigrations } from './db/database.js';
-import { router } from './routes/api.js';
 import { whatsappRouter } from './whatsapp/webhook.js';
 import { authRouter } from './routes/auth.js';
 import { adminRouter } from './routes/admin.js';
-import { eventsRouter } from './routes/events.js';
+import { bookingRouter } from './modules/booking/routes.js';
+import { artEventRouter } from './modules/art_event/routes.js';
+import { artClassRouter } from './modules/art_class/routes.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -24,8 +25,9 @@ app.get('/health', (_, res) => res.json({
   claude: !!process.env.CLAUDE_API_KEY,
 }));
 
-app.use('/api', router);
-app.use('/api', eventsRouter);
+app.use('/api', bookingRouter);
+app.use('/api', artEventRouter);
+app.use('/api', artClassRouter);
 app.use('/auth', authRouter);
 app.use('/admin', adminRouter);
 app.use('/whatsapp', whatsappRouter);
