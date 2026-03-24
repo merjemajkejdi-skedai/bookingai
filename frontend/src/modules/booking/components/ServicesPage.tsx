@@ -1,15 +1,22 @@
 import { useState } from 'react';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, FolderPlus, Tag } from 'lucide-react';
 import { Button, Modal, Input, Spinner } from '../ui';
 import { api } from '../api';
-import type { Service } from '../types';
+import type { Service, ServiceGroup } from '../types';
 import clsx from 'clsx';
 
 const COLORS = ['#6366f1','#8b5cf6','#f59e0b','#10b981','#ef4444','#ec4899','#3b82f6','#14b8a6'];
 
-interface Props { services: Service[]; loading: boolean; onRefresh: () => void; isSalon?: boolean; }
+interface Props {
+  services: Service[];
+  loading: boolean;
+  onRefresh: () => void;
+  isSalon?: boolean;
+  serviceGroups?: ServiceGroup[];
+  onGroupsRefresh?: () => void;
+}
 
-export function ServicesPage({ services, loading, onRefresh }: Props) {
+export function ServicesPage({ services, loading, onRefresh, isSalon, serviceGroups = [], onGroupsRefresh }: Props) {
   const [editing, setEditing] = useState<Service | null>(null);
   const [adding, setAdding] = useState(false);
 
@@ -21,8 +28,17 @@ export function ServicesPage({ services, loading, onRefresh }: Props) {
     onRefresh();
   }
 
+  function getGroupName(groupId?: string | null) {
+    if (!groupId) return null;
+    return serviceGroups.find(g => g.id === groupId)?.name ?? null;
+  }
+
   return (
     <div className="p-6 max-w-3xl mx-auto">
+      {isSalon && onGroupsRefresh && (
+        <ServiceGroupsSection serviceGroups={serviceGroups} onRefresh={onGroupsRefresh} />
+      )}
+
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-semibold">Services</h1>
@@ -42,25 +58,36 @@ export function ServicesPage({ services, loading, onRefresh }: Props) {
       </div>
 
       <div className="grid gap-2">
-        {services.map(svc => (
-          <div key={svc.id} className="bg-white rounded-xl border border-slate-200 px-4 py-3.5 flex items-center gap-4">
-            <div className="w-1 self-stretch rounded-full flex-shrink-0" style={{ background: svc.color }} />
-            <div className="flex-1 min-w-0">
-              <p className="font-medium text-slate-800">{svc.name}</p>
-              <div className="flex items-center gap-3 mt-0.5">
-                <span className="text-xs text-slate-400">{svc.durationMins} min</span>
-                <span className="text-xs text-slate-300">·</span>
-                <span className="text-xs font-medium text-slate-600">{(svc.price / 100).toFixed(0)} ALL</span>
+        {services.map(svc => {
+          const groupName = getGroupName(svc.groupId);
+          return (
+            <div key={svc.id} className="bg-white rounded-xl border border-slate-200 px-4 py-3.5 flex items-center gap-4">
+              <div className="w-1 self-stretch rounded-full flex-shrink-0" style={{ background: svc.color }} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="font-medium text-slate-800">{svc.name}</p>
+                  {groupName && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-violet-100 text-violet-700">
+                      <Tag size={10} />
+                      {groupName}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-3 mt-0.5">
+                  <span className="text-xs text-slate-400">{svc.durationMins} min</span>
+                  <span className="text-xs text-slate-300">·</span>
+                  <span className="text-xs font-medium text-slate-600">{(svc.price / 100).toFixed(0)} ALL</span>
+                </div>
+              </div>
+              <div className="flex gap-1">
+                <Button variant="ghost" size="sm" onClick={() => setEditing(svc)}><Pencil size={13} /></Button>
+                <Button variant="ghost" size="sm" onClick={() => remove(svc.id)}>
+                  <Trash2 size={13} className="text-red-400" />
+                </Button>
               </div>
             </div>
-            <div className="flex gap-1">
-              <Button variant="ghost" size="sm" onClick={() => setEditing(svc)}><Pencil size={13} /></Button>
-              <Button variant="ghost" size="sm" onClick={() => remove(svc.id)}>
-                <Trash2 size={13} className="text-red-400" />
-              </Button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
         {services.length === 0 && (
           <div className="text-center py-12 text-slate-400">
             <p className="text-sm">No services yet.</p>
@@ -72,9 +99,104 @@ export function ServicesPage({ services, loading, onRefresh }: Props) {
       {(adding || editing) && (
         <ServiceForm
           service={editing}
+          serviceGroups={serviceGroups}
           onClose={() => { setAdding(false); setEditing(null); }}
           onSaved={() => { setAdding(false); setEditing(null); onRefresh(); }}
         />
+      )}
+    </div>
+  );
+}
+
+function ServiceGroupsSection({ serviceGroups, onRefresh }: { serviceGroups: ServiceGroup[]; onRefresh: () => void }) {
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [editingGroup, setEditingGroup] = useState<ServiceGroup | null>(null);
+  const [editName, setEditName] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function addGroup() {
+    if (!newName.trim()) return;
+    setSaving(true);
+    try {
+      await api.createServiceGroup({ name: newName.trim() });
+      setNewName('');
+      setAdding(false);
+      onRefresh();
+    } finally { setSaving(false); }
+  }
+
+  async function saveEdit() {
+    if (!editingGroup || !editName.trim()) return;
+    setSaving(true);
+    try {
+      await api.updateServiceGroup(editingGroup.id, { name: editName.trim() });
+      setEditingGroup(null);
+      onRefresh();
+    } finally { setSaving(false); }
+  }
+
+  async function deleteGroup(id: string) {
+    if (!confirm('Delete this group? Services in this group will be ungrouped.')) return;
+    await api.deleteServiceGroup(id);
+    onRefresh();
+  }
+
+  return (
+    <div className="mb-8">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-base font-semibold text-slate-700">Service Groups</h2>
+        <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
+          <FolderPlus size={13} /> Add group
+        </Button>
+      </div>
+      <div className="flex flex-wrap gap-2 mb-3">
+        {serviceGroups.map(g => (
+          <div key={g.id} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-slate-200 bg-white text-sm text-slate-700">
+            {editingGroup?.id === g.id ? (
+              <>
+                <input
+                  autoFocus
+                  value={editName}
+                  onChange={e => setEditName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditingGroup(null); }}
+                  className="border-b border-slate-300 focus:outline-none text-sm w-28"
+                />
+                <button onClick={saveEdit} disabled={saving} className="text-brand-600 text-xs font-medium hover:underline">
+                  {saving ? '…' : 'Save'}
+                </button>
+                <button onClick={() => setEditingGroup(null)} className="text-slate-400 text-xs hover:underline">Cancel</button>
+              </>
+            ) : (
+              <>
+                <span>{g.name}</span>
+                <button onClick={() => { setEditingGroup(g); setEditName(g.name); }} className="text-slate-400 hover:text-slate-600 ml-1">
+                  <Pencil size={11} />
+                </button>
+                <button onClick={() => deleteGroup(g.id)} className="text-red-300 hover:text-red-500">
+                  <Trash2 size={11} />
+                </button>
+              </>
+            )}
+          </div>
+        ))}
+        {serviceGroups.length === 0 && !adding && (
+          <p className="text-sm text-slate-400">No groups yet.</p>
+        )}
+      </div>
+      {adding && (
+        <div className="flex items-center gap-2 mt-2">
+          <input
+            autoFocus
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') addGroup(); if (e.key === 'Escape') { setAdding(false); setNewName(''); } }}
+            placeholder="Group name…"
+            className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400/40 focus:border-brand-400"
+          />
+          <Button size="sm" onClick={addGroup} disabled={saving}>{saving ? 'Adding…' : 'Add'}</Button>
+          <Button size="sm" variant="ghost" onClick={() => { setAdding(false); setNewName(''); }}>Cancel</Button>
+        </div>
       )}
     </div>
   );
@@ -89,13 +211,17 @@ function StatCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ServiceForm({ service, onClose, onSaved }: {
-  service?: Service | null; onClose: () => void; onSaved: () => void;
+function ServiceForm({ service, serviceGroups, onClose, onSaved }: {
+  service?: Service | null;
+  serviceGroups: ServiceGroup[];
+  onClose: () => void;
+  onSaved: () => void;
 }) {
   const [name, setName] = useState(service?.name ?? '');
   const [durationMins, setDurationMins] = useState(String(service?.durationMins ?? 30));
   const [price, setPrice] = useState(String(service?.price ?? 1000));
   const [color, setColor] = useState(service?.color ?? COLORS[0]);
+  const [groupId, setGroupId] = useState<string>(service?.groupId ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -105,7 +231,14 @@ function ServiceForm({ service, onClose, onSaved }: {
     if (!name.trim()) { setError('Name is required'); return; }
     setSaving(true);
     try {
-      const data = { name, durationMins: parseInt(durationMins), price: parseInt(price), color, isActive: true };
+      const data = {
+        name,
+        durationMins: parseInt(durationMins),
+        price: parseInt(price),
+        color,
+        isActive: true,
+        groupId: groupId || null,
+      };
       if (service) { await api.updateService(service.id, data); }
       else { await api.createService({ ...data }); }
       onSaved();
@@ -117,6 +250,22 @@ function ServiceForm({ service, onClose, onSaved }: {
     <Modal title={service ? 'Edit service' : 'New service'} onClose={onClose}>
       <div className="space-y-4">
         <Input label="Service name" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Haircut + Beard" />
+
+        {serviceGroups.length > 0 && (
+          <div className="flex flex-col gap-1 text-sm">
+            <label className="font-medium text-slate-700">Group</label>
+            <select
+              value={groupId}
+              onChange={e => setGroupId(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400/40 focus:border-brand-400 bg-white"
+            >
+              <option value="">— No group —</option>
+              {serviceGroups.map(g => (
+                <option key={g.id} value={g.id}>{g.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div className="flex flex-col gap-1 text-sm">
           <label className="font-medium text-slate-700">Duration</label>

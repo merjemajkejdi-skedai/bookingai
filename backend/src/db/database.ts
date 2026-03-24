@@ -136,6 +136,12 @@ const SCHEMA = `
     id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL,
     name TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0
   );
+  CREATE TABLE IF NOT EXISTS specialist_skills (
+    specialist_id TEXT NOT NULL,
+    service_group_id TEXT NOT NULL,
+    tenant_id TEXT NOT NULL,
+    PRIMARY KEY (specialist_id, service_group_id)
+  );
   CREATE TABLE IF NOT EXISTS services (
     id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, name TEXT NOT NULL,
     duration_mins INTEGER NOT NULL DEFAULT 30, price REAL NOT NULL DEFAULT 0,
@@ -225,6 +231,7 @@ export async function runMigrations() {
       `ALTER TABLE tenants  ADD COLUMN IF NOT EXISTS billing_email TEXT NOT NULL DEFAULT ''`,
       `ALTER TABLE art_events ADD COLUMN IF NOT EXISTS price INTEGER NOT NULL DEFAULT 0`,
       `ALTER TABLE event_templates ADD COLUMN IF NOT EXISTS price INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE specialists ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT ''`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));

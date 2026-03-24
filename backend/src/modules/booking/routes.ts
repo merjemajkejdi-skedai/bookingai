@@ -66,6 +66,15 @@ bookingRouter.get('/specialists', requireAuth, async (req: Request, res: Respons
         GROUP BY s.id ORDER BY s.name
       `).all(tenantId);
     }
+    const skillRows = await dbAll(
+      'SELECT sk.specialist_id, sk.service_group_id FROM specialist_skills sk JOIN specialists s ON s.id = sk.specialist_id WHERE s.tenant_id=?',
+      tenantId
+    ) as any[];
+    const skillMap = new Map<string, string[]>();
+    for (const sk of skillRows) {
+      if (!skillMap.has(sk.specialist_id)) skillMap.set(sk.specialist_id, []);
+      skillMap.get(sk.specialist_id)!.push(sk.service_group_id);
+    }
     const data = rows.map((r: any) => {
       const wh = isPg
         ? (r.working_hours_json || [])
@@ -73,6 +82,7 @@ bookingRouter.get('/specialists', requireAuth, async (req: Request, res: Respons
       return {
         id: r.id, tenantId: r.tenant_id, name: r.name,
         role: r.role, color: r.color, isActive: !!r.is_active, createdAt: r.created_at,
+        serviceGroupIds: skillMap.get(r.id) || [],
         workingHours: wh.filter((w: any) => w.id).map((w: any) => ({
           id: w.id, specialistId: r.id, dayOfWeek: w.dayOfWeek,
           startTime: w.startTime, endTime: w.endTime, isWorking: !!w.isWorking,
@@ -86,8 +96,10 @@ bookingRouter.get('/specialists', requireAuth, async (req: Request, res: Respons
 bookingRouter.post('/specialists', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
   const parsed = z.object({
-    name: z.string().min(1), role: z.string().default('Specialist'),
-    color: z.string().default('#6366f1'),
+    name: z.string().min(1),
+    role: z.string().optional().default(''),
+    color: z.string().optional().default('#6366f1'),
+    serviceGroupIds: z.array(z.string()).optional().default([]),
   }).safeParse(req.body);
   if (!parsed.success) return err(res, parsed.error.message);
 
@@ -103,14 +115,25 @@ bookingRouter.post('/specialists', requireAuth, async (req: Request, res: Respon
         uuid(), id, day, '09:00', '19:00', day === 0 ? 0 : 1
       );
     }
+    if (isPg) {
+      for (const sgId of parsed.data.serviceGroupIds ?? []) {
+        await dbRun('INSERT INTO specialist_skills(specialist_id,service_group_id,tenant_id) VALUES(?,?,?) ON CONFLICT DO NOTHING', id, sgId, tenantId);
+      }
+    } else {
+      for (const sgId of parsed.data.serviceGroupIds ?? []) {
+        await dbRun('INSERT OR IGNORE INTO specialist_skills(specialist_id,service_group_id,tenant_id) VALUES(?,?,?)', id, sgId, tenantId);
+      }
+    }
     ok(res, await dbGet('SELECT * FROM specialists WHERE id = ?', id));
   } catch (e: any) { err(res, e.message, 500); }
 });
 
 bookingRouter.put('/specialists/:id', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
   const parsed = z.object({
     name: z.string().min(1).optional(), role: z.string().optional(),
     color: z.string().optional(), isActive: z.boolean().optional(),
+    serviceGroupIds: z.array(z.string()).optional(),
   }).safeParse(req.body);
   if (!parsed.success) return err(res, parsed.error.message);
   const { name, role, color, isActive } = parsed.data;
@@ -119,6 +142,20 @@ bookingRouter.put('/specialists/:id', requireAuth, async (req: Request, res: Res
       'UPDATE specialists SET name=COALESCE(?,name),role=COALESCE(?,role),color=COALESCE(?,color),is_active=COALESCE(?,is_active) WHERE id=?',
       name ?? null, role ?? null, color ?? null, isActive !== undefined ? (isActive ? 1 : 0) : null, req.params.id
     );
+    if (parsed.data.serviceGroupIds !== undefined) {
+      await dbRun('DELETE FROM specialist_skills WHERE specialist_id=?', req.params.id);
+      if (isPg) {
+        for (const sgId of parsed.data.serviceGroupIds) {
+          await dbRun('INSERT INTO specialist_skills(specialist_id,service_group_id,tenant_id) VALUES(?,?,?) ON CONFLICT DO NOTHING',
+            req.params.id, sgId, tenantId);
+        }
+      } else {
+        for (const sgId of parsed.data.serviceGroupIds) {
+          await dbRun('INSERT OR IGNORE INTO specialist_skills(specialist_id,service_group_id,tenant_id) VALUES(?,?,?)',
+            req.params.id, sgId, tenantId);
+        }
+      }
+    }
     ok(res, await dbGet('SELECT * FROM specialists WHERE id = ?', req.params.id));
   } catch (e: any) { err(res, e.message, 500); }
 });

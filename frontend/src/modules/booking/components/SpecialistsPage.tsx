@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Plus, Pencil, Clock } from 'lucide-react';
+import { Plus, Pencil, Clock, Tag } from 'lucide-react';
 import { Button, Modal, Input, Spinner } from '../ui';
 import { api } from '../api';
-import type { Specialist } from '../types';
+import type { Specialist, ServiceGroup } from '../types';
 import clsx from 'clsx';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -13,9 +13,11 @@ interface Props {
   loading: boolean;
   onRefresh: () => void;
   label?: string;
+  isSalon?: boolean;
+  serviceGroups?: ServiceGroup[];
 }
 
-export function SpecialistsPage({ specialists, loading, onRefresh, label = 'Specialists' }: Props) {
+export function SpecialistsPage({ specialists, loading, onRefresh, label = 'Specialists', isSalon, serviceGroups = [] }: Props) {
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState<Specialist | null>(null);
   const [editingHours, setEditingHours] = useState<Specialist | null>(null);
@@ -33,39 +35,54 @@ export function SpecialistsPage({ specialists, loading, onRefresh, label = 'Spec
       </div>
 
       <div className="grid gap-3">
-        {specialists.map(sp => (
-          <div key={sp.id} className="bg-white rounded-xl border border-slate-200 px-5 py-4 flex items-center gap-4">
-            <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0"
-              style={{ background: sp.color }}>
-              {sp.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+        {specialists.map(sp => {
+          const skillGroups = isSalon
+            ? serviceGroups.filter(g => sp.serviceGroupIds?.includes(g.id))
+            : [];
+          return (
+            <div key={sp.id} className="bg-white rounded-xl border border-slate-200 px-5 py-4 flex items-center gap-4">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0"
+                style={{ background: sp.color }}>
+                {sp.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-slate-800">{sp.name}</p>
+                <p className="text-sm text-slate-400">{sp.role}</p>
+                {isSalon && skillGroups.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {skillGroups.map(g => (
+                      <span key={g.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-violet-100 text-violet-700">
+                        <Tag size={10} />
+                        {g.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="hidden sm:flex gap-1">
+                {DAYS.map((d, i) => {
+                  const wh = sp.workingHours?.find(h => h.dayOfWeek === i);
+                  return (
+                    <span key={d} className={clsx(
+                      'w-7 h-7 rounded-md text-xs flex items-center justify-center font-medium',
+                      wh?.isWorking ? 'bg-brand-50 text-brand-600' : 'bg-slate-50 text-slate-300'
+                    )}>
+                      {d[0]}
+                    </span>
+                  );
+                })}
+              </div>
+              <div className="flex gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setEditingHours(sp)}>
+                  <Clock size={13} /> Hours
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setEditing(sp)}>
+                  <Pencil size={13} /> Edit
+                </Button>
+              </div>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-medium text-slate-800">{sp.name}</p>
-              <p className="text-sm text-slate-400">{sp.role}</p>
-            </div>
-            <div className="hidden sm:flex gap-1">
-              {DAYS.map((d, i) => {
-                const wh = sp.workingHours?.find(h => h.dayOfWeek === i);
-                return (
-                  <span key={d} className={clsx(
-                    'w-7 h-7 rounded-md text-xs flex items-center justify-center font-medium',
-                    wh?.isWorking ? 'bg-brand-50 text-brand-600' : 'bg-slate-50 text-slate-300'
-                  )}>
-                    {d[0]}
-                  </span>
-                );
-              })}
-            </div>
-            <div className="flex gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setEditingHours(sp)}>
-                <Clock size={13} /> Hours
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => setEditing(sp)}>
-                <Pencil size={13} /> Edit
-              </Button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
         {specialists.length === 0 && (
           <div className="text-center py-12 text-slate-400">
             <p className="text-sm">No {label.toLowerCase()} yet.</p>
@@ -80,6 +97,8 @@ export function SpecialistsPage({ specialists, loading, onRefresh, label = 'Spec
         <SpecialistForm
           specialist={editing}
           label={label}
+          isSalon={isSalon}
+          serviceGroups={serviceGroups}
           onClose={() => { setShowAdd(false); setEditing(null); }}
           onSaved={() => { setShowAdd(false); setEditing(null); onRefresh(); }}
         />
@@ -96,23 +115,35 @@ export function SpecialistsPage({ specialists, loading, onRefresh, label = 'Spec
   );
 }
 
-function SpecialistForm({ specialist, label, onClose, onSaved }: {
-  specialist?: Specialist | null; label: string; onClose: () => void; onSaved: () => void;
+function SpecialistForm({ specialist, label, isSalon, serviceGroups, onClose, onSaved }: {
+  specialist?: Specialist | null;
+  label: string;
+  isSalon?: boolean;
+  serviceGroups: ServiceGroup[];
+  onClose: () => void;
+  onSaved: () => void;
 }) {
   const [name, setName] = useState(specialist?.name ?? '');
   const [role, setRole] = useState(specialist?.role ?? '');
   const [color, setColor] = useState(specialist?.color ?? COLORS[0]);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>(specialist?.serviceGroupIds ?? []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  function toggleGroup(groupId: string) {
+    setSelectedGroupIds(prev =>
+      prev.includes(groupId) ? prev.filter(id => id !== groupId) : [...prev, groupId]
+    );
+  }
 
   async function save() {
     if (!name.trim()) { setError('Name is required'); return; }
     setSaving(true);
     try {
       if (specialist) {
-        await api.updateSpecialist(specialist.id, { name, role, color });
+        await api.updateSpecialist(specialist.id, { name, role, color, serviceGroupIds: selectedGroupIds });
       } else {
-        await api.createSpecialist({ name, role, color, tenantId: '', isActive: true });
+        await api.createSpecialist({ name, role, color, tenantId: '', isActive: true, serviceGroupIds: selectedGroupIds });
       }
       onSaved();
     } catch (e: any) { setError(e.message); }
@@ -124,7 +155,27 @@ function SpecialistForm({ specialist, label, onClose, onSaved }: {
     <Modal title={specialist ? `Edit ${singular.toLowerCase()}` : `Add ${singular.toLowerCase()}`} onClose={onClose}>
       <div className="space-y-4">
         <Input label="Full name" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Gentian Hoxha" />
-        <Input label="Role / title" value={role} onChange={e => setRole(e.target.value)} placeholder="e.g. Senior Barber" />
+        <Input label="Role / title" value={role} onChange={e => setRole(e.target.value)} placeholder="e.g. Senior Stylist" />
+
+        {isSalon && serviceGroups.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <span className="text-sm font-medium text-slate-700">Skills</span>
+            <div className="flex flex-col gap-1.5">
+              {serviceGroups.map(g => (
+                <label key={g.id} className="flex items-center gap-2.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={selectedGroupIds.includes(g.id)}
+                    onChange={() => toggleGroup(g.id)}
+                    className="w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400"
+                  />
+                  <span className="text-sm text-slate-700">{g.name}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="flex flex-col gap-2">
           <span className="text-sm font-medium text-slate-700">Calendar color</span>
           <div className="flex gap-2 flex-wrap">

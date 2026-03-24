@@ -3,7 +3,7 @@ import { Calendar, Users, Scissors, Shield, LogOut } from 'lucide-react';
 import { format, startOfWeek, endOfWeek, addWeeks } from 'date-fns';
 import clsx from 'clsx';
 import { api } from './api';
-import type { Booking, Specialist, Service } from './types';
+import type { Booking, Specialist, Service, ServiceGroup } from './types';
 import { CalendarView } from './components/CalendarView';
 import { BookingModal } from './components/BookingModal';
 import { SpecialistsPage } from './components/SpecialistsPage';
@@ -23,6 +23,7 @@ export function BookingModule({ onLogout }: Props) {
   const [page, setPage] = useState<Page>('calendar');
   const [specialists, setSpecialists] = useState<Specialist[]>([]);
   const [services, setServices] = useState<Service[]>([]);
+  const [serviceGroups, setServiceGroups] = useState<ServiceGroup[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [bookingsLoading, setBookingsLoading] = useState(false);
@@ -36,8 +37,8 @@ export function BookingModule({ onLogout }: Props) {
   }>({ open: false });
 
   useEffect(() => {
-    Promise.all([api.getSpecialists(), api.getServices()])
-      .then(([specs, svcs]) => { setSpecialists(specs); setServices(svcs); })
+    Promise.all([api.getSpecialists(), api.getServices(), api.getServiceGroups()])
+      .then(([specs, svcs, groups]) => { setSpecialists(specs); setServices(svcs); setServiceGroups(groups); })
       .finally(() => setLoading(false));
   }, []);
 
@@ -196,6 +197,8 @@ export function BookingModule({ onLogout }: Props) {
             loading={loading}
             onRefresh={() => api.getSpecialists().then(setSpecialists)}
             label={specialistLabel}
+            isSalon={isSalon}
+            serviceGroups={serviceGroups}
           />
         )}
         {page === 'services' && (
@@ -204,6 +207,8 @@ export function BookingModule({ onLogout }: Props) {
             loading={loading}
             onRefresh={() => api.getServices().then(setServices)}
             isSalon={isSalon}
+            serviceGroups={serviceGroups}
+            onGroupsRefresh={() => api.getServiceGroups().then(setServiceGroups)}
           />
         )}
         {page === 'admin' && <AdminPage />}

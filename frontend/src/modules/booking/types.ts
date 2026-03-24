@@ -2,6 +2,7 @@ export interface Specialist {
   id: string; tenantId: string; name: string; role: string;
   color: string; isActive: boolean; createdAt: string;
   workingHours: WorkingHours[];
+  serviceGroupIds: string[];
 }
 export interface WorkingHours {
   id: string; specialistId: string; dayOfWeek: number;
