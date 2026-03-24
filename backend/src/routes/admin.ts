@@ -72,12 +72,14 @@ adminRouter.post('/tenants', async (req: Request, res: Response) => {
 
 // PUT /admin/tenants/:id
 adminRouter.put('/tenants/:id', async (req: Request, res: Response) => {
-  const { name, whatsappNumber, plan, isActive, billingEmail, type, timezone } = req.body;
+  const { name, whatsappNumber, plan, isActive, billingEmail, type, timezone, hasAnalytics } = req.body;
   await dbRun(
-    'UPDATE tenants SET name=COALESCE(?,name),whatsapp_number=COALESCE(?,whatsapp_number),plan=COALESCE(?,plan),is_active=COALESCE(?,is_active),billing_email=COALESCE(?,billing_email),type=COALESCE(?,type),timezone=COALESCE(?,timezone) WHERE id=?',
+    'UPDATE tenants SET name=COALESCE(?,name),whatsapp_number=COALESCE(?,whatsapp_number),plan=COALESCE(?,plan),is_active=COALESCE(?,is_active),billing_email=COALESCE(?,billing_email),type=COALESCE(?,type),timezone=COALESCE(?,timezone),has_analytics=COALESCE(?,has_analytics) WHERE id=?',
     name??null, whatsappNumber??null, plan??null,
     isActive !== undefined ? (isActive?1:0) : null,
-    billingEmail??null, type??null, timezone??null, req.params.id
+    billingEmail??null, type??null, timezone??null,
+    hasAnalytics !== undefined ? (hasAnalytics ? 1 : 0) : null,
+    req.params.id
   );
   ok(res, await dbGet('SELECT * FROM tenants WHERE id=?', req.params.id));
 });

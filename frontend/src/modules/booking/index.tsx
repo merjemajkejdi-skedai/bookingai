@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Calendar, Users, Scissors, Shield, LogOut } from 'lucide-react';
+import { Calendar, Users, Scissors, Shield, LogOut, BarChart2 } from 'lucide-react';
 import { format, startOfWeek, endOfWeek, addWeeks } from 'date-fns';
 import clsx from 'clsx';
 import { api } from './api';
@@ -8,10 +8,11 @@ import { CalendarView } from './components/CalendarView';
 import { BookingModal } from './components/BookingModal';
 import { SpecialistsPage } from './components/SpecialistsPage';
 import { ServicesPage } from './components/ServicesPage';
+import { AnalyticsPage } from './components/AnalyticsPage';
 import { AdminPage } from '../../pages/AdminPage';
 import { isAdmin, getStoredUser, getAdminTenant, clearAuth } from '../../shared/lib/auth';
 
-type Page = 'calendar' | 'specialists' | 'services' | 'admin';
+type Page = 'calendar' | 'specialists' | 'services' | 'admin' | 'analytics';
 interface Props { onLogout: () => void; }
 
 export function BookingModule({ onLogout }: Props) {
@@ -20,6 +21,8 @@ export function BookingModule({ onLogout }: Props) {
   const tenantType = (getAdminTenant()?.type ?? currentUser?.tenant?.type ?? '').toLowerCase();
   const specialistLabel = tenantType.includes('barber') ? 'Barbers' : 'Specialists';
   const isSalon = /salon|saloon/i.test(tenantType);
+  const isAdminView = currentUser?.role === 'super_admin';
+  const hasAnalytics = isAdminView || !!currentUser?.tenant?.hasAnalytics;
 
   const [page, setPage] = useState<Page>('calendar');
   const [specialists, setSpecialists] = useState<Specialist[]>([]);
@@ -77,6 +80,7 @@ export function BookingModule({ onLogout }: Props) {
     { id: 'calendar',    label: 'Calendar',        icon: <Calendar size={16} /> },
     { id: 'specialists', label: specialistLabel,    icon: <Users size={16} /> },
     { id: 'services',    label: 'Services',         icon: <Scissors size={16} /> },
+    ...(hasAnalytics ? [{ id: 'analytics' as Page, label: 'Analytics', icon: <BarChart2 size={16} /> }] : []),
     ...(isAdmin() ? [{ id: 'admin' as Page, label: 'Admin', icon: <Shield size={16} /> }] : []),
   ];
 
@@ -212,6 +216,7 @@ export function BookingModule({ onLogout }: Props) {
             onGroupsRefresh={() => api.getServiceGroups().then(setServiceGroups)}
           />
         )}
+        {page === 'analytics' && <AnalyticsPage isSalon={isSalon} />}
         {page === 'admin' && <AdminPage />}
       </main>
 

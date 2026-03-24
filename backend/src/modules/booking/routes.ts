@@ -517,3 +517,83 @@ bookingRouter.get('/availability/suggest', requireAuth, async (req: Request, res
     ok(res, await suggestNextSlots(specialistId, fromDate, parseInt(durationMins), parseInt(count || '3')));
   } catch (e: any) { err(res, e.message, 500); }
 });
+
+// ── ANALYTICS ──────────────────────────────────────────────────────────────
+bookingRouter.get('/analytics/booking', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const from = (req.query.from as string) || format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), 'yyyy-MM-dd');
+  const to   = (req.query.to   as string) || format(new Date(), 'yyyy-MM-dd');
+
+  try {
+    // Overview
+    const overview = await dbGet(`
+      SELECT COUNT(b.id) AS total_bookings,
+             COALESCE(SUM(sv.price), 0) AS total_revenue
+      FROM bookings b
+      JOIN services sv ON sv.id = b.service_id
+      WHERE b.tenant_id=? AND b.status='confirmed'
+        AND DATE(b.starts_at) >= ? AND DATE(b.starts_at) <= ?
+    `, tenantId, from, to) as any;
+
+    // By specialist
+    const bySpecialist = await dbAll(`
+      SELECT sp.id, sp.name, sp.color,
+             COUNT(b.id) AS bookings,
+             COALESCE(SUM(sv.price), 0) AS revenue
+      FROM bookings b
+      JOIN specialists sp ON sp.id = b.specialist_id
+      JOIN services sv ON sv.id = b.service_id
+      WHERE b.tenant_id=? AND b.status='confirmed'
+        AND DATE(b.starts_at) >= ? AND DATE(b.starts_at) <= ?
+      GROUP BY sp.id, sp.name, sp.color
+      ORDER BY revenue DESC
+    `, tenantId, from, to) as any[];
+
+    // By service
+    const byService = await dbAll(`
+      SELECT sv.id, sv.name, sv.color,
+             COUNT(b.id) AS bookings,
+             COALESCE(SUM(sv.price), 0) AS revenue
+      FROM bookings b
+      JOIN services sv ON sv.id = b.service_id
+      WHERE b.tenant_id=? AND b.status='confirmed'
+        AND DATE(b.starts_at) >= ? AND DATE(b.starts_at) <= ?
+      GROUP BY sv.id, sv.name, sv.color
+      ORDER BY revenue DESC
+    `, tenantId, from, to) as any[];
+
+    // By service group (saloon)
+    const byServiceGroup = await dbAll(`
+      SELECT sg.id, sg.name,
+             COUNT(b.id) AS bookings,
+             COALESCE(SUM(sv.price), 0) AS revenue
+      FROM bookings b
+      JOIN services sv ON sv.id = b.service_id
+      JOIN service_groups sg ON sg.id = sv.group_id
+      WHERE b.tenant_id=? AND b.status='confirmed'
+        AND DATE(b.starts_at) >= ? AND DATE(b.starts_at) <= ?
+      GROUP BY sg.id, sg.name
+      ORDER BY revenue DESC
+    `, tenantId, from, to) as any[];
+
+    ok(res, {
+      from, to,
+      overview: {
+        totalBookings: Number(overview?.total_bookings ?? 0),
+        totalRevenue:  Number(overview?.total_revenue ?? 0),
+      },
+      bySpecialist: (bySpecialist as any[]).map(r => ({
+        id: r.id, name: r.name, color: r.color,
+        bookings: Number(r.bookings), revenue: Number(r.revenue),
+      })),
+      byService: (byService as any[]).map(r => ({
+        id: r.id, name: r.name, color: r.color,
+        bookings: Number(r.bookings), revenue: Number(r.revenue),
+      })),
+      byServiceGroup: (byServiceGroup as any[]).map(r => ({
+        id: r.id, name: r.name,
+        bookings: Number(r.bookings), revenue: Number(r.revenue),
+      })),
+    });
+  } catch (e: any) { err(res, e.message, 500); }
+});

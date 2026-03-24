@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Pencil, RefreshCw, Power, Phone, ExternalLink } from 'lucide-react';
+import { Plus, Pencil, RefreshCw, Power, Phone, ExternalLink, BarChart2 } from 'lucide-react';
 import { adminApi } from '../shared/lib/auth';
 import type { AdminTenant } from '../shared/lib/auth';
 import { Button, Modal, Input, Select, Spinner } from '../components/ui';
@@ -116,6 +116,13 @@ export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) 
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => toggleActive(t)}>
                   <Power size={13} className={t.is_active ? 'text-green-500' : 'text-slate-300'} />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => adminApi.updateTenant(t.id, { hasAnalytics: !t.has_analytics }).then(load)}
+                  title={t.has_analytics ? 'Disable analytics' : 'Enable analytics'}>
+                  <BarChart2 size={13} className={t.has_analytics ? 'text-brand-500' : 'text-slate-300'} />
                 </Button>
               </div>
             </div>

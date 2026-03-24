@@ -232,6 +232,7 @@ export async function runMigrations() {
       `ALTER TABLE art_events ADD COLUMN IF NOT EXISTS price INTEGER NOT NULL DEFAULT 0`,
       `ALTER TABLE event_templates ADD COLUMN IF NOT EXISTS price INTEGER NOT NULL DEFAULT 0`,
       `ALTER TABLE specialists ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT ''`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS has_analytics INTEGER NOT NULL DEFAULT 0`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -283,6 +284,7 @@ export async function runMigrations() {
     ['plan',            "plan TEXT NOT NULL DEFAULT 'starter'"],
     ['is_active',       'is_active INTEGER NOT NULL DEFAULT 1'],
     ['billing_email',   "billing_email TEXT NOT NULL DEFAULT ''"],
+    ['has_analytics',   'has_analytics INTEGER NOT NULL DEFAULT 0'],
   ] as [string,string][]) {
     if (!cols.includes(col)) exec(`ALTER TABLE tenants ADD COLUMN ${def}`);
   }

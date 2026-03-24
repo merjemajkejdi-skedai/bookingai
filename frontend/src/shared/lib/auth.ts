@@ -24,7 +24,7 @@ export interface AuthUser {
   email: string;
   role: 'super_admin' | 'shop_owner';
   tenantId: string | null;
-  tenant?: { name: string; type: string; plan: string } | null;
+  tenant?: { name: string; type: string; plan: string; hasAnalytics?: boolean } | null;
 }
 
 export function getToken(): string | null {

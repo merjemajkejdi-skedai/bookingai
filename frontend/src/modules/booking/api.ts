@@ -82,4 +82,7 @@ export const api = {
     req<TimeSlot[]>(
       `/availability/suggest?specialistId=${specialistId}&fromDate=${fromDate}&durationMins=${durationMins}`
     ),
+
+  getAnalytics: (from: string, to: string) =>
+    req<any>(`/analytics/booking?from=${from}&to=${to}`),
 };

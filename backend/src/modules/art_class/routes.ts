@@ -4,7 +4,8 @@
 
 import { Router, Request, Response } from 'express';
 import { isPg, prepare, query, queryOne, queryRun } from '../../db/database.js';
-import { requireAuth } from '../../middleware/auth.js';
+import { requireAuth, resolveTenantId } from '../../middleware/auth.js';
+import { format } from 'date-fns';
 
 export const artClassRouter = Router();
 
@@ -275,5 +276,83 @@ artClassRouter.delete('/event-templates/:id', requireAuth, async (req: Request, 
   try {
     await dbRun('DELETE FROM event_templates WHERE id=?', id);
     ok(res, { deleted: true });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// ── ANALYTICS ──────────────────────────────────────────────────────────────
+artClassRouter.get('/analytics/art-class', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const from = (req.query.from as string) || format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), 'yyyy-MM-dd');
+  const to   = (req.query.to   as string) || format(new Date(), 'yyyy-MM-dd');
+
+  try {
+    // Overview
+    const overview = await dbGet(`
+      SELECT COUNT(r.id) AS total_participants,
+             COALESCE(SUM(e.price), 0) AS total_revenue
+      FROM event_registrations r
+      JOIN art_events e ON e.id = r.event_id
+      WHERE e.tenant_id=? AND e.date >= ? AND e.date <= ?
+    `, tenantId, from, to) as any;
+
+    // By teacher
+    const byTeacher = await dbAll(`
+      SELECT sp.id, sp.name, sp.color,
+             COUNT(r.id) AS participants,
+             COALESCE(SUM(e.price), 0) AS revenue
+      FROM event_registrations r
+      JOIN art_events e ON e.id = r.event_id
+      JOIN specialists sp ON sp.id = e.teacher_id
+      WHERE e.tenant_id=? AND e.date >= ? AND e.date <= ?
+      GROUP BY sp.id, sp.name, sp.color
+      ORDER BY revenue DESC
+    `, tenantId, from, to) as any[];
+
+    // By event template (grouped by title)
+    const byTemplate = await dbAll(`
+      SELECT e.title,
+             COUNT(DISTINCT e.id) AS events,
+             COUNT(r.id) AS participants,
+             COALESCE(SUM(e.price), 0) AS revenue
+      FROM event_registrations r
+      JOIN art_events e ON e.id = r.event_id
+      WHERE e.tenant_id=? AND e.date >= ? AND e.date <= ?
+      GROUP BY e.title
+      ORDER BY revenue DESC
+    `, tenantId, from, to) as any[];
+
+    // Per event
+    const byEvent = await dbAll(`
+      SELECT e.id, e.title, e.date, e.start_time,
+             COUNT(r.id) AS participants,
+             COALESCE(SUM(e.price), 0) AS revenue
+      FROM art_events e
+      LEFT JOIN event_registrations r ON r.event_id = e.id
+      WHERE e.tenant_id=? AND e.date >= ? AND e.date <= ?
+      GROUP BY e.id, e.title, e.date, e.start_time
+      ORDER BY e.date DESC
+    `, tenantId, from, to) as any[];
+
+    ok(res, {
+      from, to,
+      overview: {
+        totalParticipants: Number(overview?.total_participants ?? 0),
+        totalRevenue:      Number(overview?.total_revenue ?? 0),
+      },
+      byTeacher: (byTeacher as any[]).map(r => ({
+        id: r.id, name: r.name, color: r.color,
+        participants: Number(r.participants), revenue: Number(r.revenue),
+      })),
+      byTemplate: (byTemplate as any[]).map(r => ({
+        title: r.title,
+        events: Number(r.events),
+        participants: Number(r.participants),
+        revenue: Number(r.revenue),
+      })),
+      byEvent: (byEvent as any[]).map(r => ({
+        id: r.id, title: r.title, date: r.date, time: r.start_time,
+        participants: Number(r.participants), revenue: Number(r.revenue),
+      })),
+    });
   } catch (e: any) { err(res, e.message, 500); }
 });

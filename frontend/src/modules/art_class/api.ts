@@ -71,4 +71,7 @@ export const api = {
     req<EventTemplate>(`/event-templates/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteTemplate: (id: string) =>
     req(`/event-templates/${id}`, { method: 'DELETE' }),
+
+  getAnalytics: (from: string, to: string) =>
+    req<any>(`/analytics/art-class?from=${from}&to=${to}`),
 };

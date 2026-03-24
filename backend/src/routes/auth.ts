@@ -32,14 +32,14 @@ authRouter.post('/login', async (req: Request, res: Response) => {
 
   const tenant: any = user.tenant_id
     ? isPg
-      ? await queryOne('SELECT name, type, plan FROM tenants WHERE id = $1', [user.tenant_id])
-      : prepare('SELECT name, type, plan FROM tenants WHERE id = ?').get(user.tenant_id)
+      ? await queryOne('SELECT name, type, plan, has_analytics FROM tenants WHERE id = $1', [user.tenant_id])
+      : prepare('SELECT name, type, plan, has_analytics FROM tenants WHERE id = ?').get(user.tenant_id)
     : null;
 
   res.json({ success: true, data: {
     token,
     user: { id: user.id, email: user.email, role: user.role, tenantId: user.tenant_id,
-      tenant: tenant ? { name: tenant.name, type: tenant.type, plan: tenant.plan } : null }
+      tenant: tenant ? { name: tenant.name, type: tenant.type, plan: tenant.plan, hasAnalytics: !!tenant.has_analytics } : null }
   }});
 });
 
@@ -52,8 +52,8 @@ authRouter.get('/me', requireAuth, async (req: Request, res: Response) => {
 
   const tenant: any = user.tenant_id
     ? isPg
-      ? await queryOne('SELECT id,name,type,plan,whatsapp_number,is_active FROM tenants WHERE id = $1', [user.tenant_id])
-      : prepare('SELECT id,name,type,plan,whatsapp_number,is_active FROM tenants WHERE id = ?').get(user.tenant_id)
+      ? await queryOne('SELECT id,name,type,plan,whatsapp_number,is_active,has_analytics FROM tenants WHERE id = $1', [user.tenant_id])
+      : prepare('SELECT id,name,type,plan,whatsapp_number,is_active,has_analytics FROM tenants WHERE id = ?').get(user.tenant_id)
     : null;
 
   res.json({ success: true, data: { ...user, tenant } });
