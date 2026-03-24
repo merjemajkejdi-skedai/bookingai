@@ -117,12 +117,25 @@ async function executeTool(
 
       if (!rows.length) {
         const nextSearch = format(addDays(parseISO(toDate), 1), 'yyyy-MM-dd');
+        // Check if there were events for this age but all full
+        const fullCheck = await dbAll(`
+          SELECT COUNT(*) AS total
+          FROM art_events e
+          LEFT JOIN event_registrations r ON r.event_id = e.id
+          WHERE e.tenant_id = ? AND e.is_active = 1
+            AND e.date >= ? AND e.date <= ?
+            AND (e.age_min IS NULL OR e.age_min <= ?)
+            AND (e.age_max IS NULL OR e.age_max >= ?)
+          GROUP BY e.id
+          HAVING e.max_capacity IS NOT NULL AND COUNT(r.id) >= e.max_capacity
+        `, tenantId, fromDate, toDate, childAge, childAge) as any[];
+        const allFull = fullCheck.length > 0;
         return JSON.stringify({
           found: false,
+          all_seats_taken: allFull,
           searched_from: fromDate,
           searched_to: toDate,
           next_from_date: nextSearch,
-          message: `No available classes found for age ${childAge} between ${fromDate} and ${toDate}. To look further ahead call again with from_date="${nextSearch}".`,
         });
       }
 
@@ -131,24 +144,18 @@ async function executeTool(
         child_age: childAge,
         searched_from: fromDate,
         searched_to: toDate,
-        classes: rows.map((r: any) => {
-          const spotsLeft = r.max_capacity
-            ? Math.max(0, r.max_capacity - Number(r.registration_count))
-            : null;
-          return {
-            id: r.id,
-            title: r.title,
-            description: r.description || '',
-            date: r.date,
-            date_label: format(new Date(r.date), 'EEEE d MMMM yyyy'),
-            time: `${r.start_time} – ${r.end_time}`,
-            teacher: r.teacher_name || null,
-            age_range: (r.age_min != null || r.age_max != null)
-              ? `${r.age_min ?? '?'}–${r.age_max ?? '?'} years`
-              : 'all ages',
-            spots_left: spotsLeft ?? 'unlimited',
-          };
-        }),
+        classes: rows.map((r: any) => ({
+          id: r.id,
+          title: r.title,
+          description: r.description || '',
+          date: r.date,
+          date_label: format(new Date(r.date), 'EEEE d MMMM yyyy'),
+          time: `${r.start_time} – ${r.end_time}`,
+          teacher: r.teacher_name || null,
+          age_range: (r.age_min != null || r.age_max != null)
+            ? `${r.age_min ?? '?'}–${r.age_max ?? '?'} years`
+            : 'all ages',
+        })),
       });
     }
 
@@ -250,65 +257,68 @@ async function buildSystemPrompt(tenantId: string): Promise<string> {
   const tenant = await dbGet('SELECT name FROM tenants WHERE id = ?', tenantId) as any;
   const now = format(new Date(), "EEEE d MMMM yyyy, HH:mm");
 
-  return `You are the class registration assistant for ${tenant?.name || 'our art studio'}.
+  return `You are the registration assistant for ${tenant?.name || 'our art studio'}.
 You help parents register their children for art classes via WhatsApp.
 Always respond in the same language the parent writes in.
 Today is ${now}.
 
-=== CONVERSATION FLOW — FOLLOW THIS EXACTLY ===
+=== GREETING ===
+If the parent just says hi or hello, greet them warmly, introduce the studio as an art school for kids, and ask how you can help.
+Do NOT ask for the child's age unprompted — wait until they express interest in a class or ask about availability.
+
+=== BOOKING FLOW — follow this once the parent asks about classes or registration ===
 
 STEP 1 — GET THE CHILD'S AGE
-If the parent has not mentioned the child's age, ask for it before anything else.
-Do not list or mention any classes until you know the age.
+Ask for the child's age if it has not been mentioned. Do not search for classes before you have the age.
 
-STEP 2 — SEARCH FOR MATCHING CLASSES
-Once you have the age, call find_classes_for_age with child_age.
-- The tool searches the next 4 weeks for classes with matching age range AND available spots.
-- If no classes found, call again with the returned next_from_date to look further ahead (up to 3 searches).
-- If still nothing found after 3 searches, tell the parent there are no upcoming classes for that age and invite them to check back later.
+STEP 2 — SEARCH
+Call find_classes_for_age with child_age (and from_date if searching further ahead).
+The tool searches a 4-week window and returns only classes that still have open spots.
+If the result has all_seats_taken=true it means there are classes for that age in that window but every seat is taken.
+If found=false and all_seats_taken=false it means there are no scheduled classes at all for that age in that window.
+You may call again with next_from_date up to 3 times to look further ahead.
 
 STEP 3 — PRESENT OPTIONS
-- If one class matches: describe it (title, description, date, time, teacher, spots left) and ask if they want to register.
-- If multiple classes match: list them with number labels so the parent can pick one.
+When classes are found, list them clearly. Do NOT mention how many spots remain.
+- One class: describe it (title, description, date, time) and ask if the parent wants to register.
+- Multiple classes: number them so the parent can pick.
   Example:
     "I found 2 classes for your child:
-    1. Drawing Basics — Mon 7 Apr, 10:00–11:00 (3 spots left)
+    1. Drawing Basics — Monday 7 April, 10:00–11:00
        Great for beginners, ages 5–8.
-    2. Watercolour Fun — Wed 9 Apr, 15:00–16:00 (5 spots left)
+    2. Watercolour Fun — Wednesday 9 April, 15:00–16:00
        Learn watercolour painting, ages 5–10.
-    Which one interests you?"
+    Which one would you like?"
+
+When no classes are available say:
+- If all_seats_taken=true: "All seats are taken for that period. Would you like me to check a different date?"
+- If no classes at all: "There are no classes scheduled for that age in the coming weeks. Would you like me to check further ahead?"
 
 STEP 4 — COLLECT NAMES
-Once the parent has chosen a class, ask for:
+Once the parent picks a class ask for:
 - Child's full name
 - Parent's full name
-Phone number is captured automatically — never ask for it.
+Never ask for the phone number — it is captured from WhatsApp automatically.
 
 STEP 5 — REGISTER
 Call register_for_class with event_id, child_name, parent_name.
 
 STEP 6 — CONFIRM
-After successful registration send a warm confirmation:
-- Language matches parent
-- Include: child name, class title, date, time
-- Example (English): "Done! [child] is registered for [class] on [day date] at [time]. See you there! 🎨"
-- Example (Albanian): "Gati! [child] është regjistruar për [class] të [ditën] [data] në orën [time]. Ju presim! 🎨"
-NEVER send a confirmation without first calling register_for_class.
+Send a warm closing message. Include child name, class title, date, time.
+English: "Done! [child] is registered for [class] on [day date] at [time]. See you there! 🎨"
+Albanian: "Gati! [child] është regjistruar për [class] të [ditën] [data] në orën [time]. Ju presim! 🎨"
+Never send a confirmation without first calling register_for_class.
 
 === OTHER SITUATIONS ===
-- Parent asks about existing bookings → call get_my_registrations
-- Parent wants to cancel → call get_my_registrations first, confirm, then cancel_registration
-- Class becomes full between search and registration → apologise, call find_classes_for_age again to find alternatives
+- Parent asks about existing registrations → call get_my_registrations
+- Parent wants to cancel → call get_my_registrations first, confirm the class name and date, then cancel_registration
+- Class turns full between search and registration → apologise, call find_classes_for_age again
 
-=== RULES ===
-1. Never mention a specific class until you know the child's age.
-2. Only show classes that have available spots (the tool already filters full classes).
-3. Never ask for the phone number — it is captured from WhatsApp automatically.
-4. Notes (allergies, special needs) are optional — only ask if the parent volunteers the information.
-5. Keep messages short and conversational — this is WhatsApp.
-6. Plain text only, no markdown, no bullet dashes.
-7. Emojis: max 1–2 per message.
-8. Be warm and encouraging — parents love hearing their child will enjoy the class.`;
+=== STYLE ===
+- Short and conversational — this is WhatsApp
+- Plain text only, no markdown
+- Max 1–2 emojis per message
+- Warm and encouraging`;
 }
 
 // ---------------------------------------------------------------------------
