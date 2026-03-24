@@ -23,18 +23,26 @@ async function dbGet(sql: string, ...p: unknown[]) {
 async function resolveTenant(toNumber: string): Promise<{ id: string; type: string } | null> {
   const normalized = toNumber.replace('whatsapp:', '').trim();
 
-  // Try to match by whatsapp_number first
-  const tenant = await dbGet(
-    'SELECT id, type FROM tenants WHERE whatsapp_number = ? AND is_active = 1 LIMIT 1',
-    normalized
-  ) as any;
-  if (tenant) return { id: tenant.id, type: (tenant.type || '').toLowerCase() };
+  // Try to match by whatsapp_number (column may not exist on older DBs — catch gracefully)
+  try {
+    const tenant = await dbGet(
+      'SELECT id, type FROM tenants WHERE whatsapp_number = ? AND is_active = 1 LIMIT 1',
+      normalized
+    ) as any;
+    if (tenant) return { id: tenant.id, type: (tenant.type || '').toLowerCase() };
+  } catch (e: any) {
+    console.warn('⚠️  whatsapp_number lookup failed (column may be missing):', e.message);
+  }
 
-  // Fall back to env var (dev / single-tenant)
+  // Fall back to TENANT_ID env var (single-tenant / dev setups)
   const fallbackId = process.env.TENANT_ID;
   if (fallbackId) {
-    const fallback = await dbGet('SELECT id, type FROM tenants WHERE id = ?', fallbackId) as any;
-    if (fallback) return { id: fallback.id, type: (fallback.type || '').toLowerCase() };
+    try {
+      const fallback = await dbGet('SELECT id, type FROM tenants WHERE id = ?', fallbackId) as any;
+      if (fallback) return { id: fallback.id, type: (fallback.type || '').toLowerCase() };
+    } catch (e: any) {
+      console.warn('⚠️  TENANT_ID fallback lookup failed:', e.message);
+    }
   }
 
   return null;
