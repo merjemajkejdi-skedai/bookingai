@@ -1,13 +1,19 @@
 import { useState, useEffect } from 'react';
-import { Plus, Pencil, RefreshCw, Power, Phone } from 'lucide-react';
+import { Plus, Pencil, RefreshCw, Power, Phone, ExternalLink } from 'lucide-react';
 import { adminApi } from '../shared/lib/auth';
+import type { AdminTenant } from '../shared/lib/auth';
 import { Button, Modal, Input, Select, Spinner } from '../components/ui';
 import clsx from 'clsx';
 
 const PLANS = ['starter', 'growth', 'pro'];
 const TYPES = ['barbershop', 'salon', 'dentist', 'medical', 'hotel', 'art_class', 'art_event'];
 
-export function AdminPage() {
+interface AdminPageProps {
+  onViewShop?: (tenant: AdminTenant) => void;
+  onTenantsLoaded?: (tenants: AdminTenant[]) => void;
+}
+
+export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) {
   const [tenants, setTenants]     = useState<any[]>([]);
   const [stats, setStats]         = useState<any>(null);
   const [loading, setLoading]     = useState(true);
@@ -20,6 +26,7 @@ export function AdminPage() {
     try {
       const [t, s] = await Promise.all([adminApi.getTenants(), adminApi.getStats()]);
       setTenants(t); setStats(s);
+      onTenantsLoaded?.(t.map((x: any) => ({ id: x.id, name: x.name, type: x.type })));
     } finally { setLoading(false); }
   }
 
@@ -92,6 +99,15 @@ export function AdminPage() {
                 </div>
               </div>
               <div className="flex gap-1.5">
+                {onViewShop && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onViewShop({ id: t.id, name: t.name, type: t.type })}
+                    title="Open shop view">
+                    <ExternalLink size={13} /> View
+                  </Button>
+                )}
                 <Button variant="ghost" size="sm" onClick={() => setEditing(t)}>
                   <Pencil size={13} />
                 </Button>

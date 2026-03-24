@@ -38,7 +38,7 @@ export function ArtClassModule({ onLogout }: Props) {
   ];
 
   return (
-    <div className="flex flex-col md:flex-row h-screen bg-slate-100 overflow-hidden">
+    <div className="flex flex-col md:flex-row h-full bg-slate-100 overflow-hidden">
 
       {/* Mobile top bar */}
       <header className="md:hidden flex items-center justify-between px-4 py-2 bg-white border-b border-slate-200 flex-shrink-0">

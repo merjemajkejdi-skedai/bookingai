@@ -1,6 +1,23 @@
 /// <reference types="vite/client" />
-const TOKEN_KEY = 'bookingai_token';
-const USER_KEY  = 'bookingai_user';
+const TOKEN_KEY        = 'bookingai_token';
+const USER_KEY         = 'bookingai_user';
+const ADMIN_TENANT_KEY = 'bookingai_admin_tenant';
+
+// --------------------------------------------------------------------------
+// Admin "viewing as tenant" — stored so it survives page reload
+// --------------------------------------------------------------------------
+export interface AdminTenant { id: string; name: string; type: string; }
+
+export function getAdminTenant(): AdminTenant | null {
+  const raw = localStorage.getItem(ADMIN_TENANT_KEY);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
+export function setAdminTenant(t: AdminTenant | null): void {
+  if (t) localStorage.setItem(ADMIN_TENANT_KEY, JSON.stringify(t));
+  else   localStorage.removeItem(ADMIN_TENANT_KEY);
+}
 
 export interface AuthUser {
   id: string;
@@ -22,6 +39,7 @@ export function setToken(token: string, user: AuthUser): void {
 export function clearAuth(): void {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+  localStorage.removeItem(ADMIN_TENANT_KEY);
 }
 
 export function getStoredUser(): AuthUser | null {
@@ -43,7 +61,16 @@ const API_BASE = import.meta.env.VITE_API_URL || '';
 async function authFetch<T>(path: string, opts?: RequestInit): Promise<T> {
   const token = getToken();
   const { headers: extraHeaders, ...restOpts } = opts ?? {};
-  const res = await fetch(`${API_BASE}${path}`, {
+
+  // Super-admin viewing a specific shop → inject tenantId as query param so
+  // the backend's resolveTenantId() picks it up for all HTTP methods.
+  let url = `${API_BASE}${path}`;
+  if (getStoredUser()?.role === 'super_admin') {
+    const at = getAdminTenant();
+    if (at) url += (url.includes('?') ? '&' : '?') + `tenantId=${encodeURIComponent(at.id)}`;
+  }
+
+  const res = await fetch(url, {
     ...restOpts,
     headers: {
       'Content-Type': 'application/json',
