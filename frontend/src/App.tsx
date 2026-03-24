@@ -142,9 +142,9 @@ export default function App() {
           onLogout={handleLogout}
         />
         <div className="flex-1 min-h-0">
-          {mode === 'art_class' && <ArtClassModule onLogout={handleLogout} />}
-          {mode === 'art_event' && <ArtEventModule onLogout={handleLogout} />}
-          {mode === 'booking'   && <BookingModule  onLogout={handleLogout} />}
+          {mode === 'art_class' && <ArtClassModule key={viewTenant.id} onLogout={handleLogout} />}
+          {mode === 'art_event' && <ArtEventModule key={viewTenant.id} onLogout={handleLogout} />}
+          {mode === 'booking'   && <BookingModule  key={viewTenant.id} onLogout={handleLogout} />}
         </div>
       </div>
     );
