@@ -43,7 +43,7 @@ artClassRouter.get('/events', requireAuth, async (req: Request, res: Response) =
   if (end)       { sql += ' AND e.date <= ?'; params.push(end); }
   if (teacherId) { sql += ' AND e.teacher_id = ?'; params.push(teacherId); }
 
-  sql += ' GROUP BY e.id ORDER BY e.date, e.start_time';
+  sql += ' GROUP BY e.id, e.tenant_id, e.teacher_id, e.title, e.description, e.date, e.start_time, e.end_time, e.age_min, e.age_max, e.max_capacity, e.is_active, e.created_at, s.name, s.color ORDER BY e.date, e.start_time';
 
   try {
     const rows = await dbAll(sql, ...params) as any[];
