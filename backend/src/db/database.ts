@@ -199,6 +199,18 @@ export async function runMigrations() {
   if (isPg) {
     const pool = await getPool();
     await pool.query(SCHEMA);
+    // Safe ALTER TABLE for columns added after initial deploy
+    const pgAlters = [
+      `ALTER TABLE bookings ADD COLUMN IF NOT EXISTS recurrence_rule TEXT NOT NULL DEFAULT 'none'`,
+      `ALTER TABLE bookings ADD COLUMN IF NOT EXISTS recurrence_group_id TEXT`,
+      `ALTER TABLE tenants  ADD COLUMN IF NOT EXISTS whatsapp_number TEXT NOT NULL DEFAULT ''`,
+      `ALTER TABLE tenants  ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'starter'`,
+      `ALTER TABLE tenants  ADD COLUMN IF NOT EXISTS is_active INTEGER NOT NULL DEFAULT 1`,
+      `ALTER TABLE tenants  ADD COLUMN IF NOT EXISTS billing_email TEXT NOT NULL DEFAULT ''`,
+    ];
+    for (const sql of pgAlters) {
+      await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
+    }
     console.log('✅ PostgreSQL migrations complete');
     return;
   }
