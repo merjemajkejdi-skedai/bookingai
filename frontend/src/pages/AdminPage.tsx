@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Plus, Pencil, RefreshCw, Power, Phone } from 'lucide-react';
-import { adminApi } from '../lib/auth';
+import { adminApi } from '../shared/lib/auth';
 import { Button, Modal, Input, Select, Spinner } from '../components/ui';
 import clsx from 'clsx';
 

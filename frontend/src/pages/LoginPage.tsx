@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { authApi, setToken } from '../lib/auth';
+import { authApi, setToken } from '../shared/lib/auth';
 import clsx from 'clsx';
 
 interface Props { onLogin: () => void; }
