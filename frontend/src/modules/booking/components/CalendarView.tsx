@@ -20,7 +20,9 @@ interface Props {
 }
 
 export function CalendarView({ bookings, specialists, selectedSpecialistId, onBookingClick, onSlotClick, loading }: Props) {
-  const [view, setView] = useState<View>('week');
+  const [view, setView] = useState<View>(() =>
+    typeof window !== 'undefined' && window.innerWidth < 768 ? 'day' : 'week'
+  );
   const [currentDate, setCurrentDate] = useState(new Date());
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -81,26 +83,34 @@ export function CalendarView({ bookings, specialists, selectedSpecialistId, onBo
 
   return (
     <div className="flex flex-col h-full bg-white rounded-2xl border border-slate-200 overflow-hidden">
-      {/* Toolbar */}
-      <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={() => setCurrentDate(new Date())}>Today</Button>
-          <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden">
-            <button onClick={() => navigate(-1)} className="px-2 py-1.5 hover:bg-slate-50 border-r border-slate-200">
-              <ChevronLeft size={16} className="text-slate-500" />
-            </button>
-            <button onClick={() => navigate(1)} className="px-2 py-1.5 hover:bg-slate-50">
-              <ChevronRight size={16} className="text-slate-500" />
-            </button>
-          </div>
-          <span className="text-sm font-semibold text-slate-800">
+      {/* Toolbar — mobile: two rows, desktop: single row */}
+      <div className="flex flex-col border-b border-slate-100 flex-shrink-0">
+        {/* Row 1 (always visible): nav arrows + date + new booking */}
+        <div className="flex items-center gap-2 px-3 py-2.5">
+          <button
+            onClick={() => navigate(-1)}
+            className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 active:bg-slate-100 transition-colors flex-shrink-0">
+            <ChevronLeft size={18} className="text-slate-600" />
+          </button>
+          <span className="flex-1 text-center text-sm font-semibold text-slate-800 truncate">
             {view === 'week'
               ? `${format(weekStart, 'MMM d')} – ${format(addDays(weekStart, 6), 'MMM d, yyyy')}`
-              : format(currentDate, 'EEEE, MMMM d, yyyy')}
+              : format(currentDate, 'EEE, MMM d, yyyy')}
           </span>
+          <button
+            onClick={() => navigate(1)}
+            className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 active:bg-slate-100 transition-colors flex-shrink-0">
+            <ChevronRight size={18} className="text-slate-600" />
+          </button>
+          <Button size="sm" onClick={() => onSlotClick(currentDate)} className="flex-shrink-0">
+            <Plus size={14} />
+            <span className="hidden sm:inline">New booking</span>
+          </Button>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex border border-slate-200 rounded-lg overflow-hidden text-sm">
+        {/* Row 2: Today + view toggle */}
+        <div className="flex items-center gap-2 px-3 pb-2">
+          <Button variant="ghost" size="sm" onClick={() => setCurrentDate(new Date())}>Today</Button>
+          <div className="ml-auto flex border border-slate-200 rounded-lg overflow-hidden text-sm">
             {(['week', 'day'] as View[]).map(v => (
               <button key={v} onClick={() => setView(v)}
                 className={clsx('px-3 py-1.5 capitalize transition-colors',
@@ -110,9 +120,6 @@ export function CalendarView({ bookings, specialists, selectedSpecialistId, onBo
               </button>
             ))}
           </div>
-          <Button size="sm" onClick={() => onSlotClick(currentDate)}>
-            <Plus size={14} /> New booking
-          </Button>
         </div>
       </div>
 
