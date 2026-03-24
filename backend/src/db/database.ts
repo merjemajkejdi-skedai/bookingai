@@ -172,6 +172,7 @@ const SCHEMA = `
     age_min INTEGER,
     age_max INTEGER,
     max_capacity INTEGER,
+    price INTEGER NOT NULL DEFAULT 0,
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
   );
@@ -201,6 +202,7 @@ const SCHEMA = `
     age_min INTEGER,
     age_max INTEGER,
     max_capacity INTEGER,
+    price INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
   );
   CREATE INDEX IF NOT EXISTS idx_art_events_tenant ON art_events(tenant_id, date);
@@ -221,9 +223,21 @@ export async function runMigrations() {
       `ALTER TABLE tenants  ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'starter'`,
       `ALTER TABLE tenants  ADD COLUMN IF NOT EXISTS is_active INTEGER NOT NULL DEFAULT 1`,
       `ALTER TABLE tenants  ADD COLUMN IF NOT EXISTS billing_email TEXT NOT NULL DEFAULT ''`,
+      `ALTER TABLE art_events ADD COLUMN IF NOT EXISTS price INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE event_templates ADD COLUMN IF NOT EXISTS price INTEGER NOT NULL DEFAULT 0`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
+    }
+    // Seed default prices based on tenant type (only touches rows where price is still 0)
+    const priceSeeds = [
+      `UPDATE art_events SET price = 2500 WHERE price = 0 AND tenant_id IN (SELECT id FROM tenants WHERE type = 'art_class')`,
+      `UPDATE art_events SET price = 3500 WHERE price = 0 AND tenant_id IN (SELECT id FROM tenants WHERE type = 'art_event')`,
+      `UPDATE event_templates SET price = 2500 WHERE price = 0 AND tenant_id IN (SELECT id FROM tenants WHERE type = 'art_class')`,
+      `UPDATE event_templates SET price = 3500 WHERE price = 0 AND tenant_id IN (SELECT id FROM tenants WHERE type = 'art_event')`,
+    ];
+    for (const sql of priceSeeds) {
+      await pool.query(sql).catch((e: any) => console.warn('PG price seed skipped:', e.message));
     }
     console.log('✅ PostgreSQL migrations complete');
     return;
@@ -246,6 +260,16 @@ export async function runMigrations() {
     .all().map((r: any) => r.name as string);
   if (!svcCols.includes('group_id'))
     exec('ALTER TABLE services ADD COLUMN group_id TEXT');
+
+  const artEventCols = prepare("SELECT name FROM pragma_table_info('art_events')")
+    .all().map((r: any) => r.name as string);
+  if (!artEventCols.includes('price'))
+    exec('ALTER TABLE art_events ADD COLUMN price INTEGER NOT NULL DEFAULT 0');
+
+  const tmplCols = prepare("SELECT name FROM pragma_table_info('event_templates')")
+    .all().map((r: any) => r.name as string);
+  if (!tmplCols.includes('price'))
+    exec('ALTER TABLE event_templates ADD COLUMN price INTEGER NOT NULL DEFAULT 0');
 
   for (const [col, def] of [
     ['whatsapp_number', "whatsapp_number TEXT NOT NULL DEFAULT ''"],

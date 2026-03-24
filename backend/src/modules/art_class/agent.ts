@@ -93,12 +93,12 @@ async function executeTool(
 
       // PostgreSQL needs all SELECT columns in GROUP BY when not using pg-specific tricks
       const groupByCols = 'e.id, e.tenant_id, e.teacher_id, e.title, e.description, e.date, ' +
-        'e.start_time, e.end_time, e.age_min, e.age_max, e.max_capacity, e.is_active, e.created_at, ' +
+        'e.start_time, e.end_time, e.age_min, e.age_max, e.max_capacity, e.price, e.is_active, e.created_at, ' +
         's.name, s.color';
 
       const rows = await dbAll(`
         SELECT e.id, e.title, e.description, e.date, e.start_time, e.end_time,
-               e.age_min, e.age_max, e.max_capacity,
+               e.age_min, e.age_max, e.max_capacity, e.price,
                COUNT(r.id) AS registration_count,
                s.name AS teacher_name
         FROM art_events e
@@ -152,6 +152,7 @@ async function executeTool(
           date_label: format(new Date(r.date), 'EEEE d MMMM yyyy'),
           time: `${r.start_time} – ${r.end_time}`,
           teacher: r.teacher_name || null,
+          price: r.price ? `${r.price} ALL` : null,
           age_range: (r.age_min != null || r.age_max != null)
             ? `${r.age_min ?? '?'}–${r.age_max ?? '?'} years`
             : 'all ages',
@@ -280,6 +281,7 @@ You may call again with next_from_date up to 3 times to look further ahead.
 
 STEP 3 — PRESENT OPTIONS
 When classes are found, list them clearly. Do NOT mention how many spots remain.
+Always include the price per child when listing classes.
 - One class: describe it (title, description, date, time) and ask if the parent wants to register.
 - Multiple classes: number them so the parent can pick.
   Example:

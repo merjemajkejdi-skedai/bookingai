@@ -43,7 +43,7 @@ artEventRouter.get('/events', requireAuth, async (req: Request, res: Response) =
   if (end)       { sql += ' AND e.date <= ?'; params.push(end); }
   if (teacherId) { sql += ' AND e.teacher_id = ?'; params.push(teacherId); }
 
-  sql += ' GROUP BY e.id, e.tenant_id, e.teacher_id, e.title, e.description, e.date, e.start_time, e.end_time, e.age_min, e.age_max, e.max_capacity, e.is_active, e.created_at, s.name, s.color ORDER BY e.date, e.start_time';
+  sql += ' GROUP BY e.id, e.tenant_id, e.teacher_id, e.title, e.description, e.date, e.start_time, e.end_time, e.age_min, e.age_max, e.max_capacity, e.price, e.is_active, e.created_at, s.name, s.color ORDER BY e.date, e.start_time';
 
   try {
     const rows = await dbAll(sql, ...params) as any[];
@@ -54,6 +54,7 @@ artEventRouter.get('/events', requireAuth, async (req: Request, res: Response) =
       date: r.date, startTime: r.start_time, endTime: r.end_time,
       ageMin: r.age_min ?? null, ageMax: r.age_max ?? null,
       maxCapacity: r.max_capacity ?? null,
+      price: r.price ?? 0,
       registrationCount: Number(r.registration_count),
       isActive: !!r.is_active, createdAt: r.created_at,
     })));
@@ -63,18 +64,18 @@ artEventRouter.get('/events', requireAuth, async (req: Request, res: Response) =
 // ── POST /events ──────────────────────────────────────────────────────────────
 artEventRouter.post('/events', requireAuth, async (req: Request, res: Response) => {
   const tenantId = (req as any).user.tenantId;
-  const { title, description = '', date, startTime, endTime, teacherId, ageMin, ageMax, maxCapacity } = req.body;
+  const { title, description = '', date, startTime, endTime, teacherId, ageMin, ageMax, maxCapacity, price } = req.body;
 
   if (!title || !date) return err(res, 'title and date are required');
 
   const id = crypto.randomUUID();
   try {
     await dbRun(
-      `INSERT INTO art_events(id,tenant_id,teacher_id,title,description,date,start_time,end_time,age_min,age_max,max_capacity)
-       VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO art_events(id,tenant_id,teacher_id,title,description,date,start_time,end_time,age_min,age_max,max_capacity,price)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
       id, tenantId, teacherId ?? null, title, description,
       date, startTime || '10:00', endTime || '11:00',
-      ageMin ?? null, ageMax ?? null, maxCapacity ?? null
+      ageMin ?? null, ageMax ?? null, maxCapacity ?? null, price ?? 0
     );
     const row = await dbGet('SELECT * FROM art_events WHERE id=?', id) as any;
     ok(res, {
@@ -82,7 +83,7 @@ artEventRouter.post('/events', requireAuth, async (req: Request, res: Response) 
       title: row.title, description: row.description,
       date: row.date, startTime: row.start_time, endTime: row.end_time,
       ageMin: row.age_min ?? null, ageMax: row.age_max ?? null,
-      maxCapacity: row.max_capacity ?? null, registrationCount: 0,
+      maxCapacity: row.max_capacity ?? null, price: row.price ?? 0, registrationCount: 0,
       isActive: !!row.is_active, createdAt: row.created_at,
     });
   } catch (e: any) { err(res, e.message, 500); }
@@ -92,7 +93,7 @@ artEventRouter.post('/events', requireAuth, async (req: Request, res: Response) 
 artEventRouter.put('/events/:id', requireAuth, async (req: Request, res: Response) => {
   const tenantId = (req as any).user.tenantId;
   const { id } = req.params;
-  const { title, description, date, startTime, endTime, teacherId, ageMin, ageMax, maxCapacity } = req.body;
+  const { title, description, date, startTime, endTime, teacherId, ageMin, ageMax, maxCapacity, price } = req.body;
 
   const existing = await dbGet('SELECT id FROM art_events WHERE id=? AND tenant_id=?', id, tenantId) as any;
   if (!existing) return err(res, 'Event not found', 404);
@@ -101,10 +102,10 @@ artEventRouter.put('/events/:id', requireAuth, async (req: Request, res: Respons
     await dbRun(
       `UPDATE art_events SET
          title=?, description=?, date=?, start_time=?, end_time=?,
-         teacher_id=?, age_min=?, age_max=?, max_capacity=?
+         teacher_id=?, age_min=?, age_max=?, max_capacity=?, price=?
        WHERE id=?`,
       title, description ?? '', date, startTime, endTime,
-      teacherId ?? null, ageMin ?? null, ageMax ?? null, maxCapacity ?? null, id
+      teacherId ?? null, ageMin ?? null, ageMax ?? null, maxCapacity ?? null, price ?? 0, id
     );
     const row = await dbGet('SELECT * FROM art_events WHERE id=?', id) as any;
     const cnt = await dbGet('SELECT COUNT(*) as cnt FROM event_registrations WHERE event_id=?', id) as any;
@@ -113,7 +114,7 @@ artEventRouter.put('/events/:id', requireAuth, async (req: Request, res: Respons
       title: row.title, description: row.description,
       date: row.date, startTime: row.start_time, endTime: row.end_time,
       ageMin: row.age_min ?? null, ageMax: row.age_max ?? null,
-      maxCapacity: row.max_capacity ?? null,
+      maxCapacity: row.max_capacity ?? null, price: row.price ?? 0,
       registrationCount: Number(cnt?.cnt || 0),
       isActive: !!row.is_active, createdAt: row.created_at,
     });
@@ -218,6 +219,7 @@ artEventRouter.get('/event-templates', requireAuth, async (req: Request, res: Re
       title: r.title, description: r.description,
       ageMin: r.age_min ?? null, ageMax: r.age_max ?? null,
       maxCapacity: r.max_capacity ?? null,
+      price: r.price ?? 0,
       createdAt: r.created_at,
     })));
   } catch (e: any) { err(res, e.message, 500); }
@@ -226,22 +228,22 @@ artEventRouter.get('/event-templates', requireAuth, async (req: Request, res: Re
 // ── POST /event-templates ─────────────────────────────────────────────────────
 artEventRouter.post('/event-templates', requireAuth, async (req: Request, res: Response) => {
   const tenantId = (req as any).user.tenantId;
-  const { title, description = '', teacherId, ageMin, ageMax, maxCapacity } = req.body;
+  const { title, description = '', teacherId, ageMin, ageMax, maxCapacity, price } = req.body;
   if (!title) return err(res, 'title is required');
   const id = crypto.randomUUID();
   try {
     await dbRun(
-      `INSERT INTO event_templates(id,tenant_id,teacher_id,title,description,age_min,age_max,max_capacity)
-       VALUES(?,?,?,?,?,?,?,?)`,
+      `INSERT INTO event_templates(id,tenant_id,teacher_id,title,description,age_min,age_max,max_capacity,price)
+       VALUES(?,?,?,?,?,?,?,?,?)`,
       id, tenantId, teacherId ?? null, title, description,
-      ageMin ?? null, ageMax ?? null, maxCapacity ?? null
+      ageMin ?? null, ageMax ?? null, maxCapacity ?? null, price ?? 0
     );
     const row = await dbGet('SELECT * FROM event_templates WHERE id=?', id) as any;
     ok(res, {
       id: row.id, tenantId: row.tenant_id, teacherId: row.teacher_id ?? null,
       title: row.title, description: row.description,
       ageMin: row.age_min ?? null, ageMax: row.age_max ?? null,
-      maxCapacity: row.max_capacity ?? null, createdAt: row.created_at,
+      maxCapacity: row.max_capacity ?? null, price: row.price ?? 0, createdAt: row.created_at,
     });
   } catch (e: any) { err(res, e.message, 500); }
 });
@@ -250,22 +252,22 @@ artEventRouter.post('/event-templates', requireAuth, async (req: Request, res: R
 artEventRouter.put('/event-templates/:id', requireAuth, async (req: Request, res: Response) => {
   const tenantId = (req as any).user.tenantId;
   const { id } = req.params;
-  const { title, description, teacherId, ageMin, ageMax, maxCapacity } = req.body;
+  const { title, description, teacherId, ageMin, ageMax, maxCapacity, price } = req.body;
   const existing = await dbGet('SELECT id FROM event_templates WHERE id=? AND tenant_id=?', id, tenantId) as any;
   if (!existing) return err(res, 'Template not found', 404);
   try {
     await dbRun(
       `UPDATE event_templates SET title=?, description=?,
-       teacher_id=?, age_min=?, age_max=?, max_capacity=? WHERE id=?`,
+       teacher_id=?, age_min=?, age_max=?, max_capacity=?, price=? WHERE id=?`,
       title, description ?? '',
-      teacherId ?? null, ageMin ?? null, ageMax ?? null, maxCapacity ?? null, id
+      teacherId ?? null, ageMin ?? null, ageMax ?? null, maxCapacity ?? null, price ?? 0, id
     );
     const row = await dbGet('SELECT * FROM event_templates WHERE id=?', id) as any;
     ok(res, {
       id: row.id, tenantId: row.tenant_id, teacherId: row.teacher_id ?? null,
       title: row.title, description: row.description,
       ageMin: row.age_min ?? null, ageMax: row.age_max ?? null,
-      maxCapacity: row.max_capacity ?? null, createdAt: row.created_at,
+      maxCapacity: row.max_capacity ?? null, price: row.price ?? 0, createdAt: row.created_at,
     });
   } catch (e: any) { err(res, e.message, 500); }
 });

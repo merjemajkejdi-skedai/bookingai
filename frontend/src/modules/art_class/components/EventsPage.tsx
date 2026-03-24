@@ -37,6 +37,7 @@ function ClassFormModal({
     ageMin:      event?.ageMin  != null ? String(event.ageMin)  : '',
     ageMax:      event?.ageMax  != null ? String(event.ageMax)  : '',
     maxCapacity: event?.maxCapacity != null ? String(event.maxCapacity) : '',
+    price:       event?.price != null ? String(event.price) : '0',
   });
   const [saving, setSaving]         = useState(false);
   const [error, setError]           = useState('');
@@ -57,6 +58,7 @@ function ClassFormModal({
       title:       tmpl.title,
       description: tmpl.description,
       maxCapacity: tmpl.maxCapacity != null ? String(tmpl.maxCapacity) : '',
+      price:       tmpl.price       != null ? String(tmpl.price)       : '0',
     }));
     setShowTmplPicker(false);
   }
@@ -75,6 +77,7 @@ function ClassFormModal({
       ageMin:      form.ageMin      !== '' ? Number(form.ageMin)      : null,
       ageMax:      form.ageMax      !== '' ? Number(form.ageMax)      : null,
       maxCapacity: form.maxCapacity !== '' ? Number(form.maxCapacity) : null,
+      price: form.price !== '' ? Number(form.price) : 0,
     };
     try {
       if (event) { await api.updateEvent(event.id, payload as any); }
@@ -103,7 +106,10 @@ function ClassFormModal({
                     <button key={t.id} onClick={() => applyTemplate(t)}
                       className="flex items-center justify-between w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white hover:shadow-sm transition-all group">
                       <span className="font-medium text-slate-700 group-hover:text-brand-600">{t.title}</span>
-                      {t.maxCapacity != null && <span className="text-xs text-slate-400">{t.maxCapacity} spots</span>}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {t.price != null && t.price > 0 && <span className="text-xs font-semibold text-brand-600">{t.price.toLocaleString()} ALL</span>}
+                        {t.maxCapacity != null && <span className="text-xs text-slate-400">{t.maxCapacity} spots</span>}
+                      </div>
                     </button>
                   ))}
                 </div>
@@ -156,6 +162,15 @@ function ClassFormModal({
 
         <Input label="Max capacity (optional)" type="number" min={1} value={form.maxCapacity}
           onChange={e => set('maxCapacity', e.target.value)} placeholder="Leave empty for unlimited" />
+
+        <Input
+          label="Price per person (ALL)"
+          type="number"
+          min={0}
+          value={form.price}
+          onChange={e => set('price', e.target.value)}
+          placeholder="e.g. 3500"
+        />
 
         {error && (
           <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
@@ -295,6 +310,12 @@ function EventDetailPanel({ event, specialists, onClose, onEdit, onDelete, onReg
               : `${spotsUsed} registered · Unlimited`}
           </span>
         </div>
+        {event.price != null && event.price > 0 && (
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-slate-500">Price:</span>
+            <span className="font-medium text-slate-700">{event.price.toLocaleString()} ALL / person</span>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto pt-4">

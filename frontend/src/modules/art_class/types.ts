@@ -14,6 +14,7 @@ export interface ArtEvent {
   date: string; startTime: string; endTime: string;
   ageMin?: number | null; ageMax?: number | null;
   maxCapacity?: number | null;
+  price?: number | null;
   registrationCount?: number;
   isActive: boolean; createdAt: string;
 }
@@ -28,5 +29,6 @@ export interface EventTemplate {
   title: string; description: string;
   ageMin?: number | null; ageMax?: number | null;
   maxCapacity?: number | null;
+  price?: number | null;
   createdAt: string;
 }

@@ -68,13 +68,13 @@ async function executeTool(
     case 'list_events': {
       const rows = await dbAll(`
         SELECT e.id, e.title, e.description, e.date, e.start_time, e.end_time,
-               e.max_capacity, COUNT(r.id) AS registration_count,
+               e.max_capacity, e.price, COUNT(r.id) AS registration_count,
                s.name AS teacher_name
         FROM art_events e
         LEFT JOIN event_registrations r ON r.event_id = e.id
         LEFT JOIN specialists s ON s.id = e.teacher_id
         WHERE e.tenant_id = ? AND e.is_active = 1 AND e.date >= ?
-        GROUP BY e.id
+        GROUP BY e.id, e.tenant_id, e.teacher_id, e.title, e.description, e.date, e.start_time, e.end_time, e.age_min, e.age_max, e.max_capacity, e.price, e.is_active, e.created_at, s.name
         ORDER BY e.date, e.start_time
         LIMIT 10
       `, tenantId, today) as any[];
@@ -89,8 +89,8 @@ async function executeTool(
           date: format(new Date(r.date), 'EEEE d MMMM yyyy'),
           time: `${r.start_time} – ${r.end_time}`,
           teacher: r.teacher_name || null,
-          spots_left: r.max_capacity ? Math.max(0, r.max_capacity - Number(r.registration_count)) : 'unlimited',
           is_full: r.max_capacity ? Number(r.registration_count) >= r.max_capacity : false,
+          price: r.price ? `${r.price} ALL` : null,
         }))
       });
     }
@@ -191,6 +191,7 @@ Today is ${now}.
 3. Ask for the participant's name before registering. Never ask for phone number.
 4. If an event is full, say so clearly and suggest other available events.
 5. When customer mentions cancellation, call get_my_registrations first, then confirm before cancelling.
+- Always mention the price when listing events. Format: "[price] ALL per person".
 
 === MESSAGE STYLE ===
 - Short and conversational — this is WhatsApp

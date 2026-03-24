@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Pencil, Trash2, AlertCircle, BookTemplate, Users } from 'lucide-react';
+import { Plus, Pencil, Trash2, AlertCircle, BookTemplate } from 'lucide-react';
 import { api } from '../api';
 import type { EventTemplate } from '../types';
-import { Button, Modal, Input } from '../ui';
+import { Button, Modal, Input, Spinner } from '../ui';
 
-// ── TemplateFormModal ─────────────────────────────────────────────────────────
+// ── Template Form Modal ───────────────────────────────────────────────────────
 function TemplateFormModal({
   template, onClose, onSaved,
 }: {
@@ -15,14 +15,15 @@ function TemplateFormModal({
   const [form, setForm] = useState({
     title:       template?.title       ?? '',
     description: template?.description ?? '',
+    ageMin:      template?.ageMin  != null ? String(template.ageMin)  : '',
+    ageMax:      template?.ageMax  != null ? String(template.ageMax)  : '',
     maxCapacity: template?.maxCapacity != null ? String(template.maxCapacity) : '',
+    price:       template?.price       != null ? String(template.price)       : '2500',
   });
   const [saving, setSaving] = useState(false);
-  const [error, setError]   = useState('');
+  const [error,  setError]  = useState('');
 
-  function set(k: keyof typeof form, v: string) {
-    setForm(f => ({ ...f, [k]: v }));
-  }
+  function set(k: keyof typeof form, v: string) { setForm(f => ({ ...f, [k]: v })); }
 
   async function handleSave() {
     if (!form.title.trim()) { setError('Title is required'); return; }
@@ -30,10 +31,10 @@ function TemplateFormModal({
     const payload = {
       title:       form.title.trim(),
       description: form.description.trim(),
-      teacherId:   null,
-      ageMin:      null,
-      ageMax:      null,
+      ageMin:      form.ageMin      !== '' ? Number(form.ageMin)      : null,
+      ageMax:      form.ageMax      !== '' ? Number(form.ageMax)      : null,
       maxCapacity: form.maxCapacity !== '' ? Number(form.maxCapacity) : null,
+      price:       form.price       !== '' ? Number(form.price)       : 0,
     };
     try {
       if (template) {
@@ -53,13 +54,12 @@ function TemplateFormModal({
     <Modal title={template ? 'Edit Template' : 'New Template'} onClose={onClose}>
       <div className="flex flex-col gap-4">
         <Input
-          label="Template name *"
+          label="Title *"
           value={form.title}
           onChange={e => set('title', e.target.value)}
-          placeholder="e.g. Painting for Kids"
+          placeholder="e.g. Watercolour for Kids"
           autoFocus
         />
-
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Description</span>
           <textarea
@@ -70,23 +70,34 @@ function TemplateFormModal({
             placeholder="Describe what this class is about..."
           />
         </label>
-
+        <div className="grid grid-cols-2 gap-3">
+          <Input label="Age min" type="number" min={0} max={99} value={form.ageMin}
+            onChange={e => set('ageMin', e.target.value)} placeholder="e.g. 3" />
+          <Input label="Age max" type="number" min={0} max={99} value={form.ageMax}
+            onChange={e => set('ageMax', e.target.value)} placeholder="e.g. 6" />
+        </div>
         <Input
-          label="Default max capacity (optional)"
+          label="Max capacity (optional)"
           type="number"
           min={1}
           value={form.maxCapacity}
           onChange={e => set('maxCapacity', e.target.value)}
           placeholder="Leave empty for unlimited"
         />
-
+        <Input
+          label="Price per child (ALL)"
+          type="number"
+          min={0}
+          value={form.price}
+          onChange={e => set('price', e.target.value)}
+          placeholder="e.g. 2500"
+        />
         {error && (
           <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
             <AlertCircle size={14} className="flex-shrink-0" />
             {error}
           </div>
         )}
-
         <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
           <Button onClick={handleSave} disabled={saving}>
@@ -98,29 +109,29 @@ function TemplateFormModal({
   );
 }
 
-// ── TemplatesPage ─────────────────────────────────────────────────────────────
+// ── Main TemplatesPage ────────────────────────────────────────────────────────
 export function TemplatesPage() {
   const [templates, setTemplates] = useState<EventTemplate[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [showNew, setShowNew]     = useState(false);
-  const [editing, setEditing]     = useState<EventTemplate | null>(null);
+  const [loading,   setLoading]   = useState(true);
+  const [error,     setError]     = useState<string | null>(null);
+  const [showNew,   setShowNew]   = useState(false);
+  const [editing,   setEditing]   = useState<EventTemplate | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const loadTemplates = useCallback(async () => {
-    setLoading(true); setLoadError(null);
+  const load = useCallback(async () => {
+    setLoading(true); setError(null);
     try { setTemplates(await api.getTemplates()); }
-    catch (e: any) { setLoadError(e.message || 'Failed to load templates'); }
+    catch (e: any) { setError(e.message || 'Failed to load templates'); }
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { loadTemplates(); }, [loadTemplates]);
+  useEffect(() => { load(); }, [load]);
 
-  async function handleDelete(tmpl: EventTemplate) {
-    if (!confirm(`Delete template "${tmpl.title}"? This cannot be undone.`)) return;
-    setDeletingId(tmpl.id);
-    try { await api.deleteTemplate(tmpl.id); setTemplates(ts => ts.filter(t => t.id !== tmpl.id)); }
-    catch (e: any) { alert(e.message || 'Failed to delete template'); }
+  async function handleDelete(t: EventTemplate) {
+    if (!confirm(`Delete template "${t.title}"?`)) return;
+    setDeletingId(t.id);
+    try { await api.deleteTemplate(t.id); setTemplates(ts => ts.filter(x => x.id !== t.id)); }
+    catch (e: any) { alert(e.message || 'Failed to delete'); }
     finally { setDeletingId(null); }
   }
 
@@ -128,74 +139,70 @@ export function TemplatesPage() {
     <div className="flex flex-col h-full bg-white rounded-2xl border border-slate-200 overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 flex-shrink-0">
-        <div>
-          <h2 className="text-sm font-semibold text-slate-800">Predefined Class Templates</h2>
-          <p className="text-xs text-slate-400 mt-0.5">Reusable templates to speed up class creation</p>
+        <div className="flex items-center gap-2">
+          <BookTemplate size={16} className="text-brand-500" />
+          <h2 className="text-sm font-semibold text-slate-800">Class Templates</h2>
+          <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{templates.length}</span>
         </div>
         <Button size="sm" onClick={() => setShowNew(true)}>
           <Plus size={14} /> New template
         </Button>
       </div>
 
-      {loadError && (
-        <div className="flex items-center gap-2 px-4 py-2.5 bg-red-50 text-red-600 text-sm border-b border-red-100">
-          <AlertCircle size={15} className="flex-shrink-0" /> {loadError}
-          <button onClick={loadTemplates} className="ml-auto underline text-xs">Retry</button>
+      {error && (
+        <div className="flex items-center gap-2 px-4 py-2.5 bg-red-50 text-red-600 text-sm border-b border-red-100 flex-shrink-0">
+          <AlertCircle size={15} className="flex-shrink-0" /> {error}
+          <button onClick={load} className="ml-auto underline text-xs">Retry</button>
         </div>
       )}
 
       <div className="flex-1 overflow-y-auto p-4">
         {loading ? (
-          <div className="flex items-center justify-center h-48">
-            <div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
-          </div>
+          <div className="flex justify-center py-12"><Spinner /></div>
         ) : templates.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-48 gap-3 text-center">
-            <div className="w-12 h-12 rounded-2xl bg-brand-50 flex items-center justify-center">
-              <BookTemplate size={22} className="text-brand-400" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-slate-700">No templates yet</p>
-              <p className="text-xs text-slate-400 mt-1">Create templates to pre-fill class details quickly</p>
-            </div>
-            <Button size="sm" onClick={() => setShowNew(true)}><Plus size={14} /> Create first template</Button>
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <BookTemplate size={36} className="text-slate-200 mb-3" />
+            <p className="text-sm font-medium text-slate-500">No templates yet</p>
+            <p className="text-xs text-slate-400 mt-1 mb-4">Create reusable class templates to speed up scheduling</p>
+            <Button size="sm" onClick={() => setShowNew(true)}><Plus size={14} /> New template</Button>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {templates.map(tmpl => (
-              <div key={tmpl.id}
-                className="group relative flex flex-col gap-2 p-4 rounded-xl border border-slate-200 bg-white hover:border-brand-300 hover:shadow-sm transition-all">
+            {templates.map(t => (
+              <div key={t.id} className="flex flex-col gap-2 p-4 rounded-xl border border-slate-200 bg-white hover:border-brand-200 hover:shadow-sm transition-all group">
                 <div className="flex items-start justify-between gap-2">
-                  <h3 className="text-sm font-semibold text-slate-800 leading-snug">{tmpl.title}</h3>
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                    <button
-                      onClick={() => setEditing(tmpl)}
-                      className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-brand-500 transition-colors"
-                      title="Edit">
+                  <h3 className="text-sm font-semibold text-slate-800 leading-tight">{t.title}</h3>
+                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                    <button onClick={() => setEditing(t)}
+                      className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-brand-500 transition-colors" title="Edit">
                       <Pencil size={13} />
                     </button>
-                    <button
-                      onClick={() => handleDelete(tmpl)}
-                      disabled={deletingId === tmpl.id}
-                      className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors"
-                      title="Delete">
+                    <button onClick={() => handleDelete(t)} disabled={deletingId === t.id}
+                      className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors" title="Delete">
                       <Trash2 size={13} />
                     </button>
                   </div>
                 </div>
-
-                {tmpl.description && (
-                  <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">{tmpl.description}</p>
+                {t.description && (
+                  <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">{t.description}</p>
                 )}
-
-                {tmpl.maxCapacity != null && (
-                  <div className="flex items-center gap-1 mt-auto pt-2 border-t border-slate-100">
-                    <span className="flex items-center gap-1 text-xs text-slate-500">
-                      <Users size={11} className="text-slate-400" />
-                      {tmpl.maxCapacity} spots max
+                <div className="flex items-center gap-2 flex-wrap mt-auto pt-2 border-t border-slate-100">
+                  {t.price != null && t.price > 0 && (
+                    <span className="text-xs font-semibold text-brand-600 bg-brand-50 px-2 py-0.5 rounded-full">
+                      {t.price.toLocaleString()} ALL
                     </span>
-                  </div>
-                )}
+                  )}
+                  {(t.ageMin != null || t.ageMax != null) && (
+                    <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                      {t.ageMin ?? '?'}–{t.ageMax ?? '?'} yrs
+                    </span>
+                  )}
+                  {t.maxCapacity != null && (
+                    <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                      {t.maxCapacity} spots
+                    </span>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -205,14 +212,14 @@ export function TemplatesPage() {
       {showNew && (
         <TemplateFormModal
           onClose={() => setShowNew(false)}
-          onSaved={() => { setShowNew(false); loadTemplates(); }}
+          onSaved={() => { setShowNew(false); load(); }}
         />
       )}
       {editing && (
         <TemplateFormModal
           template={editing}
           onClose={() => setEditing(null)}
-          onSaved={() => { setEditing(null); loadTemplates(); }}
+          onSaved={() => { setEditing(null); load(); }}
         />
       )}
     </div>
