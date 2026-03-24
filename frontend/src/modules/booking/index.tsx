@@ -9,15 +9,16 @@ import { BookingModal } from './components/BookingModal';
 import { SpecialistsPage } from './components/SpecialistsPage';
 import { ServicesPage } from './components/ServicesPage';
 import { AdminPage } from '../../pages/AdminPage';
-import { isAdmin, getStoredUser, clearAuth } from '../../shared/lib/auth';
+import { isAdmin, getStoredUser, getAdminTenant, clearAuth } from '../../shared/lib/auth';
 
 type Page = 'calendar' | 'specialists' | 'services' | 'admin';
 interface Props { onLogout: () => void; }
 
 export function BookingModule({ onLogout }: Props) {
   const currentUser = getStoredUser();
-  const tenantType = currentUser?.tenant?.type ?? '';
-  const specialistLabel = tenantType.toLowerCase().includes('barber') ? 'Barbers' : 'Specialists';
+  // When super_admin is viewing a shop, tenant type comes from the admin-tenant cookie
+  const tenantType = (getAdminTenant()?.type ?? currentUser?.tenant?.type ?? '').toLowerCase();
+  const specialistLabel = tenantType.includes('barber') ? 'Barbers' : 'Specialists';
   const isSalon = /salon|saloon/i.test(tenantType);
 
   const [page, setPage] = useState<Page>('calendar');
