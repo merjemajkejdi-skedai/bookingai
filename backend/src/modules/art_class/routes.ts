@@ -25,7 +25,7 @@ async function dbRun(sql: string, ...params: unknown[]) {
 }
 
 artClassRouter.get('/events', requireAuth, async (req: Request, res: Response) => {
-  const tenantId = (req as any).user.tenantId;
+  const tenantId = resolveTenantId(req);
   const { start, end, teacherId } = req.query as Record<string, string>;
 
   let sql = `
@@ -63,7 +63,7 @@ artClassRouter.get('/events', requireAuth, async (req: Request, res: Response) =
 });
 
 artClassRouter.post('/events', requireAuth, async (req: Request, res: Response) => {
-  const tenantId = (req as any).user.tenantId;
+  const tenantId = resolveTenantId(req);
   const { title, description = '', date, startTime, endTime, teacherId, ageMin, ageMax, maxCapacity, price } = req.body;
 
   if (!title || !date) return err(res, 'title and date are required');
@@ -90,7 +90,7 @@ artClassRouter.post('/events', requireAuth, async (req: Request, res: Response) 
 });
 
 artClassRouter.put('/events/:id', requireAuth, async (req: Request, res: Response) => {
-  const tenantId = (req as any).user.tenantId;
+  const tenantId = resolveTenantId(req);
   const { id } = req.params;
   const { title, description, date, startTime, endTime, teacherId, ageMin, ageMax, maxCapacity, price } = req.body;
 
@@ -121,7 +121,7 @@ artClassRouter.put('/events/:id', requireAuth, async (req: Request, res: Respons
 });
 
 artClassRouter.delete('/events/:id', requireAuth, async (req: Request, res: Response) => {
-  const tenantId = (req as any).user.tenantId;
+  const tenantId = resolveTenantId(req);
   const { id } = req.params;
 
   const existing = await dbGet('SELECT id FROM art_events WHERE id=? AND tenant_id=?', id, tenantId) as any;
@@ -134,7 +134,7 @@ artClassRouter.delete('/events/:id', requireAuth, async (req: Request, res: Resp
 });
 
 artClassRouter.get('/events/:id/registrations', requireAuth, async (req: Request, res: Response) => {
-  const tenantId = (req as any).user.tenantId;
+  const tenantId = resolveTenantId(req);
   const { id } = req.params;
 
   const event = await dbGet('SELECT id FROM art_events WHERE id=? AND tenant_id=?', id, tenantId) as any;
@@ -151,7 +151,7 @@ artClassRouter.get('/events/:id/registrations', requireAuth, async (req: Request
 });
 
 artClassRouter.post('/events/:id/registrations', requireAuth, async (req: Request, res: Response) => {
-  const tenantId = (req as any).user.tenantId;
+  const tenantId = resolveTenantId(req);
   const { id } = req.params;
   const { participantName, parentPhone = '', parentName = '', notes = '' } = req.body;
 
@@ -181,7 +181,7 @@ artClassRouter.post('/events/:id/registrations', requireAuth, async (req: Reques
 });
 
 artClassRouter.delete('/events/:id/registrations/:regId', requireAuth, async (req: Request, res: Response) => {
-  const tenantId = (req as any).user.tenantId;
+  const tenantId = resolveTenantId(req);
   const { id, regId } = req.params;
 
   const event = await dbGet('SELECT id FROM art_events WHERE id=? AND tenant_id=?', id, tenantId) as any;
@@ -198,7 +198,7 @@ artClassRouter.delete('/events/:id/registrations/:regId', requireAuth, async (re
 
 // ── GET /event-templates ──────────────────────────────────────────────────────
 artClassRouter.get('/event-templates', requireAuth, async (req: Request, res: Response) => {
-  const tenantId = (req as any).user.tenantId;
+  const tenantId = resolveTenantId(req);
   try {
     const rows = await dbAll(
       `SELECT t.*, s.name AS teacher_name, s.color AS teacher_color
@@ -222,7 +222,7 @@ artClassRouter.get('/event-templates', requireAuth, async (req: Request, res: Re
 
 // ── POST /event-templates ─────────────────────────────────────────────────────
 artClassRouter.post('/event-templates', requireAuth, async (req: Request, res: Response) => {
-  const tenantId = (req as any).user.tenantId;
+  const tenantId = resolveTenantId(req);
   const { title, description = '', teacherId, ageMin, ageMax, maxCapacity, price } = req.body;
   if (!title) return err(res, 'title is required');
   const id = crypto.randomUUID();
@@ -245,7 +245,7 @@ artClassRouter.post('/event-templates', requireAuth, async (req: Request, res: R
 
 // ── PUT /event-templates/:id ──────────────────────────────────────────────────
 artClassRouter.put('/event-templates/:id', requireAuth, async (req: Request, res: Response) => {
-  const tenantId = (req as any).user.tenantId;
+  const tenantId = resolveTenantId(req);
   const { id } = req.params;
   const { title, description, teacherId, ageMin, ageMax, maxCapacity, price } = req.body;
   const existing = await dbGet('SELECT id FROM event_templates WHERE id=? AND tenant_id=?', id, tenantId) as any;
@@ -269,7 +269,7 @@ artClassRouter.put('/event-templates/:id', requireAuth, async (req: Request, res
 
 // ── DELETE /event-templates/:id ───────────────────────────────────────────────
 artClassRouter.delete('/event-templates/:id', requireAuth, async (req: Request, res: Response) => {
-  const tenantId = (req as any).user.tenantId;
+  const tenantId = resolveTenantId(req);
   const { id } = req.params;
   const existing = await dbGet('SELECT id FROM event_templates WHERE id=? AND tenant_id=?', id, tenantId) as any;
   if (!existing) return err(res, 'Template not found', 404);
