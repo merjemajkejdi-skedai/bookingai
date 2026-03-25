@@ -527,6 +527,14 @@ bookingRouter.get('/analytics/booking', requireAuth, async (req: Request, res: R
   // Pad `to` so the full last day is included regardless of time
   const toEnd = to + 'T23:59:59';
 
+  // If the resolved tenantId is the demo fallback but there's a TENANT_ID env var,
+  // prefer the env var so Railway bookings go to the right place.
+  // Also log what we're querying so Railway logs make it obvious if there's a mismatch.
+  const effectiveTenantId = (tenantId === 'tenant-demo-001' && process.env.TENANT_ID)
+    ? process.env.TENANT_ID
+    : tenantId;
+  console.log(`📊 Analytics query — tenantId: ${tenantId} → effective: ${effectiveTenantId}, from: ${from}, to: ${toEnd}`);
+
   try {
     // Overview — LEFT JOIN so bookings with missing/deleted services still count
     const overview = await dbGet(`
@@ -536,7 +544,8 @@ bookingRouter.get('/analytics/booking', requireAuth, async (req: Request, res: R
       LEFT JOIN services sv ON sv.id = b.service_id
       WHERE b.tenant_id=? AND b.status='confirmed'
         AND b.starts_at >= ? AND b.starts_at <= ?
-    `, tenantId, from, toEnd) as any;
+    `, effectiveTenantId, from, toEnd) as any;
+    console.log(`📊 Overview result: bookings=${overview?.total_bookings}, revenue=${overview?.total_revenue}`);
 
     // By specialist — LEFT JOIN services
     const bySpecialist = await dbAll(`
@@ -550,9 +559,9 @@ bookingRouter.get('/analytics/booking', requireAuth, async (req: Request, res: R
         AND b.starts_at >= ? AND b.starts_at <= ?
       GROUP BY sp.id, sp.name, sp.color
       ORDER BY revenue DESC
-    `, tenantId, from, toEnd) as any[];
+    `, effectiveTenantId, from, toEnd) as any[];
 
-    // By service — LEFT JOIN (only bookings that DO have a service)
+    // By service — only bookings that DO have a service
     const byService = await dbAll(`
       SELECT sv.id, sv.name, sv.color,
              COUNT(b.id) AS bookings,
@@ -563,7 +572,7 @@ bookingRouter.get('/analytics/booking', requireAuth, async (req: Request, res: R
         AND b.starts_at >= ? AND b.starts_at <= ?
       GROUP BY sv.id, sv.name, sv.color
       ORDER BY revenue DESC
-    `, tenantId, from, toEnd) as any[];
+    `, effectiveTenantId, from, toEnd) as any[];
 
     // By service group (saloon)
     const byServiceGroup = await dbAll(`
@@ -577,7 +586,7 @@ bookingRouter.get('/analytics/booking', requireAuth, async (req: Request, res: R
         AND b.starts_at >= ? AND b.starts_at <= ?
       GROUP BY sg.id, sg.name
       ORDER BY revenue DESC
-    `, tenantId, from, toEnd) as any[];
+    `, effectiveTenantId, from, toEnd) as any[];
 
     ok(res, {
       from, to,
