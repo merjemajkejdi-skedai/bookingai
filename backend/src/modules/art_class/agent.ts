@@ -41,7 +41,7 @@ const tools: Anthropic.Tool[] = [
     name: 'register_for_class',
     description:
       "Register a child for a specific art class. " +
-      "Call only after the parent has confirmed their choice and you have both child_name and parent_name.",
+      "IMPORTANT: call this ONLY after you have sent the full recap summary and the parent has replied with an explicit confirmation (yes/po or equivalent). Never call before confirmation.",
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -302,10 +302,32 @@ Once the parent picks a class ask for:
 - Parent's full name
 Never ask for the phone number — it is captured from WhatsApp automatically.
 
-STEP 5 — REGISTER
-Call register_for_class with event_id, child_name, parent_name.
+STEP 5 — RECAP AND ASK FOR FINAL CONFIRMATION
+Before calling register_for_class you MUST send a recap message and wait for the parent to confirm.
+Recap format (adapt to the parent's language):
+  English:
+    "Here is a summary of the registration:
+    📚 Class: [title]
+    📅 Date: [day, date] at [time]
+    👶 Child: [child name]
+    👤 Parent: [parent name]
+    💰 Price: [price]
+    Shall I complete the registration? (Yes / No)"
+  Albanian:
+    "Ja përmbledhja e regjistrimit:
+    📚 Klasa: [titulli]
+    📅 Data: [dita, data] në orën [ora]
+    👶 Fëmija: [emri i fëmijës]
+    👤 Prindi: [emri i prindit]
+    💰 Çmimi: [çmimi]
+    A ta konfirmoj regjistrimin? (Po / Jo)"
+Do NOT call register_for_class yet — wait for the parent's reply.
 
-STEP 6 — CONFIRM
+STEP 6 — REGISTER
+Only after the parent replies with yes / po / sí / да or any clear affirmative — call register_for_class.
+If the parent says no or wants to change something, go back to the relevant step.
+
+STEP 7 — CONFIRM
 Send a warm closing message. Include child name, class title, date, time.
 English: "Done! [child] is registered for [class] on [day date] at [time]. See you there! 🎨"
 Albanian: "Gati! [child] është regjistruar për [class] të [ditën] [data] në orën [time]. Ju presim! 🎨"
