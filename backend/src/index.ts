@@ -15,6 +15,7 @@ const PORT = process.env.PORT || 3001;
 app.use(cors({
   origin: [
     'https://app.skedai.net',
+    'https://www.skedai.net',
     'https://bookingai-one.vercel.app',
     'http://localhost:5173',
   ],
