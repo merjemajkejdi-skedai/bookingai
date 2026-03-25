@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Pencil, RefreshCw, Power, Phone, ExternalLink, BarChart2 } from 'lucide-react';
+import { Plus, Pencil, RefreshCw, Power, Phone, ExternalLink, BarChart2, Copy, Check } from 'lucide-react';
 import { adminApi } from '../shared/lib/auth';
 import type { AdminTenant } from '../shared/lib/auth';
 import { Button, Modal, Input, Select, Spinner } from '../components/ui';
@@ -87,7 +87,7 @@ export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) 
                   </span>
                   <span className="text-xs text-slate-400 capitalize">{t.type}</span>
                 </div>
-                <div className="flex items-center gap-3 mt-1">
+                <div className="flex items-center gap-3 mt-1 flex-wrap">
                   <span className="text-xs text-slate-400">{t.owner_email || 'No owner'}</span>
                   {t.whatsapp_number && (
                     <span className="text-xs text-slate-400 flex items-center gap-1">
@@ -96,6 +96,8 @@ export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) 
                   )}
                   <span className="text-xs text-slate-300">·</span>
                   <span className="text-xs text-slate-400">{t.total_bookings} bookings · {t.specialist_count} specialists</span>
+                  <span className="text-xs text-slate-300">·</span>
+                  <CopyId id={t.id} />
                 </div>
               </div>
               <div className="flex gap-1.5">
@@ -164,6 +166,24 @@ export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) 
         />
       )}
     </div>
+  );
+}
+
+// --- Copy tenant ID button ---------------------------------------------------
+function CopyId({ id }: { id: string }) {
+  const [copied, setCopied] = useState(false);
+  function copy() {
+    navigator.clipboard.writeText(id);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+  return (
+    <button onClick={copy}
+      className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600 transition-colors font-mono"
+      title="Copy tenant ID (set as TENANT_ID in Railway)">
+      {copied ? <Check size={10} className="text-green-500" /> : <Copy size={10} />}
+      <span className="truncate max-w-[120px]">{id}</span>
+    </button>
   );
 }
 

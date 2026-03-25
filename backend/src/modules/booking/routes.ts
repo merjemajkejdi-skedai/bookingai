@@ -524,32 +524,35 @@ bookingRouter.get('/analytics/booking', requireAuth, async (req: Request, res: R
   const from = (req.query.from as string) || format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), 'yyyy-MM-dd');
   const to   = (req.query.to   as string) || format(new Date(), 'yyyy-MM-dd');
 
+  // Pad `to` so the full last day is included regardless of time
+  const toEnd = to + 'T23:59:59';
+
   try {
-    // Overview
+    // Overview — LEFT JOIN so bookings with missing/deleted services still count
     const overview = await dbGet(`
       SELECT COUNT(b.id) AS total_bookings,
              COALESCE(SUM(sv.price), 0) AS total_revenue
       FROM bookings b
-      JOIN services sv ON sv.id = b.service_id
+      LEFT JOIN services sv ON sv.id = b.service_id
       WHERE b.tenant_id=? AND b.status='confirmed'
-        AND DATE(b.starts_at) >= ? AND DATE(b.starts_at) <= ?
-    `, tenantId, from, to) as any;
+        AND b.starts_at >= ? AND b.starts_at <= ?
+    `, tenantId, from, toEnd) as any;
 
-    // By specialist
+    // By specialist — LEFT JOIN services
     const bySpecialist = await dbAll(`
       SELECT sp.id, sp.name, sp.color,
              COUNT(b.id) AS bookings,
              COALESCE(SUM(sv.price), 0) AS revenue
       FROM bookings b
       JOIN specialists sp ON sp.id = b.specialist_id
-      JOIN services sv ON sv.id = b.service_id
+      LEFT JOIN services sv ON sv.id = b.service_id
       WHERE b.tenant_id=? AND b.status='confirmed'
-        AND DATE(b.starts_at) >= ? AND DATE(b.starts_at) <= ?
+        AND b.starts_at >= ? AND b.starts_at <= ?
       GROUP BY sp.id, sp.name, sp.color
       ORDER BY revenue DESC
-    `, tenantId, from, to) as any[];
+    `, tenantId, from, toEnd) as any[];
 
-    // By service
+    // By service — LEFT JOIN (only bookings that DO have a service)
     const byService = await dbAll(`
       SELECT sv.id, sv.name, sv.color,
              COUNT(b.id) AS bookings,
@@ -557,10 +560,10 @@ bookingRouter.get('/analytics/booking', requireAuth, async (req: Request, res: R
       FROM bookings b
       JOIN services sv ON sv.id = b.service_id
       WHERE b.tenant_id=? AND b.status='confirmed'
-        AND DATE(b.starts_at) >= ? AND DATE(b.starts_at) <= ?
+        AND b.starts_at >= ? AND b.starts_at <= ?
       GROUP BY sv.id, sv.name, sv.color
       ORDER BY revenue DESC
-    `, tenantId, from, to) as any[];
+    `, tenantId, from, toEnd) as any[];
 
     // By service group (saloon)
     const byServiceGroup = await dbAll(`
@@ -571,10 +574,10 @@ bookingRouter.get('/analytics/booking', requireAuth, async (req: Request, res: R
       JOIN services sv ON sv.id = b.service_id
       JOIN service_groups sg ON sg.id = sv.group_id
       WHERE b.tenant_id=? AND b.status='confirmed'
-        AND DATE(b.starts_at) >= ? AND DATE(b.starts_at) <= ?
+        AND b.starts_at >= ? AND b.starts_at <= ?
       GROUP BY sg.id, sg.name
       ORDER BY revenue DESC
-    `, tenantId, from, to) as any[];
+    `, tenantId, from, toEnd) as any[];
 
     ok(res, {
       from, to,
