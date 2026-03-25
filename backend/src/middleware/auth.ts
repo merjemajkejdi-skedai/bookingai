@@ -55,9 +55,12 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction) {
 export function resolveTenantId(req: Request, fallback = 'tenant-demo-001'): string {
   if (!req.user) return fallback;
   if (req.user.role === 'super_admin') {
-    return (req.query.tenantId as string)
-      || (req.body?.tenantId as string)
-      || fallback;
+    const fromQuery = typeof req.query.tenantId === 'string' && req.query.tenantId.trim()
+      ? req.query.tenantId.trim() : null;
+    const fromBody  = typeof req.body?.tenantId === 'string' && req.body.tenantId.trim()
+      ? req.body.tenantId.trim() : null;
+    return fromQuery || fromBody || fallback;
   }
-  return req.user.tenantId ?? fallback;
+  const id = req.user.tenantId;
+  return (typeof id === 'string' && id.trim()) ? id.trim() : fallback;
 }

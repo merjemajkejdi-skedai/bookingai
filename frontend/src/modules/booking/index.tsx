@@ -166,7 +166,7 @@ export function BookingModule({ onLogout }: Props) {
       <main className="flex-1 min-w-0 overflow-hidden flex flex-col gap-2 md:gap-4 p-2 md:p-4">
 
         {/* Mobile specialist filter chips */}
-        {page === 'calendar' && specialists.length > 1 && (
+        {page === 'calendar' && specialists.length > 0 && (
           <div className="md:hidden flex gap-2 overflow-x-auto pb-1 flex-shrink-0 scrollbar-none">
             <button
               onClick={() => setSelectedSpecialistId(null)}

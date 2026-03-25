@@ -461,7 +461,7 @@ export function EventsPage({ specialists }: EventsPageProps) {
       </div>
 
       {/* Mobile teacher filter */}
-      {specialists.length > 1 && (
+      {specialists.length > 0 && (
         <div className="md:hidden flex gap-2 overflow-x-auto px-3 py-2 border-b border-slate-100 flex-shrink-0 scrollbar-none">
           <button onClick={() => setFilterTeacherId(null)}
             className={clsx('px-3 py-1 rounded-full text-xs font-medium border transition-colors whitespace-nowrap flex-shrink-0',

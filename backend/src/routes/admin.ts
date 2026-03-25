@@ -97,6 +97,28 @@ adminRouter.post('/tenants/:id/reset-password', async (req: Request, res: Respon
   ok(res, { message: 'Password reset successfully' });
 });
 
+// POST /admin/tenants/:id/migrate-demo-data
+// Re-assigns records stored under 'tenant-demo-001' (the old fallback) to this tenant
+adminRouter.post('/tenants/:id/migrate-demo-data', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const tenant = await dbGet('SELECT id FROM tenants WHERE id=?', id) as any;
+  if (!tenant) return err(res, 'Tenant not found', 404);
+  try {
+    const results: Record<string, number> = {};
+    for (const table of ['bookings', 'art_events', 'event_templates', 'event_registrations', 'specialists', 'services']) {
+      const r = await dbAll(
+        `SELECT COUNT(*) AS c FROM ${table} WHERE tenant_id='tenant-demo-001'`
+      ) as any[];
+      const count = Number(r[0]?.c ?? 0);
+      if (count > 0) {
+        await dbRun(`UPDATE ${table} SET tenant_id=? WHERE tenant_id='tenant-demo-001'`, id);
+        results[table] = count;
+      }
+    }
+    ok(res, { migrated: results });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
 // GET /admin/stats
 adminRouter.get('/stats', async (_req: Request, res: Response) => {
   const [t, b, bt, u] = await Promise.all([
