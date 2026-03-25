@@ -581,7 +581,7 @@ bookingRouter.get('/analytics/booking', requireAuth, async (req: Request, res: R
       ORDER BY revenue DESC
     `, effectiveTenantId, from, toEnd) as any[];
 
-    // By service group (saloon)
+    // By service group (saloon) — wrapped so a missing column never kills the whole response
     const byServiceGroup = await dbAll(`
       SELECT sg.id, sg.name,
              COUNT(b.id) AS bookings,
@@ -593,7 +593,10 @@ bookingRouter.get('/analytics/booking', requireAuth, async (req: Request, res: R
         AND b.starts_at >= ? AND b.starts_at <= ?
       GROUP BY sg.id, sg.name
       ORDER BY revenue DESC
-    `, effectiveTenantId, from, toEnd) as any[];
+    `, effectiveTenantId, from, toEnd).catch((e: any) => {
+      console.warn('byServiceGroup query skipped:', e.message);
+      return [];
+    }) as any[];
 
     ok(res, {
       from, to,
