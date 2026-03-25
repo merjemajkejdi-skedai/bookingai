@@ -536,6 +536,13 @@ bookingRouter.get('/analytics/booking', requireAuth, async (req: Request, res: R
   console.log(`📊 Analytics query — tenantId: ${tenantId} → effective: ${effectiveTenantId}, from: ${from}, to: ${toEnd}`);
 
   try {
+    // Diagnostic: count ALL bookings for this tenant regardless of date/status
+    const allBookings = await dbAll(
+      `SELECT id, tenant_id, status, starts_at FROM bookings WHERE tenant_id=? LIMIT 10`,
+      effectiveTenantId
+    ) as any[];
+    console.log(`📊 All bookings for tenant ${effectiveTenantId}: ${allBookings.length} rows`, JSON.stringify(allBookings.map((b: any) => ({ id: b.id?.slice(0,8), status: b.status, starts_at: b.starts_at }))));
+
     // Overview — LEFT JOIN so bookings with missing/deleted services still count
     const overview = await dbGet(`
       SELECT COUNT(b.id) AS total_bookings,
