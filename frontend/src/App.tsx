@@ -7,13 +7,15 @@ import { AdminPage } from './pages/AdminPage';
 import { BookingModule } from './modules/booking';
 import { ArtEventModule } from './modules/art_event';
 import { ArtClassModule } from './modules/art_class';
+import { RestaurantModule } from './modules/restaurant';
 
-type ShopMode = 'booking' | 'art_event' | 'art_class';
+type ShopMode = 'booking' | 'art_event' | 'art_class' | 'restaurant';
 
 function getShopMode(type: string): ShopMode {
   const t = type.toLowerCase();
-  if (t === 'art_class') return 'art_class';
-  if (t === 'art_event') return 'art_event';
+  if (t === 'art_class')  return 'art_class';
+  if (t === 'art_event')  return 'art_event';
+  if (t === 'restaurant') return 'restaurant';
   return 'booking';
 }
 
@@ -142,9 +144,10 @@ export default function App() {
           onLogout={handleLogout}
         />
         <div className="flex-1 min-h-0">
-          {mode === 'art_class' && <ArtClassModule key={viewTenant.id} onLogout={handleLogout} />}
-          {mode === 'art_event' && <ArtEventModule key={viewTenant.id} onLogout={handleLogout} />}
-          {mode === 'booking'   && <BookingModule  key={viewTenant.id} onLogout={handleLogout} />}
+          {mode === 'art_class'  && <ArtClassModule    key={viewTenant.id} onLogout={handleLogout} />}
+          {mode === 'art_event'  && <ArtEventModule    key={viewTenant.id} onLogout={handleLogout} />}
+          {mode === 'booking'    && <BookingModule      key={viewTenant.id} onLogout={handleLogout} />}
+          {mode === 'restaurant' && <RestaurantModule   key={viewTenant.id} onLogout={handleLogout} />}
         </div>
       </div>
     );
@@ -154,9 +157,10 @@ export default function App() {
   const mode = getShopMode(user?.tenant?.type ?? '');
   return (
     <div className="h-screen">
-      {mode === 'art_class' && <ArtClassModule onLogout={handleLogout} />}
-      {mode === 'art_event' && <ArtEventModule onLogout={handleLogout} />}
-      {mode === 'booking'   && <BookingModule  onLogout={handleLogout} />}
+      {mode === 'art_class'  && <ArtClassModule    onLogout={handleLogout} />}
+      {mode === 'art_event'  && <ArtEventModule    onLogout={handleLogout} />}
+      {mode === 'booking'    && <BookingModule      onLogout={handleLogout} />}
+      {mode === 'restaurant' && <RestaurantModule   onLogout={handleLogout} />}
     </div>
   );
 }

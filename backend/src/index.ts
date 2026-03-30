@@ -8,6 +8,7 @@ import { adminRouter } from './routes/admin.js';
 import { bookingRouter } from './modules/booking/routes.js';
 import { artEventRouter } from './modules/art_event/routes.js';
 import { artClassRouter } from './modules/art_class/routes.js';
+import { restaurantRouter } from './modules/restaurant/routes.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -33,6 +34,7 @@ app.get('/health', (_, res) => res.json({
 app.use('/api', bookingRouter);
 app.use('/api', artEventRouter);
 app.use('/api', artClassRouter);
+app.use('/api', restaurantRouter);
 app.use('/auth', authRouter);
 app.use('/admin', adminRouter);
 app.use('/whatsapp', whatsappRouter);

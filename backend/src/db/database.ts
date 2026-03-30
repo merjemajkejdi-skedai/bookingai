@@ -215,6 +215,42 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_event_regs_event  ON event_registrations(event_id);
   CREATE INDEX IF NOT EXISTS idx_event_regs_phone  ON event_registrations(parent_phone);
   CREATE INDEX IF NOT EXISTS idx_event_templates_tenant ON event_templates(tenant_id);
+  CREATE TABLE IF NOT EXISTS restaurant_zones (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    color TEXT NOT NULL DEFAULT '#6366f1',
+    max_concurrent INTEGER NOT NULL DEFAULT 10,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE TABLE IF NOT EXISTS restaurant_tables (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    zone_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    seats INTEGER NOT NULL DEFAULT 4,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE TABLE IF NOT EXISTS restaurant_reservations (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    zone_id TEXT NOT NULL,
+    table_id TEXT,
+    guest_name TEXT NOT NULL,
+    guest_phone TEXT NOT NULL DEFAULT '',
+    guest_count INTEGER NOT NULL DEFAULT 2,
+    date TEXT NOT NULL,
+    time TEXT NOT NULL,
+    duration_mins INTEGER NOT NULL DEFAULT 90,
+    notes TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'confirmed',
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE INDEX IF NOT EXISTS idx_restaurant_res_tenant ON restaurant_reservations(tenant_id, date);
+  CREATE INDEX IF NOT EXISTS idx_restaurant_tables_zone ON restaurant_tables(zone_id);
 `;
 
 export async function runMigrations() {
@@ -235,6 +271,8 @@ export async function runMigrations() {
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS has_analytics INTEGER NOT NULL DEFAULT 0`,
       `ALTER TABLE services ADD COLUMN IF NOT EXISTS group_id TEXT`,
       `ALTER TABLE specialists ADD COLUMN IF NOT EXISTS service_group_ids TEXT NOT NULL DEFAULT '[]'`,
+      `ALTER TABLE restaurant_zones ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''`,
+      `ALTER TABLE restaurant_zones ADD COLUMN IF NOT EXISTS max_concurrent INTEGER NOT NULL DEFAULT 10`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
