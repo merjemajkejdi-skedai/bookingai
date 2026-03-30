@@ -6,7 +6,7 @@ import { Button, Modal, Input, Select, Spinner } from '../components/ui';
 import clsx from 'clsx';
 
 const PLANS = ['starter', 'growth', 'pro'];
-const TYPES = ['barbershop', 'salon', 'dentist', 'medical', 'hotel', 'art_class', 'art_event'];
+const TYPES = ['barbershop', 'salon', 'dentist', 'medical', 'hotel', 'art_class', 'art_event', 'restaurant'];
 
 interface AdminPageProps {
   onViewShop?: (tenant: AdminTenant) => void;
