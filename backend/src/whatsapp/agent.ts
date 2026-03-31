@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { format, addDays, parseISO } from 'date-fns';
 import { prepare, isPg, query, queryOne, queryRun } from '../db/database.js';
+import { runRestaurantAgent } from '../modules/restaurant/agent.js';
 
 async function dbAll(sql: string, ...p: unknown[]) { return isPg ? query(sql, p) : prepare(sql).all(...p); }
 async function dbGet(sql: string, ...p: unknown[]) { return isPg ? queryOne(sql, p) : prepare(sql).get(...p); }
@@ -1027,6 +1028,12 @@ export async function runBookingAgent(
   const tenantId = process.env.TENANT_ID || 'tenant-demo-001';
   const tenantRow = await dbGet('SELECT type FROM tenants WHERE id = ?', tenantId) as any;
   const tenantTypeLower = (tenantRow?.type || 'barbershop').toLowerCase();
+
+  // Restaurant is fully isolated — delegate immediately, never use booking tools
+  if (tenantTypeLower === 'restaurant') {
+    return runRestaurantAgent(customerMessage, conversationHistory, customerPhone, tenantId);
+  }
+
   const activeTools = tenantTypeLower === 'art_class' ? artClassTools
                     : tenantTypeLower === 'art_event'  ? artEventTools
                     : bookingTools;
