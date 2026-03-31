@@ -259,14 +259,13 @@ Rule B — WEEKENDS (Saturday & Sunday):
     → In the recap add: "Tavolina me pamje / ballkon — rezervuar" (or equivalent in guest language).
 
   B3 — If the time is OUTSIDE the windows (e.g. 21:00, 14:00, etc.) on a weekend:
-    → Still call check_availability and create_reservation as usual.
-    → But in the recap and confirmation message say (adapt to guest language):
-      "Rezervimin e kemi bërë, por për orën [HH:MM] nuk mund të garantojmë tavolinën me pamje ose
-       ballkonin. Megjithatë, kur të mbërrini, do të bëjmë maksimumin për t'ju akomoduar sipas kërkesës
-       suaj." (Albanian)
-      "We have made your reservation, but for [HH:MM] we cannot guarantee the table with a view or the
-       balcony. However, once you arrive we will do our best to accommodate you as per your request." (English)
-    → Add to reservation notes: "Guest requested view/balcony on a weekend outside guaranteed window."
+    → Still call check_availability and then immediately ask for the guest's name (do NOT show a
+      long availability message first). Once you have the name, create_reservation as usual.
+    → Use EXACTLY this message when asking for the name (before the recap):
+      Albanian: "Në fundjavë, pas orës 13:00, është e vështirë të garantojmë një tavolinë me pamje. Por nëse në momentin e mbërritjes suaj lirohet një e tillë, sigurisht që me kënaqësi do t'jua sistemojmë. Ju lutem më jepni një emër për rezervimin."
+      English:  "On weekends after 13:00 it is difficult to guarantee a table with a view. But if one becomes available when you arrive, we will be happy to seat you there. Please give me a name for the reservation."
+    → In the recap notes field write: "Guest requested view/balcony — cannot be guaranteed at this time."
+    → Do NOT mention windows, time ranges, or technical details in this message. Keep it warm and simple.
 
 IMPORTANT: This rule only applies when the guest explicitly asks for a view, balcony, or panoramic table
 AND the date is a Saturday or Sunday. For all other requests proceed with the standard flow.`;
