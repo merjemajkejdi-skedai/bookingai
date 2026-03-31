@@ -258,8 +258,10 @@ export function CalendarPage({ zones: zonesProp = [] }: Props) {
 
   const loadMonth = useCallback(async () => {
     setLoading(true);
-    const from = format(startOfMonth(currentMonth), 'yyyy-MM-dd');
-    const to   = format(endOfMonth(currentMonth),   'yyyy-MM-dd');
+    // Use the visible grid range (Mon of first week → Sun of last week) so
+    // reservations on days from adjacent months that appear in the grid are loaded
+    const from = format(startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 1 }), 'yyyy-MM-dd');
+    const to   = format(endOfWeek(endOfMonth(currentMonth),     { weekStartsOn: 1 }), 'yyyy-MM-dd');
     try { setReservations(await api.getReservations({ from, to })); }
     catch { /* ignore */ }
     finally { setLoading(false); }
@@ -281,7 +283,6 @@ export function CalendarPage({ zones: zonesProp = [] }: Props) {
   }
 
   function handleDayClick(day: Date) {
-    if (!isSameMonth(day, currentMonth)) return;
     setSelectedDate(format(day, 'yyyy-MM-dd'));
   }
 
@@ -357,8 +358,8 @@ export function CalendarPage({ zones: zonesProp = [] }: Props) {
                   const dateStr = format(day, 'yyyy-MM-dd');
                   return (
                     <div key={day.toISOString()} onClick={() => handleDayClick(day)}
-                      className={clsx('border-b border-r border-slate-100 p-1.5 transition-colors',
-                        inMonth ? 'cursor-pointer hover:bg-brand-50/30 bg-white' : 'bg-slate-50/50 cursor-default',
+                      className={clsx('border-b border-r border-slate-100 p-1.5 transition-colors cursor-pointer',
+                        inMonth ? 'hover:bg-brand-50/30 bg-white' : 'bg-slate-50/50 hover:bg-slate-100/60',
                         selectedDate === dateStr && 'bg-brand-50/60')}>
                       <span className={clsx('inline-flex w-6 h-6 items-center justify-center rounded-full text-xs font-medium mb-1',
                         todayDay ? 'bg-brand-500 text-white' : inMonth ? 'text-slate-700' : 'text-slate-300')}>
