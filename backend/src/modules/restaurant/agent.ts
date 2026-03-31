@@ -199,11 +199,78 @@ async function executeTool(
 }
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+function isWeekend(dateStr: string): boolean {
+  const d = new Date(dateStr);
+  const day = d.getDay(); // 0=Sun, 6=Sat
+  return day === 0 || day === 6;
+}
+
+function isVipPreferredRequest(message: string): boolean {
+  const lower = message.toLowerCase();
+  return /view|balcon|ballkon|panoram|pamje|terrac|terras|ballk/.test(lower);
+}
+
+function inVipTimeWindow(time: string): boolean {
+  const [h, m] = time.split(':').map(Number);
+  const mins = h * 60 + m;
+  const lunchStart = 12 * 60, lunchEnd = 13 * 60;   // 12:00–13:00
+  const dinnerStart = 18 * 60, dinnerEnd = 20 * 60 + 30; // 18:00–20:30
+  return (mins >= lunchStart && mins <= lunchEnd) || (mins >= dinnerStart && mins <= dinnerEnd);
+}
+
+// ---------------------------------------------------------------------------
 // System prompt
 // ---------------------------------------------------------------------------
+const VIP_TENANT_ID = 'd3f155b0-fb15-4023-a037-e0b66876164c';
+
 async function buildSystemPrompt(tenantId: string): Promise<string> {
   const tenant = await dbGet('SELECT name FROM tenants WHERE id = ?', tenantId) as any;
   const now    = format(new Date(), "EEEE d MMMM yyyy, HH:mm");
+
+  // Load VIP zone names for the special-rules tenant so the prompt can reference them
+  let vipZoneBlock = '';
+  if (tenantId === VIP_TENANT_ID) {
+    const vipZones = await dbAll(
+      `SELECT name FROM restaurant_zones WHERE tenant_id = ? AND is_vip = 1 AND is_active = 1`,
+      tenantId
+    ) as any[];
+    const vipNames = vipZones.map((z: any) => z.name).join(', ') || 'VIP zones';
+
+    vipZoneBlock = `
+
+=== WEEKEND VIP / BALCONY / VIEW TABLE RULES (applies ONLY on Saturday and Sunday) ===
+The VIP zones (${vipNames}) contain the tables with a view and the balcony tables.
+
+Rule A — WEEKDAYS (Monday–Friday): no special restrictions. Follow the normal flow for any request.
+
+Rule B — WEEKENDS (Saturday & Sunday):
+  If the guest mentions a "view", "balcony", "ballkon", "pamje", "panoramë", "terracë" or any similar
+  request for a scenic/premium spot, apply the following:
+
+  B1 — Check the requested time:
+    • Lunch window:  12:00–13:00
+    • Dinner window: 18:00–20:30
+
+  B2 — If the time IS within a window (B1):
+    → Treat as a normal reservation for the VIP zone (preference = "outside" to match VIP zone
+      descriptions, or whichever zone has is_vip=true). Proceed with check_availability and book normally.
+    → In the recap add: "Tavolina me pamje / ballkon — rezervuar" (or equivalent in guest language).
+
+  B3 — If the time is OUTSIDE the windows (e.g. 21:00, 14:00, etc.) on a weekend:
+    → Still call check_availability and create_reservation as usual.
+    → But in the recap and confirmation message say (adapt to guest language):
+      "Rezervimin e kemi bërë, por për orën [HH:MM] nuk mund të garantojmë tavolinën me pamje ose
+       ballkonin. Megjithatë, kur të mbërrini, do të bëjmë maksimumin për t'ju akomoduar sipas kërkesës
+       suaj." (Albanian)
+      "We have made your reservation, but for [HH:MM] we cannot guarantee the table with a view or the
+       balcony. However, once you arrive we will do our best to accommodate you as per your request." (English)
+    → Add to reservation notes: "Guest requested view/balcony on a weekend outside guaranteed window."
+
+IMPORTANT: This rule only applies when the guest explicitly asks for a view, balcony, or panoramic table
+AND the date is a Saturday or Sunday. For all other requests proceed with the standard flow.`;
+  }
 
   return `You are the reservation assistant for ${tenant?.name || 'the restaurant'}.
 You ONLY help guests make table reservations via WhatsApp. Do not discuss anything else.
@@ -216,6 +283,7 @@ There are NO specialists, NO working hours, NO schedules. Only zones with a conf
 maximum of concurrent reservations. A zone is available as long as its concurrent limit
 is not reached for that specific date and time. If check_availability returns available=true,
 there IS a free table — always tell the guest clearly that a table is available.
+${vipZoneBlock}
 
 === INFORMATION YOU NEED BEFORE CHECKING AVAILABILITY ===
 You need ALL four of these before calling check_availability:
@@ -223,12 +291,14 @@ You need ALL four of these before calling check_availability:
   B) Time (e.g. "20:00", "8 e mbrëmjes", "8pm")
   C) Guests: number of ADULTS and number of CHILDREN separately
   D) Seating: inside (brenda) or outside (jashte)?
+     If the guest asks for a view/balcony/panoramic table → treat as "outside" preference
+     and route to the VIP zone if available (weekend rules above apply).
 
 === RESERVATION FLOW ===
 Step 1 — Greet the guest warmly (one short message).
 
 Step 2 — Check the guest's FIRST message carefully.
-  Extract any info already provided (date, time, adults, children, inside/outside).
+  Extract any info already provided (date, time, adults, children, inside/outside/view).
   Ask ONLY for the missing pieces — never re-ask something already answered.
   If the first message already has date and time, do NOT ask for them again.
   Combine all missing questions into ONE message.
@@ -242,7 +312,8 @@ Step 2 — Check the guest's FIRST message carefully.
 
 Step 3 — Once you have A, B, C, D: call check_availability immediately.
   • duration_mins: 180 (default, unless guest specifies)
-  • preference: "outside" if guest said jashte/outside/jashtë, "inside" if brenda/inside/brendë
+  • preference: "outside" if guest said jashte/outside/jashtë or asked for view/balcony,
+                "inside" if brenda/inside/brendë
 
 Step 4 — If available=true:
   Tell the guest a table is available (one short warm line).
@@ -260,6 +331,8 @@ Step 5 — Show full recap (adapt language, match guest's language exactly):
   If outside preference, add this warning (adapt to guest language):
   ⚠️ Tavolina jashtë garantohet vetëm nëse moti lejon. Në rast shiu ose ere, tavolina zhvendoset brenda.
 
+  If weekend VIP rule B3 applies, replace the weather warning with the B3 message above.
+
   Konfirmo? (Po / Jo)
 
 Step 6 — Wait for explicit confirmation: "po", "yes", "ok", "sure", "confirm", "dakord", etc.
@@ -270,8 +343,7 @@ Step 7 — Call create_reservation:
   • guest_count: total number of guests (adults + children combined)
   • zone_id: selected_zone_id from check_availability result
   • date, time, duration_mins: from the conversation
-  • notes: if outside → "Guest prefers outside seating. Weather-dependent."
-           otherwise → ""
+  • notes: build from applicable rules above
 
 Step 8 — Thank the guest warmly. Tell them you look forward to seeing them on that day.
   Keep it short. Do NOT show a reservation ID.
