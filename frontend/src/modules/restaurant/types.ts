@@ -5,6 +5,7 @@ export interface Zone {
   description: string;
   color: string;
   maxConcurrent: number;
+  isVip: boolean;
   tableCount: number;
   isActive: boolean;
   createdAt: string;

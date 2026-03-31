@@ -4,7 +4,7 @@ import {
   addMonths, subMonths, eachDayOfInterval, isSameMonth, isToday,
   parseISO,
 } from 'date-fns';
-import { ChevronLeft, ChevronRight, Plus, X, Pencil, Trash2, Users, Clock, MapPin, Phone, AlertCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, X, Pencil, Trash2, Users, Clock, MapPin, Phone, AlertCircle, Crown } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../api';
 import type { Zone, Reservation } from '../types';
@@ -180,8 +180,11 @@ function DayPanel({
             return (
               <div key={zone.id}>
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: zone.color }} />
+                  {zone.isVip
+                    ? <Crown size={12} className="text-amber-500 flex-shrink-0" />
+                    : <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: zone.color }} />}
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">{zone.name}</span>
+                  {zone.isVip && <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700 text-[10px] font-semibold">VIP</span>}
                   <span className="text-xs text-slate-400">({zoneRes.length})</span>
                 </div>
                 <div className="space-y-2">
@@ -308,8 +311,8 @@ export function CalendarPage({ zones: zonesProp = [] }: Props) {
               {zones.map(z => (
                 <button key={z.id} onClick={() => setFilterZoneId(z.id === filterZoneId ? null : z.id)}
                   className={clsx('px-2.5 py-1 rounded-full text-xs font-medium border transition-colors flex items-center gap-1',
-                    filterZoneId === z.id ? 'bg-brand-500 text-white border-brand-500' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50')}>
-                  <span className="w-2 h-2 rounded-full" style={{ background: z.color }} />
+                    filterZoneId === z.id ? 'bg-brand-500 text-white border-brand-500' : z.isVip ? 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50')}>
+                  {z.isVip ? <Crown size={10} className={filterZoneId === z.id ? 'text-white' : 'text-amber-500'} /> : <span className="w-2 h-2 rounded-full" style={{ background: z.color }} />}
                   {z.name}
                 </button>
               ))}
@@ -330,8 +333,8 @@ export function CalendarPage({ zones: zonesProp = [] }: Props) {
           {zones.map(z => (
             <button key={z.id} onClick={() => setFilterZoneId(z.id === filterZoneId ? null : z.id)}
               className={clsx('px-3 py-1 rounded-full text-xs font-medium border whitespace-nowrap flex-shrink-0 flex items-center gap-1',
-                filterZoneId === z.id ? 'bg-brand-500 text-white border-brand-500' : 'bg-white text-slate-600 border-slate-200')}>
-              <span className="w-2 h-2 rounded-full" style={{ background: z.color }} />
+                filterZoneId === z.id ? 'bg-brand-500 text-white border-brand-500' : z.isVip ? 'bg-amber-50 text-amber-700 border-amber-300' : 'bg-white text-slate-600 border-slate-200')}>
+              {z.isVip ? <Crown size={10} className={filterZoneId === z.id ? 'text-white' : 'text-amber-500'} /> : <span className="w-2 h-2 rounded-full" style={{ background: z.color }} />}
               {z.name}
             </button>
           ))}

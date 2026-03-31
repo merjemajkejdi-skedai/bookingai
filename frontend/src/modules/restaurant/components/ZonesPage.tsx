@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Pencil, Trash2, ChevronDown, ChevronRight, AlertCircle, Table2, Users } from 'lucide-react';
+import { Plus, Pencil, Trash2, ChevronDown, ChevronRight, AlertCircle, Table2, Users, Crown } from 'lucide-react';
 import { api } from '../api';
 import type { Zone, RestaurantTable } from '../types';
 import { Button, Modal, Input, Spinner } from '../ui';
@@ -12,6 +12,7 @@ function ZoneFormModal({ zone, onClose, onSaved }: { zone?: Zone | null; onClose
     description: zone?.description ?? '',
     color: zone?.color ?? '#6366f1',
     maxConcurrent: zone?.maxConcurrent != null ? String(zone.maxConcurrent) : '10',
+    isVip: zone?.isVip ?? false,
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -21,7 +22,7 @@ function ZoneFormModal({ zone, onClose, onSaved }: { zone?: Zone | null; onClose
     if (!form.name.trim()) { setError('Name is required'); return; }
     setSaving(true); setError('');
     try {
-      const payload = { name: form.name.trim(), description: form.description, color: form.color, maxConcurrent: Number(form.maxConcurrent) || 10 };
+      const payload = { name: form.name.trim(), description: form.description, color: form.color, maxConcurrent: Number(form.maxConcurrent) || 10, isVip: form.isVip };
       if (zone) await api.updateZone(zone.id, payload);
       else await api.createZone(payload);
       onSaved();
@@ -56,6 +57,17 @@ function ZoneFormModal({ zone, onClose, onSaved }: { zone?: Zone | null; onClose
           onChange={e => set('maxConcurrent', e.target.value)}
           placeholder="e.g. 10" />
         <p className="text-xs text-slate-400 -mt-2">Maximum number of simultaneous reservations allowed in this zone.</p>
+        <button type="button" onClick={() => setForm(f => ({ ...f, isVip: !f.isVip }))}
+          className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-colors w-full text-left ${form.isVip ? 'border-amber-400 bg-amber-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
+          <Crown size={18} className={form.isVip ? 'text-amber-500' : 'text-slate-300'} />
+          <div>
+            <p className={`text-sm font-medium ${form.isVip ? 'text-amber-700' : 'text-slate-600'}`}>VIP / Special zone</p>
+            <p className="text-xs text-slate-400">Mark this zone as VIP or special — shown with a crown badge</p>
+          </div>
+          <span className={`ml-auto w-9 h-5 rounded-full transition-colors flex-shrink-0 relative ${form.isVip ? 'bg-amber-400' : 'bg-slate-200'}`}>
+            <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${form.isVip ? 'translate-x-4' : 'translate-x-0.5'}`} />
+          </span>
+        </button>
         {error && <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2"><AlertCircle size={14} /> {error}</div>}
         <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
@@ -130,9 +142,14 @@ function ZoneRow({ zone, onEdit, onDelete, onRefresh }: { zone: Zone; onEdit: ()
     <div className="rounded-xl border border-slate-200 overflow-hidden">
       <div className="flex items-center gap-3 px-4 py-3 bg-white hover:bg-slate-50 transition-colors cursor-pointer" onClick={toggleExpand}>
         <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: zone.color }} />
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 flex items-center gap-2">
           <span className="text-sm font-semibold text-slate-800">{zone.name}</span>
-          {zone.description && <span className="text-xs text-slate-400 ml-2">{zone.description}</span>}
+          {zone.isVip && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700 text-[10px] font-semibold">
+              <Crown size={10} /> VIP
+            </span>
+          )}
+          {zone.description && <span className="text-xs text-slate-400">{zone.description}</span>}
         </div>
         <div className="flex items-center gap-3 text-xs text-slate-500 flex-shrink-0">
           <span className="flex items-center gap-1"><Table2 size={12} /> {zone.tableCount} tables</span>

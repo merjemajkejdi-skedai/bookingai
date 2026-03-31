@@ -37,6 +37,7 @@ restaurantRouter.get('/restaurant/zones', requireAuth, async (req: Request, res:
       id: r.id, tenantId: r.tenant_id,
       name: r.name, description: r.description,
       color: r.color, maxConcurrent: Number(r.max_concurrent),
+      isVip: !!r.is_vip,
       tableCount: Number(r.table_count),
       isActive: !!r.is_active, createdAt: r.created_at,
     })));
@@ -45,36 +46,36 @@ restaurantRouter.get('/restaurant/zones', requireAuth, async (req: Request, res:
 
 restaurantRouter.post('/restaurant/zones', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
-  const { name, description = '', color = '#6366f1', maxConcurrent = 10 } = req.body;
+  const { name, description = '', color = '#6366f1', maxConcurrent = 10, isVip = false } = req.body;
   if (!name?.trim()) return err(res, 'name is required');
   const id = crypto.randomUUID();
   try {
     await dbRun(
-      'INSERT INTO restaurant_zones(id,tenant_id,name,description,color,max_concurrent) VALUES(?,?,?,?,?,?)',
-      id, tenantId, name.trim(), description, color, maxConcurrent
+      'INSERT INTO restaurant_zones(id,tenant_id,name,description,color,max_concurrent,is_vip) VALUES(?,?,?,?,?,?,?)',
+      id, tenantId, name.trim(), description, color, maxConcurrent, isVip ? 1 : 0
     );
     const row = await dbGet('SELECT * FROM restaurant_zones WHERE id=?', id) as any;
-    ok(res, { id: row.id, tenantId: row.tenant_id, name: row.name, description: row.description, color: row.color, maxConcurrent: Number(row.max_concurrent), tableCount: 0, isActive: true, createdAt: row.created_at });
+    ok(res, { id: row.id, tenantId: row.tenant_id, name: row.name, description: row.description, color: row.color, maxConcurrent: Number(row.max_concurrent), isVip: !!row.is_vip, tableCount: 0, isActive: true, createdAt: row.created_at });
   } catch (e: any) { err(res, e.message, 500); }
 });
 
 restaurantRouter.put('/restaurant/zones/:id', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
   const { id } = req.params;
-  const { name, description, color, maxConcurrent } = req.body;
+  const { name, description, color, maxConcurrent, isVip } = req.body;
   const existing = await dbGet('SELECT id FROM restaurant_zones WHERE id=? AND tenant_id=?', id, tenantId) as any;
   if (!existing) return err(res, 'Zone not found', 404);
   try {
     await dbRun(
-      'UPDATE restaurant_zones SET name=COALESCE(?,name), description=COALESCE(?,description), color=COALESCE(?,color), max_concurrent=COALESCE(?,max_concurrent) WHERE id=?',
-      name ?? null, description ?? null, color ?? null, maxConcurrent ?? null, id
+      'UPDATE restaurant_zones SET name=COALESCE(?,name), description=COALESCE(?,description), color=COALESCE(?,color), max_concurrent=COALESCE(?,max_concurrent), is_vip=COALESCE(?,is_vip) WHERE id=?',
+      name ?? null, description ?? null, color ?? null, maxConcurrent ?? null, isVip != null ? (isVip ? 1 : 0) : null, id
     );
     const row = await dbGet(
       `SELECT z.*, COUNT(t.id) AS table_count FROM restaurant_zones z
        LEFT JOIN restaurant_tables t ON t.zone_id = z.id AND t.is_active = 1
-       WHERE z.id=? GROUP BY z.id, z.tenant_id, z.name, z.description, z.color, z.max_concurrent, z.is_active, z.created_at`, id
+       WHERE z.id=? GROUP BY z.id, z.tenant_id, z.name, z.description, z.color, z.max_concurrent, z.is_vip, z.is_active, z.created_at`, id
     ) as any;
-    ok(res, { id: row.id, tenantId: row.tenant_id, name: row.name, description: row.description, color: row.color, maxConcurrent: Number(row.max_concurrent), tableCount: Number(row.table_count), isActive: true, createdAt: row.created_at });
+    ok(res, { id: row.id, tenantId: row.tenant_id, name: row.name, description: row.description, color: row.color, maxConcurrent: Number(row.max_concurrent), isVip: !!row.is_vip, tableCount: Number(row.table_count), isActive: true, createdAt: row.created_at });
   } catch (e: any) { err(res, e.message, 500); }
 });
 
