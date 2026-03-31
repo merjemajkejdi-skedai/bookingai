@@ -11,7 +11,7 @@ import type { Zone, Reservation } from '../types';
 import { Button, Modal, Input, Spinner } from '../ui';
 
 const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const DURATION_OPTIONS = [30, 60, 90, 120, 180];
+const DURATION_OPTIONS = [30, 60, 90, 120, 150, 180, 210, 240];
 const TIME_SLOTS = Array.from({ length: 28 }, (_, i) => {
   const h = Math.floor(i / 2) + 10;
   const m = (i % 2) * 30;
@@ -34,7 +34,7 @@ function ReservationFormModal({
     zoneId:       reservation?.zoneId       ?? (zones[0]?.id ?? ''),
     date:         reservation?.date         ?? prefillDate ?? format(new Date(), 'yyyy-MM-dd'),
     time:         reservation?.time         ?? '19:00',
-    durationMins: reservation?.durationMins != null ? String(reservation.durationMins) : '90',
+    durationMins: reservation?.durationMins != null ? String(reservation.durationMins) : '180',
     notes:        reservation?.notes        ?? '',
   });
   const [saving, setSaving] = useState(false);
@@ -71,10 +71,16 @@ function ReservationFormModal({
           <Input label="Guests" type="number" min={1} max={50} value={form.guestCount} onChange={e => set('guestCount', e.target.value)} />
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium text-slate-700">Zone</span>
-            <select value={form.zoneId} onChange={e => set('zoneId', e.target.value)}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-400/40">
-              {zones.map(z => <option key={z.id} value={z.id}>{z.name}</option>)}
-            </select>
+            {zones.length === 0 ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                No zones yet — go to Zones &amp; Tables to create one first.
+              </div>
+            ) : (
+              <select value={form.zoneId} onChange={e => set('zoneId', e.target.value)}
+                className="rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-400/40">
+                {zones.map(z => <option key={z.id} value={z.id}>{z.name}</option>)}
+              </select>
+            )}
           </label>
         </div>
         <div className="grid grid-cols-3 gap-3">
@@ -90,7 +96,11 @@ function ReservationFormModal({
             <span className="font-medium text-slate-700">Duration</span>
             <select value={form.durationMins} onChange={e => set('durationMins', e.target.value)}
               className="rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-400/40">
-              {DURATION_OPTIONS.map(d => <option key={d} value={d}>{d < 60 ? `${d}m` : `${d/60}h`}</option>)}
+              {DURATION_OPTIONS.map(d => {
+                if (d < 60) return <option key={d} value={d}>{d}m</option>;
+                const h = Math.floor(d / 60), m = d % 60;
+                return <option key={d} value={d}>{m ? `${h}h ${m}m` : `${h}h`}</option>;
+              })}
             </select>
           </label>
         </div>
@@ -183,7 +193,12 @@ function DayPanel({
                           <p className="text-sm font-semibold text-slate-800 truncate">{r.guestName}</p>
                           <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
                             <span className="flex items-center gap-1 text-xs text-slate-500">
-                              <Clock size={11} /> {r.time} · {r.durationMins < 60 ? `${r.durationMins}m` : `${r.durationMins/60}h`}
+                              <Clock size={11} /> {r.time} · {(() => {
+                                const d = r.durationMins;
+                                if (d < 60) return `${d}m`;
+                                const h = Math.floor(d / 60), m = d % 60;
+                                return m ? `${h}h ${m}m` : `${h}h`;
+                              })()}
                             </span>
                             <span className="flex items-center gap-1 text-xs text-slate-500">
                               <Users size={11} /> {r.guestCount} guests
@@ -224,9 +239,9 @@ function DayPanel({
   );
 }
 
-interface Props { zones: Zone[]; }
+interface Props { zones?: Zone[]; }
 
-export function CalendarPage({ zones }: Props) {
+export function CalendarPage({ zones: zonesProp = [] }: Props) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -234,6 +249,12 @@ export function CalendarPage({ zones }: Props) {
   const [showNewForm, setShowNewForm] = useState(false);
   const [newFormDate, setNewFormDate] = useState<string | undefined>();
   const [filterZoneId, setFilterZoneId] = useState<string | null>(null);
+  const [zones, setZones] = useState<Zone[]>(zonesProp);
+
+  // Always load fresh zones so the dropdown is populated even if parent didn't pass them
+  useEffect(() => {
+    api.getZones().then(setZones).catch(() => {});
+  }, []);
 
   const loadMonth = useCallback(async () => {
     setLoading(true);
