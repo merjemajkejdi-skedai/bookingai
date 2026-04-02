@@ -18,6 +18,7 @@ export default defineConfig({
       '/api':      { target: 'http://localhost:3001', changeOrigin: true },
       '/auth':     { target: 'http://localhost:3001', changeOrigin: true },
       '/admin':    { target: 'http://localhost:3001', changeOrigin: true },
+      '/hotel':    { target: 'http://localhost:3001', changeOrigin: true },
       '/whatsapp': { target: 'http://localhost:3001', changeOrigin: true },
       '/health':   { target: 'http://localhost:3001', changeOrigin: true },
     }

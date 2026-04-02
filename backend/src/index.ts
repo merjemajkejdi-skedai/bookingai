@@ -9,6 +9,7 @@ import { bookingRouter } from './modules/booking/routes.js';
 import { artEventRouter } from './modules/art_event/routes.js';
 import { artClassRouter } from './modules/art_class/routes.js';
 import { restaurantRouter } from './modules/restaurant/routes.js';
+import { hotelRouter } from './routes/hotel.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -37,6 +38,7 @@ app.use('/api', artClassRouter);
 app.use('/api', restaurantRouter);
 app.use('/auth', authRouter);
 app.use('/admin', adminRouter);
+app.use('/hotel', hotelRouter);
 app.use('/whatsapp', whatsappRouter);
 
 async function start() {

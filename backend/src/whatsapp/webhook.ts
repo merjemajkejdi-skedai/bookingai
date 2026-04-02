@@ -5,6 +5,7 @@ import { runBookingAgent } from '../modules/booking/agent.js';
 import { runArtEventAgent } from '../modules/art_event/agent.js';
 import { runArtClassAgent } from '../modules/art_class/agent.js';
 import { runRestaurantAgent } from '../modules/restaurant/agent.js';
+import { runHotelAgent } from '../hotel/agent.js';
 import { isPg, prepare, query, queryOne } from '../db/database.js';
 
 export const whatsappRouter = Router();
@@ -59,6 +60,9 @@ async function runAgent(
   tenantId: string,
   tenantType: string,
 ): Promise<string> {
+  if (tenantType === 'hotel') {
+    return runHotelAgent(message, history, phone, tenantId);
+  }
   if (tenantType === 'art_class') {
     return runArtClassAgent(message, history, phone, tenantId);
   }

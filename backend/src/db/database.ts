@@ -251,6 +251,55 @@ const SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS idx_restaurant_res_tenant ON restaurant_reservations(tenant_id, date);
   CREATE INDEX IF NOT EXISTS idx_restaurant_tables_zone ON restaurant_tables(zone_id);
+  CREATE TABLE IF NOT EXISTS hotel_guest_stays (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    room_number TEXT NOT NULL,
+    guest_name TEXT NOT NULL,
+    guest_phone TEXT NOT NULL,
+    check_in TEXT NOT NULL,
+    check_out TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'checked_in',
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE TABLE IF NOT EXISTS hotel_requests (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    stay_id TEXT,
+    room_number TEXT NOT NULL,
+    guest_phone TEXT NOT NULL,
+    request_type TEXT NOT NULL,
+    description TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    department TEXT NOT NULL,
+    priority TEXT NOT NULL DEFAULT 'normal',
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    resolved_at TEXT
+  );
+  CREATE TABLE IF NOT EXISTS hotel_faq (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    question TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    category TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1
+  );
+  CREATE TABLE IF NOT EXISTS hotel_config (
+    tenant_id TEXT PRIMARY KEY,
+    hotel_name TEXT NOT NULL,
+    check_in_time TEXT NOT NULL DEFAULT '14:00',
+    check_out_time TEXT NOT NULL DEFAULT '11:00',
+    wifi_password TEXT,
+    breakfast_hours TEXT,
+    pool_hours TEXT,
+    restaurant_hours TEXT,
+    reception_phone TEXT,
+    emergency_phone TEXT,
+    timezone TEXT NOT NULL DEFAULT 'Europe/Tirane'
+  );
+  CREATE INDEX IF NOT EXISTS idx_hotel_stays_phone ON hotel_guest_stays(tenant_id, guest_phone);
+  CREATE INDEX IF NOT EXISTS idx_hotel_requests_status ON hotel_requests(tenant_id, status);
+  CREATE INDEX IF NOT EXISTS idx_hotel_faq_tenant ON hotel_faq(tenant_id);
 `;
 
 export async function runMigrations() {
@@ -274,6 +323,7 @@ export async function runMigrations() {
       `ALTER TABLE restaurant_zones ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''`,
       `ALTER TABLE restaurant_zones ADD COLUMN IF NOT EXISTS max_concurrent INTEGER NOT NULL DEFAULT 10`,
       `ALTER TABLE restaurant_zones ADD COLUMN IF NOT EXISTS is_vip INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE hotel_requests ADD COLUMN IF NOT EXISTS resolved_at TEXT`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
