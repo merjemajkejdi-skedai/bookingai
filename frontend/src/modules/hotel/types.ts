@@ -17,6 +17,7 @@ export interface HotelRequest {
   tenant_id: string;
   stay_id: string | null;
   room_number: string;
+  guest_name: string | null;
   guest_phone: string;
   request_type: 'room_service' | 'housekeeping' | 'maintenance' | 'concierge_question' | 'complaint' | 'other';
   description: string;

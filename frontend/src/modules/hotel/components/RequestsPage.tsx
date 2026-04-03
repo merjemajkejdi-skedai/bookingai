@@ -140,11 +140,14 @@ export function RequestsPage() {
                     <div key={r.id} className="bg-white rounded-xl border border-slate-200 p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1 min-w-0">
-                          {/* Room + priority */}
-                          <div className="flex items-center gap-2 mb-1">
+                          {/* Room + guest + priority */}
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
                               Room {r.room_number}
                             </span>
+                            {r.guest_name && (
+                              <span className="text-xs text-slate-600 font-medium">{r.guest_name}</span>
+                            )}
                             <span className={clsx('w-2 h-2 rounded-full flex-shrink-0', PRIORITY_DOT[r.priority])} />
                             <span className="text-xs text-slate-400 capitalize">{r.priority} priority</span>
                           </div>

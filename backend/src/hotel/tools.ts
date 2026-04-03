@@ -37,7 +37,7 @@ export const hotelTools: Anthropic.Tool[] = [
   },
   {
     name: 'create_request',
-    description: 'Log a guest service request — room service, housekeeping, maintenance, concierge question, complaint, or other',
+    description: 'Log a guest service request once you have their room number and last name. Assigns to the correct department and notifies via WhatsApp.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -45,11 +45,12 @@ export const hotelTools: Anthropic.Tool[] = [
           type: 'string',
           enum: ['room_service', 'housekeeping', 'maintenance', 'concierge_question', 'complaint', 'other'],
         },
-        description: { type: 'string', description: 'Details of the request' },
+        description:  { type: 'string', description: 'Details of the request' },
         room_number:  { type: 'string', description: 'Guest room number' },
+        guest_name:   { type: 'string', description: 'Guest last name as provided' },
         priority:     { type: 'string', enum: ['high', 'normal', 'low'] },
       },
-      required: ['request_type', 'description', 'room_number'],
+      required: ['request_type', 'description', 'room_number', 'guest_name'],
     },
   },
   {
@@ -146,24 +147,18 @@ export async function executeHotelTool(
     }
 
     case 'create_request': {
-      const { request_type, description, room_number, priority } = input as {
-        request_type: string; description: string; room_number: string; priority?: string;
+      const { request_type, description, room_number, guest_name, priority } = input as {
+        request_type: string; description: string; room_number: string; guest_name: string; priority?: string;
       };
-      const department   = DEPARTMENT_MAP[request_type] || 'reception';
+      const department    = DEPARTMENT_MAP[request_type] || 'reception';
       const finalPriority = priority || DEFAULT_PRIORITY_MAP[request_type] || 'normal';
-
-      const stay = await dbGet(
-        `SELECT id FROM hotel_guest_stays
-         WHERE tenant_id = ? AND guest_phone = ? AND status = 'checked_in' LIMIT 1`,
-        tenantId, guestPhone,
-      ) as any;
 
       const id = crypto.randomUUID();
       await dbRun(
         `INSERT INTO hotel_requests
-           (id, tenant_id, stay_id, room_number, guest_phone, request_type, description, department, priority)
-         VALUES (?,?,?,?,?,?,?,?,?)`,
-        id, tenantId, stay?.id ?? null, room_number, guestPhone,
+           (id, tenant_id, stay_id, room_number, guest_name, guest_phone, request_type, description, department, priority)
+         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        id, tenantId, null, room_number, guest_name ?? null, guestPhone,
         request_type, description, department, finalPriority,
       );
 
@@ -195,7 +190,8 @@ export async function executeHotelTool(
             hour: '2-digit', minute: '2-digit',
             timeZone: 'Europe/Tirane',
           });
-          const msg = `${EMOJI[request_type] || '📋'} *Room ${room_number}*\n${description}\n_${time}_`;
+          const guestLabel = guest_name ? ` · ${guest_name}` : '';
+          const msg = `${EMOJI[request_type] || '📋'} *Room ${room_number}${guestLabel}*\n${description}\n_${time}_`;
           await sendWhatsAppMessage(match.whatsapp, msg);
         }
       } catch (notifyErr: any) {

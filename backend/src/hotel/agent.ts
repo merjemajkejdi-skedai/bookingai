@@ -10,15 +10,6 @@ async function dbGet(sql: string, ...p: unknown[]) {
 const client = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
 const SONNET_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 
-async function getCheckedInGuest(tenantId: string, phone: string) {
-  return dbGet(
-    `SELECT room_number, guest_name, check_in, check_out
-     FROM hotel_guest_stays
-     WHERE tenant_id = ? AND guest_phone = ? AND status = 'checked_in' LIMIT 1`,
-    tenantId, phone,
-  ) as Promise<any>;
-}
-
 // ---------------------------------------------------------------------------
 // runHotelAgent — matches the signature of other module agents so it plugs
 // into the existing webhook dispatcher without any structural changes.
@@ -29,17 +20,14 @@ export async function runHotelAgent(
   customerPhone: string,
   tenantId: string,
 ): Promise<string> {
-  const [guest, tenantRow] = await Promise.all([
-    getCheckedInGuest(tenantId, customerPhone),
-    dbGet('SELECT id, name FROM tenants WHERE id = ?', tenantId),
-  ]);
+  const tenantRow = await dbGet('SELECT id, name FROM tenants WHERE id = ?', tenantId);
 
   const messages: Anthropic.MessageParam[] = [
     ...conversationHistory,
     { role: 'user', content: customerMessage },
   ];
 
-  const systemPrompt = buildHotelSystemPrompt(tenantRow, guest);
+  const systemPrompt = buildHotelSystemPrompt(tenantRow);
 
   while (true) {
     const response = await client.messages.create({

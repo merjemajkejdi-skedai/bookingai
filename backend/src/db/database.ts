@@ -267,6 +267,7 @@ const SCHEMA = `
     tenant_id TEXT NOT NULL,
     stay_id TEXT,
     room_number TEXT NOT NULL,
+    guest_name TEXT,
     guest_phone TEXT NOT NULL,
     request_type TEXT NOT NULL,
     description TEXT NOT NULL,
@@ -334,6 +335,7 @@ export async function runMigrations() {
       `ALTER TABLE restaurant_zones ADD COLUMN IF NOT EXISTS max_concurrent INTEGER NOT NULL DEFAULT 10`,
       `ALTER TABLE restaurant_zones ADD COLUMN IF NOT EXISTS is_vip INTEGER NOT NULL DEFAULT 0`,
       `ALTER TABLE hotel_requests ADD COLUMN IF NOT EXISTS resolved_at TEXT`,
+      `ALTER TABLE hotel_requests ADD COLUMN IF NOT EXISTS guest_name TEXT`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
