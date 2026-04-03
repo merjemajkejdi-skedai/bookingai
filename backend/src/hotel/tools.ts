@@ -166,7 +166,7 @@ export async function executeHotelTool(
       try {
         const depts = await dbAll(
           `SELECT name, whatsapp, request_types FROM hotel_departments
-           WHERE tenant_id = ? AND (is_active = 1 OR is_active = true)`,
+           WHERE tenant_id = ? AND is_active = 1`,
           tenantId,
         ) as any[];
 
