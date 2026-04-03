@@ -166,14 +166,17 @@ export async function executeHotelTool(
       try {
         const depts = await dbAll(
           `SELECT name, whatsapp, request_types FROM hotel_departments
-           WHERE tenant_id = ? AND is_active = 1`,
+           WHERE tenant_id = ? AND (is_active = 1 OR is_active = true)`,
           tenantId,
         ) as any[];
+
+        console.log(`[Hotel notify] ${depts.length} active dept(s) for tenant ${tenantId}, request_type=${request_type}`);
 
         const match = depts.find((d: any) => {
           const types: string[] = typeof d.request_types === 'string'
             ? JSON.parse(d.request_types)
             : d.request_types;
+          console.log(`[Hotel notify] dept "${d.name}" handles: ${JSON.stringify(types)}`);
           return types.includes(request_type);
         });
 
@@ -192,11 +195,14 @@ export async function executeHotelTool(
           });
           const guestLabel = guest_name ? ` · ${guest_name}` : '';
           const msg = `${EMOJI[request_type] || '📋'} *Room ${room_number}${guestLabel}*\n${description}\n_${time}_`;
+          console.log(`[Hotel notify] Sending to ${match.whatsapp} (dept: ${match.name})`);
           await sendWhatsAppMessage(match.whatsapp, msg);
+          console.log(`[Hotel notify] ✅ Sent to ${match.name}`);
+        } else {
+          console.warn(`[Hotel notify] ⚠️ No active department matched request_type="${request_type}"`);
         }
       } catch (notifyErr: any) {
-        // Notification failure must never break the tool response
-        console.error('[Hotel notify]', notifyErr?.message);
+        console.error('[Hotel notify] ❌ Failed:', notifyErr?.message, notifyErr?.status ?? '');
       }
 
       return {
