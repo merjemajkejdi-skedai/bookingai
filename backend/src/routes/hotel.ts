@@ -118,6 +118,7 @@ hotelRouter.put('/config', requireAuth, async (req: Request, res: Response) => {
     hotel_name, check_in_time = '14:00', check_out_time = '11:00',
     wifi_password = null, breakfast_hours = null, pool_hours = null,
     restaurant_hours = null, reception_phone = null, emergency_phone = null,
+    location_url = null, menu_url = null,
   } = req.body;
 
   if (!hotel_name) return err(res, 'hotel_name is required');
@@ -126,8 +127,9 @@ hotelRouter.put('/config', requireAuth, async (req: Request, res: Response) => {
     await dbRun(
       `INSERT INTO hotel_config
          (tenant_id, hotel_name, check_in_time, check_out_time, wifi_password,
-          breakfast_hours, pool_hours, restaurant_hours, reception_phone, emergency_phone)
-       VALUES (?,?,?,?,?,?,?,?,?,?)
+          breakfast_hours, pool_hours, restaurant_hours, reception_phone, emergency_phone,
+          location_url, menu_url)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT (tenant_id) DO UPDATE SET
          hotel_name = excluded.hotel_name,
          check_in_time = excluded.check_in_time,
@@ -137,9 +139,12 @@ hotelRouter.put('/config', requireAuth, async (req: Request, res: Response) => {
          pool_hours = excluded.pool_hours,
          restaurant_hours = excluded.restaurant_hours,
          reception_phone = excluded.reception_phone,
-         emergency_phone = excluded.emergency_phone`,
+         emergency_phone = excluded.emergency_phone,
+         location_url = excluded.location_url,
+         menu_url = excluded.menu_url`,
       tenantId, hotel_name, check_in_time, check_out_time, wifi_password,
       breakfast_hours, pool_hours, restaurant_hours, reception_phone, emergency_phone,
+      location_url, menu_url,
     );
     ok(res, { updated: true });
   } catch (e: any) { err(res, e.message, 500); }

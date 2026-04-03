@@ -64,4 +64,9 @@ export const api = {
     const q = new URLSearchParams({ date, time, ...(durationMins ? { durationMins: String(durationMins) } : {}) }).toString();
     return req<ZoneAvailability[]>(`/restaurant/availability?${q}`);
   },
+
+  // Config
+  getConfig: () => req<{ location_url?: string; menu_url?: string }>('/restaurant/config'),
+  updateConfig: (data: { location_url?: string; menu_url?: string }) =>
+    req('/restaurant/config', { method: 'PUT', body: JSON.stringify(data) }),
 };

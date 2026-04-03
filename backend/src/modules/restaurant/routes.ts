@@ -322,3 +322,32 @@ restaurantRouter.get('/restaurant/availability', requireAuth, async (req: Reques
     ok(res, result);
   } catch (e: any) { err(res, e.message, 500); }
 });
+
+// ---------------------------------------------------------------------------
+// Config (location + menu URL)
+// ---------------------------------------------------------------------------
+
+restaurantRouter.get('/restaurant/config', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    const row = await dbGet('SELECT * FROM restaurant_config WHERE tenant_id = ?', tenantId);
+    ok(res, row || {});
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+restaurantRouter.put('/restaurant/config', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const { location_url = null, menu_url = null } = req.body;
+  try {
+    await dbRun(
+      `INSERT INTO restaurant_config (tenant_id, location_url, menu_url)
+       VALUES (?, ?, ?)
+       ON CONFLICT (tenant_id) DO UPDATE SET
+         location_url = excluded.location_url,
+         menu_url     = excluded.menu_url`,
+      tenantId, location_url, menu_url,
+    );
+    const row = await dbGet('SELECT * FROM restaurant_config WHERE tenant_id = ?', tenantId);
+    ok(res, row);
+  } catch (e: any) { err(res, e.message, 500); }
+});

@@ -226,8 +226,11 @@ function inVipTimeWindow(time: string): boolean {
 const VIP_TENANT_ID = 'd3f155b0-fb15-4023-a037-e0b66876164c';
 
 async function buildSystemPrompt(tenantId: string): Promise<string> {
-  const tenant = await dbGet('SELECT name FROM tenants WHERE id = ?', tenantId) as any;
-  const now    = format(new Date(), "EEEE d MMMM yyyy, HH:mm");
+  const [tenant, config] = await Promise.all([
+    dbGet('SELECT name FROM tenants WHERE id = ?', tenantId) as Promise<any>,
+    dbGet('SELECT location_url, menu_url FROM restaurant_config WHERE tenant_id = ?', tenantId) as Promise<any>,
+  ]);
+  const now = format(new Date(), "EEEE d MMMM yyyy, HH:mm");
 
   // Load VIP zone names for the special-rules tenant so the prompt can reference them
   let vipZoneBlock = '';
@@ -271,10 +274,22 @@ IMPORTANT: This rule only applies when the guest explicitly asks for a view, bal
 AND the date is a Saturday or Sunday. For all other requests proceed with the standard flow.`;
   }
 
+  const locationLine = config?.location_url
+    ? `- Location (Google Maps): ${config.location_url}`
+    : null;
+  const menuLine = config?.menu_url
+    ? `- Menu: ${config.menu_url}`
+    : null;
+  const linksBlock = [locationLine, menuLine].filter(Boolean).join('\n');
+  const linksSection = linksBlock
+    ? `\n=== QUICK LINKS ===\nSend these URLs directly when guests ask:\n${linksBlock}\nIf a guest asks for the location or directions → send the location URL.\nIf a guest asks about the menu or what food is served → send the menu URL.\nIf a link is not configured, say you will pass the question to the team.\n`
+    : '';
+
   return `You are the reservation assistant for ${tenant?.name || 'the restaurant'}.
-You ONLY help guests make table reservations via WhatsApp. Do not discuss anything else.
+You help guests make table reservations via WhatsApp and answer questions about location and menu.
 Always respond in the same language the guest writes in.
 Today is ${now}.
+${linksSection}
 
 === HOW TABLES WORK ===
 Tables are available every day and every time UNLESS they are already fully booked.

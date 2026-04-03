@@ -296,7 +296,14 @@ const SCHEMA = `
     restaurant_hours TEXT,
     reception_phone TEXT,
     emergency_phone TEXT,
+    location_url TEXT,
+    menu_url TEXT,
     timezone TEXT NOT NULL DEFAULT 'Europe/Tirane'
+  );
+  CREATE TABLE IF NOT EXISTS restaurant_config (
+    tenant_id TEXT PRIMARY KEY,
+    location_url TEXT,
+    menu_url TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_hotel_stays_phone ON hotel_guest_stays(tenant_id, guest_phone);
   CREATE INDEX IF NOT EXISTS idx_hotel_requests_status ON hotel_requests(tenant_id, status);
@@ -336,6 +343,8 @@ export async function runMigrations() {
       `ALTER TABLE restaurant_zones ADD COLUMN IF NOT EXISTS is_vip INTEGER NOT NULL DEFAULT 0`,
       `ALTER TABLE hotel_requests ADD COLUMN IF NOT EXISTS resolved_at TEXT`,
       `ALTER TABLE hotel_requests ADD COLUMN IF NOT EXISTS guest_name TEXT`,
+      `ALTER TABLE hotel_config ADD COLUMN IF NOT EXISTS location_url TEXT`,
+      `ALTER TABLE hotel_config ADD COLUMN IF NOT EXISTS menu_url TEXT`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Save, Wifi, Coffee, Waves, UtensilsCrossed, Clock, Phone } from 'lucide-react';
+import { Save, Wifi, Coffee, Waves, UtensilsCrossed, Clock, Phone, MapPin, BookOpen } from 'lucide-react';
 import { api } from '../api';
 import { Button, Input, Spinner } from '../ui';
 
@@ -13,6 +13,8 @@ interface Config {
   restaurant_hours: string;
   reception_phone: string;
   emergency_phone: string;
+  location_url: string;
+  menu_url: string;
 }
 
 const EMPTY: Config = {
@@ -25,6 +27,8 @@ const EMPTY: Config = {
   restaurant_hours: '',
   reception_phone: '',
   emergency_phone: '',
+  location_url: '',
+  menu_url: '',
 };
 
 export function ConfigPage() {
@@ -101,6 +105,20 @@ export function ConfigPage() {
             <div className="flex items-end gap-2">
               <UtensilsCrossed size={15} className="text-slate-400 mb-2.5 flex-shrink-0" />
               <Input label="Restaurant Hours" placeholder="e.g. 12:00 – 22:00" className="flex-1" {...field('restaurant_hours')} />
+            </div>
+          </section>
+
+          {/* Location & Menu */}
+          <section className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+            <h2 className="text-sm font-semibold text-slate-700">Location &amp; Menu</h2>
+            <p className="text-xs text-slate-400 -mt-1">The AI concierge sends these links when guests ask for directions or the menu.</p>
+            <div className="flex items-end gap-2">
+              <MapPin size={15} className="text-slate-400 mb-2.5 flex-shrink-0" />
+              <Input label="Google Maps URL" placeholder="https://maps.app.goo.gl/..." className="flex-1" {...field('location_url')} />
+            </div>
+            <div className="flex items-end gap-2">
+              <BookOpen size={15} className="text-slate-400 mb-2.5 flex-shrink-0" />
+              <Input label="Menu URL" placeholder="https://yourdomain.com/menu" className="flex-1" {...field('menu_url')} />
             </div>
           </section>
 

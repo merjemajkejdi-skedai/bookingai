@@ -20,14 +20,17 @@ export async function runHotelAgent(
   customerPhone: string,
   tenantId: string,
 ): Promise<string> {
-  const tenantRow = await dbGet('SELECT id, name FROM tenants WHERE id = ?', tenantId);
+  const [tenantRow, hotelConfig] = await Promise.all([
+    dbGet('SELECT id, name FROM tenants WHERE id = ?', tenantId),
+    dbGet('SELECT * FROM hotel_config WHERE tenant_id = ?', tenantId),
+  ]);
 
   const messages: Anthropic.MessageParam[] = [
     ...conversationHistory,
     { role: 'user', content: customerMessage },
   ];
 
-  const systemPrompt = buildHotelSystemPrompt(tenantRow);
+  const systemPrompt = buildHotelSystemPrompt(tenantRow, hotelConfig);
 
   while (true) {
     const response = await client.messages.create({

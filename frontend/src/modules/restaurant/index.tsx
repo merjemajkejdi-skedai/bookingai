@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Table2, Shield, LogOut, BarChart2 } from 'lucide-react';
+import { Calendar, Table2, Shield, LogOut, Settings } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from './api';
 import type { Zone } from './types';
-import { CalendarPage } from './components/CalendarPage';
-import { ZonesPage } from './components/ZonesPage';
-import { AdminPage } from '../../pages/AdminPage';
+import { CalendarPage }        from './components/CalendarPage';
+import { ZonesPage }           from './components/ZonesPage';
+import { RestaurantConfigPage } from './components/ConfigPage';
+import { AdminPage }           from '../../pages/AdminPage';
 import { isAdmin, getStoredUser, clearAuth } from '../../shared/lib/auth';
 
-type Page = 'calendar' | 'zones' | 'admin';
+type Page = 'calendar' | 'zones' | 'config' | 'admin';
 interface Props { onLogout: () => void; }
 
 export function RestaurantModule({ onLogout }: Props) {
@@ -23,8 +24,9 @@ export function RestaurantModule({ onLogout }: Props) {
   function handleLogout() { clearAuth(); onLogout(); }
 
   const nav: { id: Page; label: string; icon: React.ReactNode }[] = [
-    { id: 'calendar', label: 'Reservations', icon: <Calendar size={16} /> },
-    { id: 'zones',    label: 'Zones & Tables', icon: <Table2 size={16} /> },
+    { id: 'calendar', label: 'Reservations',    icon: <Calendar size={16} /> },
+    { id: 'zones',    label: 'Zones & Tables',  icon: <Table2 size={16} /> },
+    { id: 'config',   label: 'Configuration',   icon: <Settings size={16} /> },
     ...(isAdmin() ? [{ id: 'admin' as Page, label: 'Admin', icon: <Shield size={16} /> }] : []),
   ];
 
@@ -73,6 +75,7 @@ export function RestaurantModule({ onLogout }: Props) {
       <main className="flex-1 min-w-0 overflow-hidden flex flex-col p-2 md:p-4">
         {page === 'calendar' && <CalendarPage zones={zones} />}
         {page === 'zones'    && <ZonesPage />}
+        {page === 'config'   && <RestaurantConfigPage />}
         {page === 'admin'    && <AdminPage />}
       </main>
 
