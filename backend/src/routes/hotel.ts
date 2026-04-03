@@ -192,3 +192,79 @@ hotelRouter.delete('/faq/:id', requireAuth, async (req: Request, res: Response) 
     ok(res, { deleted: true });
   } catch (e: any) { err(res, e.message, 500); }
 });
+
+// ---------------------------------------------------------------------------
+// Departments
+// ---------------------------------------------------------------------------
+
+const REQUEST_TYPES = ['room_service', 'housekeeping', 'maintenance', 'concierge_question', 'complaint', 'other'];
+
+// GET /hotel/departments
+hotelRouter.get('/departments', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    const rows = await dbAll(
+      `SELECT * FROM hotel_departments WHERE tenant_id = ? ORDER BY name`,
+      tenantId,
+    ) as any[];
+    // Parse request_types JSON string for each row
+    ok(res, rows.map(r => ({ ...r, request_types: JSON.parse(r.request_types || '[]') })));
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// POST /hotel/departments
+hotelRouter.post('/departments', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const { name, whatsapp, request_types } = req.body as {
+    name: string; whatsapp: string; request_types: string[];
+  };
+  if (!name || !whatsapp || !Array.isArray(request_types) || !request_types.length) {
+    return err(res, 'name, whatsapp, and request_types are required');
+  }
+  const invalid = request_types.filter(t => !REQUEST_TYPES.includes(t));
+  if (invalid.length) return err(res, `Invalid request types: ${invalid.join(', ')}`);
+
+  try {
+    const id = crypto.randomUUID();
+    await dbRun(
+      `INSERT INTO hotel_departments (id, tenant_id, name, whatsapp, request_types)
+       VALUES (?,?,?,?,?)`,
+      id, tenantId, name, whatsapp, JSON.stringify(request_types),
+    );
+    const row = await dbGet('SELECT * FROM hotel_departments WHERE id = ?', id) as any;
+    ok(res, { ...row, request_types: JSON.parse(row.request_types || '[]') });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// PUT /hotel/departments/:id
+hotelRouter.put('/departments/:id', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const { name, whatsapp, request_types, is_active } = req.body as {
+    name: string; whatsapp: string; request_types: string[]; is_active?: boolean;
+  };
+  if (!name || !whatsapp || !Array.isArray(request_types) || !request_types.length) {
+    return err(res, 'name, whatsapp, and request_types are required');
+  }
+  try {
+    await dbRun(
+      `UPDATE hotel_departments SET name = ?, whatsapp = ?, request_types = ?, is_active = ?
+       WHERE id = ? AND tenant_id = ?`,
+      name, whatsapp, JSON.stringify(request_types),
+      is_active === false ? 0 : 1,
+      req.params.id, tenantId,
+    );
+    ok(res, { updated: true });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// DELETE /hotel/departments/:id
+hotelRouter.delete('/departments/:id', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    await dbRun(
+      'DELETE FROM hotel_departments WHERE id = ? AND tenant_id = ?',
+      req.params.id, tenantId,
+    );
+    ok(res, { deleted: true });
+  } catch (e: any) { err(res, e.message, 500); }
+});

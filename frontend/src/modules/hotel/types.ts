@@ -36,6 +36,16 @@ export interface FaqEntry {
   is_active: boolean;
 }
 
+export interface Department {
+  id: string;
+  tenant_id: string;
+  name: string;
+  whatsapp: string;
+  request_types: string[];
+  is_active: boolean;
+  created_at: string;
+}
+
 export interface HotelConfig {
   tenant_id: string;
   hotel_name: string;

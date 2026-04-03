@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
+import { sendWhatsAppMessage } from '../whatsapp/twilio.js';
 
 async function dbAll(sql: string, ...p: unknown[]) { return isPg ? query(sql, p) : prepare(sql).all(...p); }
 async function dbGet(sql: string, ...p: unknown[]) { return isPg ? queryOne(sql, p) : prepare(sql).get(...p); }
@@ -165,6 +166,42 @@ export async function executeHotelTool(
         id, tenantId, stay?.id ?? null, room_number, guestPhone,
         request_type, description, department, finalPriority,
       );
+
+      // Notify the matching department via WhatsApp
+      try {
+        const depts = await dbAll(
+          `SELECT name, whatsapp, request_types FROM hotel_departments
+           WHERE tenant_id = ? AND is_active = 1`,
+          tenantId,
+        ) as any[];
+
+        const match = depts.find((d: any) => {
+          const types: string[] = typeof d.request_types === 'string'
+            ? JSON.parse(d.request_types)
+            : d.request_types;
+          return types.includes(request_type);
+        });
+
+        if (match?.whatsapp) {
+          const EMOJI: Record<string, string> = {
+            room_service:       '🍽️',
+            housekeeping:       '🛏️',
+            maintenance:        '🔧',
+            concierge_question: '💬',
+            complaint:          '⚠️',
+            other:              '📋',
+          };
+          const time = new Date().toLocaleTimeString('en-GB', {
+            hour: '2-digit', minute: '2-digit',
+            timeZone: 'Europe/Tirane',
+          });
+          const msg = `${EMOJI[request_type] || '📋'} *Room ${room_number}*\n${description}\n_${time}_`;
+          await sendWhatsAppMessage(match.whatsapp, msg);
+        }
+      } catch (notifyErr: any) {
+        // Notification failure must never break the tool response
+        console.error('[Hotel notify]', notifyErr?.message);
+      }
 
       return {
         success:    true,

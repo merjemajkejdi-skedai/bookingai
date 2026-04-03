@@ -300,6 +300,16 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_hotel_stays_phone ON hotel_guest_stays(tenant_id, guest_phone);
   CREATE INDEX IF NOT EXISTS idx_hotel_requests_status ON hotel_requests(tenant_id, status);
   CREATE INDEX IF NOT EXISTS idx_hotel_faq_tenant ON hotel_faq(tenant_id);
+  CREATE TABLE IF NOT EXISTS hotel_departments (
+    id           TEXT PRIMARY KEY,
+    tenant_id    TEXT NOT NULL,
+    name         TEXT NOT NULL,
+    whatsapp     TEXT NOT NULL,
+    request_types TEXT NOT NULL DEFAULT '[]',
+    is_active    INTEGER NOT NULL DEFAULT 1,
+    created_at   TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE INDEX IF NOT EXISTS idx_hotel_depts_tenant ON hotel_departments(tenant_id);
 `;
 
 export async function runMigrations() {

@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import type { GuestStay, HotelRequest, FaqEntry, HotelConfig } from './types';
+import type { GuestStay, HotelRequest, FaqEntry, HotelConfig, Department } from './types';
 
 const BASE = `${import.meta.env.VITE_API_URL || ''}`;
 
@@ -58,4 +58,13 @@ export const api = {
     req<FaqEntry>('/hotel/faq', { method: 'POST', body: JSON.stringify(data) }),
   deleteFaq: (id: string) =>
     req(`/hotel/faq/${id}`, { method: 'DELETE' }),
+
+  // Departments
+  getDepartments: () => req<Department[]>('/hotel/departments'),
+  createDepartment: (data: { name: string; whatsapp: string; request_types: string[] }) =>
+    req<Department>('/hotel/departments', { method: 'POST', body: JSON.stringify(data) }),
+  updateDepartment: (id: string, data: { name: string; whatsapp: string; request_types: string[]; is_active?: boolean }) =>
+    req(`/hotel/departments/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteDepartment: (id: string) =>
+    req(`/hotel/departments/${id}`, { method: 'DELETE' }),
 };
