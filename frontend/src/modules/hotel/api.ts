@@ -47,25 +47,20 @@ export const api = {
   checkOut: (id: string) =>
     req(`/hotel/guests/${id}/checkout`, { method: 'PATCH' }),
   importGuests: async (file: File): Promise<{ imported: number }> => {
-    const token = localStorage.getItem('bookingai_token');
-    const raw   = localStorage.getItem('bookingai_admin_tenant');
-    const user  = JSON.parse(localStorage.getItem('bookingai_user') || 'null');
-    let path = '/hotel/guests/import';
-    if (user?.role === 'super_admin' && raw) {
-      const { id } = JSON.parse(raw);
-      path += `?tenantId=${encodeURIComponent(id)}`;
-    }
-    const fd = new FormData();
-    fd.append('file', file);
-    const res = await fetch(`${BASE}${path}`, {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: fd,
+    const fileBase64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        // result is "data:<mime>;base64,<data>" — strip the prefix
+        resolve(result.split(',')[1] ?? result);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
     });
-    const text = await res.text();
-    const json = JSON.parse(text);
-    if (!json.success) throw new Error(json.error || 'Import failed');
-    return json.data as { imported: number };
+    return req<{ imported: number }>('/hotel/guests/import', {
+      method: 'POST',
+      body: JSON.stringify({ fileBase64 }),
+    });
   },
 
   // Config

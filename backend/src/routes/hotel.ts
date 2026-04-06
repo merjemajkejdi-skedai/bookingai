@@ -1,12 +1,9 @@
 import { Router, type Request, type Response } from 'express';
 import twilio from 'twilio';
-import multer from 'multer';
 import * as XLSX from 'xlsx';
 import { requireAuth, resolveTenantId } from '../middleware/auth.js';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { appendStaffMessage } from '../hotel/session.js';
-
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 export const hotelRouter = Router();
 
@@ -104,14 +101,15 @@ hotelRouter.patch('/guests/:id/checkout', requireAuth, async (req: Request, res:
   } catch (e: any) { err(res, e.message, 500); }
 });
 
-// POST /hotel/guests/import  — upload arrivals XLS report
-hotelRouter.post('/guests/import', requireAuth, upload.single('file') as any, async (req: Request, res: Response) => {
+// POST /hotel/guests/import  — upload arrivals XLS/XLSX as base64 JSON body
+hotelRouter.post('/guests/import', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
-  const file = (req as any).file as Express.Multer.File | undefined;
-  if (!file) return err(res, 'No file uploaded — send a multipart field named "file"');
+  const { fileBase64 } = req.body as { fileBase64?: string };
+  if (!fileBase64) return err(res, 'fileBase64 is required');
 
   try {
-    const wb = XLSX.read(file.buffer, { type: 'buffer' });
+    const buffer = Buffer.from(fileBase64, 'base64');
+    const wb = XLSX.read(buffer, { type: 'buffer' });
     const sheet = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1 });
 
