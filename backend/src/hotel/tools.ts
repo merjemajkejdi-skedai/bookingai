@@ -55,11 +55,11 @@ export const hotelTools: Anthropic.Tool[] = [
   },
   {
     name: 'get_faq_answer',
-    description: 'Search the hotel FAQ knowledge base for an answer to a guest question',
+    description: 'Load the full hotel FAQ knowledge base. Call this for ANY guest question before doing anything else. Returns all Q&A pairs — you choose the best match semantically. If nothing is relevant, return null and decide whether to create a request instead.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        question: { type: 'string' },
+        question: { type: 'string', description: 'The guest question, used for logging only' },
       },
       required: ['question'],
     },
@@ -217,16 +217,14 @@ export async function executeHotelTool(
 
     case 'get_faq_answer': {
       const faqs = await dbAll(
-        `SELECT question, answer FROM hotel_faq WHERE tenant_id = ? AND is_active = 1`,
+        `SELECT question, answer, category FROM hotel_faq WHERE tenant_id = ? AND is_active = 1 ORDER BY category, question`,
         tenantId,
       ) as any[];
 
-      const q = (input.question as string).toLowerCase();
-      const match = faqs.find((f: any) =>
-        f.question.toLowerCase().split(' ').some((w: string) => w.length > 3 && q.includes(w)),
-      );
+      if (!faqs.length) return { found: false, faqs: [], note: 'No FAQ entries configured yet.' };
 
-      return match ? { answer: match.answer } : { answer: null };
+      // Return ALL FAQs — Claude does the semantic matching
+      return { found: true, faqs };
     }
 
     case 'get_guest_requests': {

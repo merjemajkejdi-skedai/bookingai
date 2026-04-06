@@ -152,10 +152,19 @@ export function RequestsPage() {
                             <span className="text-xs text-slate-400 capitalize">{r.priority} priority</span>
                           </div>
 
-                          {/* Request type */}
-                          <p className="text-xs font-medium text-slate-500 capitalize mb-1">
-                            {r.request_type.replace('_', ' ')}
-                          </p>
+                          {/* Department label + request type */}
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <span className={clsx(
+                              'inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full',
+                              DEPT_COLORS[r.department] || 'bg-slate-100 text-slate-600'
+                            )}>
+                              {DEPT_ICONS[r.department]}
+                              {DEPT_LABELS[r.department] || r.department}
+                            </span>
+                            <span className="text-xs text-slate-400 capitalize">
+                              {r.request_type.replace(/_/g, ' ')}
+                            </span>
+                          </div>
 
                           {/* Description */}
                           <p className="text-sm text-slate-700 leading-snug">{r.description}</p>
