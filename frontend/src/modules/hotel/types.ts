@@ -47,6 +47,34 @@ export interface Department {
   created_at: string;
 }
 
+export interface HotelMessage {
+  role: 'user' | 'assistant' | 'staff';
+  content: string;
+  ts: string;
+}
+
+export interface Conversation {
+  id: string;
+  tenant_id: string;
+  guest_phone: string;
+  room_number: string | null;
+  messages: HotelMessage[];
+  last_message_preview: HotelMessage | null;
+  message_count: number;
+  last_message: string;
+  updated_at: string;
+  guest_name: string | null;
+  check_in: string | null;
+  check_out: string | null;
+}
+
+export interface BlockedNumber {
+  tenant_id: string;
+  phone: string;
+  label: string | null;
+  created_at: string;
+}
+
 export interface HotelConfig {
   tenant_id: string;
   hotel_name: string;

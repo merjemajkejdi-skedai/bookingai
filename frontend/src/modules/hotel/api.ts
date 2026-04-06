@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import type { GuestStay, HotelRequest, FaqEntry, HotelConfig, Department } from './types';
+import type { GuestStay, HotelRequest, FaqEntry, HotelConfig, Department, Conversation, BlockedNumber } from './types';
 
 const BASE = `${import.meta.env.VITE_API_URL || ''}`;
 
@@ -67,4 +67,20 @@ export const api = {
     req(`/hotel/departments/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteDepartment: (id: string) =>
     req(`/hotel/departments/${id}`, { method: 'DELETE' }),
+
+  // Conversations
+  getConversations: () => req<Conversation[]>('/hotel/conversations'),
+  getConversation: (phone: string) =>
+    req<Conversation>(`/hotel/conversations/${encodeURIComponent(phone)}`),
+  replyToGuest: (phone: string, message: string) =>
+    req(`/hotel/conversations/${encodeURIComponent(phone)}/reply`, {
+      method: 'POST', body: JSON.stringify({ message }),
+    }),
+
+  // Blocked numbers
+  getBlocked: () => req<BlockedNumber[]>('/hotel/blocked'),
+  addBlocked: (data: { phone: string; label?: string }) =>
+    req('/hotel/blocked', { method: 'POST', body: JSON.stringify(data) }),
+  removeBlocked: (phone: string) =>
+    req(`/hotel/blocked/${encodeURIComponent(phone)}`, { method: 'DELETE' }),
 };
