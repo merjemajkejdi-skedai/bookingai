@@ -46,6 +46,27 @@ export const api = {
     req<GuestStay>('/hotel/guests/checkin', { method: 'POST', body: JSON.stringify(data) }),
   checkOut: (id: string) =>
     req(`/hotel/guests/${id}/checkout`, { method: 'PATCH' }),
+  importGuests: async (file: File): Promise<{ imported: number }> => {
+    const token = localStorage.getItem('bookingai_token');
+    const raw   = localStorage.getItem('bookingai_admin_tenant');
+    const user  = JSON.parse(localStorage.getItem('bookingai_user') || 'null');
+    let path = '/hotel/guests/import';
+    if (user?.role === 'super_admin' && raw) {
+      const { id } = JSON.parse(raw);
+      path += `?tenantId=${encodeURIComponent(id)}`;
+    }
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch(`${BASE}${path}`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: fd,
+    });
+    const text = await res.text();
+    const json = JSON.parse(text);
+    if (!json.success) throw new Error(json.error || 'Import failed');
+    return json.data as { imported: number };
+  },
 
   // Config
   getConfig: () => req<HotelConfig>('/hotel/config'),

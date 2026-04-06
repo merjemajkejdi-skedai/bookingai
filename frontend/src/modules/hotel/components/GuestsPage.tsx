@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Plus, LogOut, UserCheck, Phone, CalendarDays } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Plus, LogOut, UserCheck, Phone, CalendarDays, Upload } from 'lucide-react';
 import { api } from '../api';
 import type { GuestStay } from '../types';
 import { Button, Input, Modal, Spinner } from '../ui';
@@ -19,6 +19,9 @@ export function GuestsPage() {
   const [loading, setLoading]     = useState(true);
   const [showAdd, setShowAdd]     = useState(false);
   const [checkingOut, setCheckingOut] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState({
     room_number: '',
@@ -34,6 +37,23 @@ export function GuestsPage() {
   }
 
   useEffect(() => { load(); }, []);
+
+  async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    setImporting(true);
+    setImportMsg(null);
+    try {
+      const result = await api.importGuests(file);
+      setImportMsg({ type: 'ok', text: `✓ Imported ${result.imported} guests` });
+      load();
+    } catch (err: any) {
+      setImportMsg({ type: 'err', text: err.message || 'Import failed' });
+    } finally {
+      setImporting(false);
+    }
+  }
 
   async function handleCheckIn(e: React.FormEvent) {
     e.preventDefault();
@@ -61,10 +81,40 @@ export function GuestsPage() {
           <h1 className="text-lg font-semibold text-slate-800">Current Guests</h1>
           <p className="text-xs text-slate-400">{guests.length} checked in</p>
         </div>
-        <Button size="sm" onClick={() => setShowAdd(true)}>
-          <Plus size={14} /> Check In Guest
-        </Button>
+        <div className="flex gap-2 items-center">
+          {/* Hidden file input for XLS import */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xls,.xlsx,.csv"
+            className="hidden"
+            onChange={handleImport}
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={importing}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Upload size={14} />
+            {importing ? 'Importing…' : 'Import Report'}
+          </Button>
+          <Button size="sm" onClick={() => setShowAdd(true)}>
+            <Plus size={14} /> Check In
+          </Button>
+        </div>
       </div>
+
+      {/* Import feedback */}
+      {importMsg && (
+        <div className={`flex-shrink-0 text-xs px-3 py-2 rounded-lg ${
+          importMsg.type === 'ok'
+            ? 'bg-green-50 text-green-700 border border-green-200'
+            : 'bg-red-50 text-red-600 border border-red-200'
+        }`}>
+          {importMsg.text}
+        </div>
+      )}
 
       {/* Guest list */}
       <div className="flex-1 overflow-y-auto min-h-0">

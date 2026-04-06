@@ -1,8 +1,12 @@
 import { Router, type Request, type Response } from 'express';
 import twilio from 'twilio';
+import multer from 'multer';
+import * as XLSX from 'xlsx';
 import { requireAuth, resolveTenantId } from '../middleware/auth.js';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { appendStaffMessage } from '../hotel/session.js';
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 export const hotelRouter = Router();
 
@@ -97,6 +101,64 @@ hotelRouter.patch('/guests/:id/checkout', requireAuth, async (req: Request, res:
       req.params.id, tenantId,
     );
     ok(res, { checked_out: true });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// POST /hotel/guests/import  — upload arrivals XLS report
+hotelRouter.post('/guests/import', requireAuth, upload.single('file') as any, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const file = (req as any).file as Express.Multer.File | undefined;
+  if (!file) return err(res, 'No file uploaded — send a multipart field named "file"');
+
+  try {
+    const wb = XLSX.read(file.buffer, { type: 'buffer' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1 });
+
+    if (rows.length < 2) return err(res, 'File appears to have no data rows');
+
+    // Expected columns (0-indexed):
+    //  0: Arrival Date  1: Nights Staying  2: Room  3: Guest Name
+    const dataRows = rows.slice(1).filter(r => r[3]);
+
+    const guests = dataRows.map(row => {
+      const arrivalStr  = String(row[0] ?? '').trim();
+      const nights      = Math.max(1, parseInt(String(row[1] ?? '1'), 10) || 1);
+      const roomRaw     = String(row[2] ?? '').trim();
+      const guest_name  = String(row[3] ?? '').trim();
+
+      // Room column: "Economy Double - 304" or "Deluxe Suite - 404Hotel Name"
+      // Extract the trailing digits after the last " - "
+      const roomMatch   = roomRaw.match(/ - (\d+)/);
+      const room_number = roomMatch ? roomMatch[1] : roomRaw.replace(/\D/g, '').slice(0, 6);
+
+      const checkIn  = new Date(arrivalStr);
+      const checkOut = new Date(checkIn);
+      checkOut.setDate(checkOut.getDate() + nights);
+
+      const valid = !isNaN(checkIn.getTime()) && guest_name && room_number;
+      return valid ? {
+        guest_name,
+        room_number,
+        check_in:  checkIn.toISOString().slice(0, 10),
+        check_out: checkOut.toISOString().slice(0, 10),
+      } : null;
+    }).filter(Boolean) as { guest_name: string; room_number: string; check_in: string; check_out: string }[];
+
+    if (!guests.length) return err(res, 'No valid guest rows found in file');
+
+    // Wipe all existing checked-in guests for this tenant, then replace
+    await dbRun(`DELETE FROM hotel_guest_stays WHERE tenant_id = ? AND status = 'checked_in'`, tenantId);
+
+    for (const g of guests) {
+      await dbRun(
+        `INSERT INTO hotel_guest_stays (id, tenant_id, room_number, guest_name, guest_phone, check_in, check_out)
+         VALUES (?,?,?,?,?,?,?)`,
+        crypto.randomUUID(), tenantId, g.room_number, g.guest_name, '', g.check_in, g.check_out,
+      );
+    }
+
+    ok(res, { imported: guests.length });
   } catch (e: any) { err(res, e.message, 500); }
 });
 
