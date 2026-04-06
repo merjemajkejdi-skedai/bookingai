@@ -305,9 +305,27 @@ const SCHEMA = `
     location_url TEXT,
     menu_url TEXT
   );
-  CREATE INDEX IF NOT EXISTS idx_hotel_stays_phone ON hotel_guest_stays(tenant_id, guest_phone);
+  CREATE TABLE IF NOT EXISTS hotel_blocked_numbers (
+    tenant_id  TEXT NOT NULL,
+    phone      TEXT NOT NULL,
+    label      TEXT,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    PRIMARY KEY (tenant_id, phone)
+  );
+  CREATE TABLE IF NOT EXISTS hotel_conversations (
+    id           TEXT PRIMARY KEY,
+    tenant_id    TEXT NOT NULL,
+    guest_phone  TEXT NOT NULL,
+    room_number  TEXT,
+    messages     TEXT NOT NULL DEFAULT '[]',
+    last_message TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at   TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    UNIQUE (tenant_id, guest_phone)
+  );
+  CREATE INDEX IF NOT EXISTS idx_hotel_conv_tenant  ON hotel_conversations(tenant_id, updated_at);
+  CREATE INDEX IF NOT EXISTS idx_hotel_stays_phone  ON hotel_guest_stays(tenant_id, guest_phone);
   CREATE INDEX IF NOT EXISTS idx_hotel_requests_status ON hotel_requests(tenant_id, status);
-  CREATE INDEX IF NOT EXISTS idx_hotel_faq_tenant ON hotel_faq(tenant_id);
+  CREATE INDEX IF NOT EXISTS idx_hotel_faq_tenant   ON hotel_faq(tenant_id);
   CREATE TABLE IF NOT EXISTS hotel_departments (
     id           TEXT PRIMARY KEY,
     tenant_id    TEXT NOT NULL,

@@ -120,6 +120,9 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
 
     console.log(`🤖 Agent reply: "${reply.slice(0, 120)}"`);
 
+    // Empty reply = hotel silent mode (blocked number or non-guest) — send nothing
+    if (!reply) return;
+
     const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
     await client.messages.create({
       from: process.env.TWILIO_WHATSAPP_FROM ?? 'whatsapp:+14155238886',

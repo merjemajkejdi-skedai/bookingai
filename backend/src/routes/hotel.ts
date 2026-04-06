@@ -1,6 +1,8 @@
 import { Router, type Request, type Response } from 'express';
+import twilio from 'twilio';
 import { requireAuth, resolveTenantId } from '../middleware/auth.js';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
+import { appendStaffMessage } from '../hotel/session.js';
 
 export const hotelRouter = Router();
 
@@ -271,5 +273,154 @@ hotelRouter.delete('/departments/:id', requireAuth, async (req: Request, res: Re
       req.params.id, tenantId,
     );
     ok(res, { deleted: true });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// ---------------------------------------------------------------------------
+// Blocked numbers — staff, suppliers, internal lines
+// ---------------------------------------------------------------------------
+
+// GET /hotel/blocked
+hotelRouter.get('/blocked', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    const rows = await dbAll(
+      `SELECT * FROM hotel_blocked_numbers WHERE tenant_id = ? ORDER BY label`,
+      tenantId,
+    );
+    ok(res, rows);
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// POST /hotel/blocked
+hotelRouter.post('/blocked', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const { phone, label } = req.body as { phone: string; label?: string };
+  if (!phone) return err(res, 'phone is required');
+  // Normalise — store with whatsapp: prefix for consistent lookup
+  const normalised = phone.startsWith('whatsapp:') ? phone : `whatsapp:${phone}`;
+  try {
+    await dbRun(
+      `INSERT INTO hotel_blocked_numbers (tenant_id, phone, label)
+       VALUES (?,?,?)
+       ON CONFLICT (tenant_id, phone) DO UPDATE SET label = excluded.label`,
+      tenantId, normalised, label ?? null,
+    );
+    ok(res, { blocked: true, phone: normalised });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// DELETE /hotel/blocked/:phone
+hotelRouter.delete('/blocked/:phone', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const phone = decodeURIComponent(req.params.phone);
+  const normalised = phone.startsWith('whatsapp:') ? phone : `whatsapp:${phone}`;
+  try {
+    await dbRun(
+      `DELETE FROM hotel_blocked_numbers WHERE tenant_id = ? AND (phone = ? OR phone = ?)`,
+      tenantId, phone, normalised,
+    );
+    ok(res, { deleted: true });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// ---------------------------------------------------------------------------
+// Conversations — guest inbox
+// ---------------------------------------------------------------------------
+
+// GET /hotel/conversations  — inbox list, most recent first
+hotelRouter.get('/conversations', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    const rows = await dbAll(
+      `SELECT
+         c.id,
+         c.guest_phone,
+         c.room_number,
+         c.messages,
+         c.last_message,
+         c.updated_at,
+         g.guest_name,
+         g.check_in,
+         g.check_out
+       FROM hotel_conversations c
+       LEFT JOIN hotel_guest_stays g
+         ON  g.tenant_id   = c.tenant_id
+         AND g.guest_phone = c.guest_phone
+         AND g.status      = 'checked_in'
+       WHERE c.tenant_id = ?
+       ORDER BY c.updated_at DESC
+       LIMIT 100`,
+      tenantId,
+    ) as any[];
+
+    // Parse messages JSON, extract last message for preview
+    const result = rows.map((r: any) => {
+      const msgs: any[] = JSON.parse(r.messages || '[]');
+      const lastMsg = msgs[msgs.length - 1] ?? null;
+      return { ...r, messages: undefined, last_message_preview: lastMsg, message_count: msgs.length };
+    });
+
+    ok(res, result);
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// GET /hotel/conversations/:phone  — full thread for one guest
+hotelRouter.get('/conversations/:phone', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const phone = decodeURIComponent(req.params.phone);
+  try {
+    const row = await dbGet(
+      `SELECT
+         c.*,
+         g.guest_name,
+         g.check_in,
+         g.check_out
+       FROM hotel_conversations c
+       LEFT JOIN hotel_guest_stays g
+         ON  g.tenant_id   = c.tenant_id
+         AND g.guest_phone = c.guest_phone
+         AND g.status      = 'checked_in'
+       WHERE c.tenant_id = ? AND c.guest_phone = ?`,
+      tenantId, phone,
+    ) as any;
+
+    if (!row) return ok(res, null);
+    ok(res, { ...row, messages: JSON.parse(row.messages || '[]') });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// POST /hotel/conversations/:phone/reply  — staff sends manual WhatsApp message
+hotelRouter.post('/conversations/:phone/reply', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const phone = decodeURIComponent(req.params.phone);
+  const { message } = req.body as { message: string };
+
+  if (!message?.trim()) return err(res, 'message is required');
+
+  try {
+    // Get tenant WhatsApp from number
+    const tenantRow = await dbGet(
+      'SELECT whatsapp_number FROM tenants WHERE id = ?',
+      tenantId,
+    ) as any;
+    if (!tenantRow) return err(res, 'Tenant not found', 404);
+
+    const from = tenantRow.whatsapp_number
+      ? (tenantRow.whatsapp_number.startsWith('whatsapp:')
+          ? tenantRow.whatsapp_number
+          : `whatsapp:${tenantRow.whatsapp_number}`)
+      : (process.env.TWILIO_WHATSAPP_FROM ?? 'whatsapp:+14155238886');
+
+    const to = phone.startsWith('whatsapp:') ? phone : `whatsapp:${phone}`;
+
+    // Send via Twilio
+    const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+    await twilioClient.messages.create({ from, to, body: message.trim() });
+
+    // Append to conversation in memory + DB
+    await appendStaffMessage(tenantId, phone, message.trim());
+
+    ok(res, { sent: true });
   } catch (e: any) { err(res, e.message, 500); }
 });
