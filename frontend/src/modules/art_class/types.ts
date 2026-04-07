@@ -34,9 +34,10 @@ export interface SubscriptionPlan {
 export interface SpecialEvent {
   id: string; tenantId: string;
   title: string; description: string;
-  date: string; startTime: string; endTime: string;
-  locationName: string; locationAddress: string; locationUrl: string;
-  maxCapacity?: number | null; price: number;
+  durationMinutes: number;
+  minCapacity?: number | null; maxCapacity?: number | null;
+  price: number;
+  teacherId?: string | null; teacherName?: string | null; teacherColor?: string | null;
   isActive: boolean; createdAt: string;
 }
 

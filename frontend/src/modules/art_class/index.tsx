@@ -103,7 +103,7 @@ export function ArtClassModule({ onLogout }: Props) {
           />
         )}
         {page === 'plans'          && <SubscriptionPlansPage />}
-        {page === 'special-events' && <SpecialEventsPage />}
+        {page === 'special-events' && <SpecialEventsPage specialists={specialists} />}
         {page === 'analytics'      && <AnalyticsPage />}
         {page === 'admin'          && <AdminPage />}
       </main>

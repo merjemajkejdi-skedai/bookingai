@@ -1,48 +1,65 @@
 import { useState, useEffect } from 'react';
-import { Plus, Pencil, Trash2, AlertCircle, MapPin, ExternalLink, CalendarDays, Clock } from 'lucide-react';
-import { format, parseISO } from 'date-fns';
+import { Plus, Pencil, Trash2, AlertCircle, Star, Clock, Users, User } from 'lucide-react';
+import clsx from 'clsx';
 import { api } from '../api';
-import type { SpecialEvent } from '../types';
+import type { SpecialEvent, Specialist } from '../types';
 import { Button, Input, Modal, Spinner } from '../ui';
 
+// ── Duration helpers ──────────────────────────────────────────────────────────
+const DURATION_OPTIONS = [
+  { value: 30,  label: '30 min' },
+  { value: 45,  label: '45 min' },
+  { value: 60,  label: '1 h' },
+  { value: 90,  label: '1 h 30 min' },
+  { value: 120, label: '2 h' },
+  { value: 150, label: '2 h 30 min' },
+  { value: 180, label: '3 h' },
+  { value: 240, label: '4 h' },
+];
+
+function formatDuration(mins: number): string {
+  const opt = DURATION_OPTIONS.find(o => o.value === mins);
+  if (opt) return opt.label;
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m ? `${h} h ${m} min` : `${h} h`;
+}
+
 // ── Event Form Modal ──────────────────────────────────────────────────────────
-function SpecialEventModal({ event, onClose, onSaved }: {
+function SpecialEventModal({ event, specialists, onClose, onSaved }: {
   event?: SpecialEvent | null;
+  specialists: Specialist[];
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [form, setForm] = useState({
     title:           event?.title           ?? '',
     description:     event?.description     ?? '',
-    date:            event?.date            ?? '',
-    startTime:       event?.startTime       ?? '10:00',
-    endTime:         event?.endTime         ?? '12:00',
-    locationName:    event?.locationName    ?? '',
-    locationAddress: event?.locationAddress ?? '',
-    locationUrl:     event?.locationUrl     ?? '',
+    durationMinutes: event?.durationMinutes ?? 60,
+    price:           event?.price           != null ? String(event.price) : '0',
+    minCapacity:     event?.minCapacity     != null ? String(event.minCapacity) : '',
     maxCapacity:     event?.maxCapacity     != null ? String(event.maxCapacity) : '',
-    price:           event?.price           != null ? String(event.price)       : '0',
+    teacherId:       event?.teacherId       ?? '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
 
-  function set(k: keyof typeof form, v: string) { setForm(f => ({ ...f, [k]: v })); }
+  function set(k: keyof typeof form, v: string | number) {
+    setForm(f => ({ ...f, [k]: v }));
+  }
 
   async function handleSave() {
     if (!form.title.trim()) { setError('Title is required'); return; }
-    if (!form.date)          { setError('Date is required');  return; }
     setSaving(true); setError('');
     const payload = {
       title:           form.title.trim(),
       description:     form.description.trim(),
-      date:            form.date,
-      startTime:       form.startTime,
-      endTime:         form.endTime,
-      locationName:    form.locationName.trim(),
-      locationAddress: form.locationAddress.trim(),
-      locationUrl:     form.locationUrl.trim(),
-      maxCapacity:     form.maxCapacity !== '' ? Number(form.maxCapacity) : null,
+      durationMinutes: Number(form.durationMinutes),
       price:           Number(form.price) || 0,
+      minCapacity:     form.minCapacity !== '' ? Number(form.minCapacity) : null,
+      maxCapacity:     form.maxCapacity !== '' ? Number(form.maxCapacity) : null,
+      teacherId:       form.teacherId || null,
     };
     try {
       if (event) await api.updateSpecialEvent(event.id, payload);
@@ -63,41 +80,48 @@ function SpecialEventModal({ event, onClose, onSaved }: {
           <span className="font-medium text-slate-700">Description</span>
           <textarea value={form.description} onChange={e => set('description', e.target.value)} rows={2}
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-400/40 focus:border-brand-400 resize-none"
-            placeholder="Describe the event..." />
+            placeholder="Describe the event, what's included, age range, materials…" />
         </label>
 
-        {/* Date + times */}
-        <Input label="Date *" type="date" value={form.date} onChange={e => set('date', e.target.value)} />
-        <div className="grid grid-cols-2 gap-3">
-          <Input label="Start time" type="time" value={form.startTime} onChange={e => set('startTime', e.target.value)} />
-          <Input label="End time"   type="time" value={form.endTime}   onChange={e => set('endTime',   e.target.value)} />
-        </div>
+        {/* Duration */}
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Duration</span>
+          <select value={form.durationMinutes}
+            onChange={e => set('durationMinutes', Number(e.target.value))}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-400/40 focus:border-brand-400">
+            {DURATION_OPTIONS.map(o => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </label>
 
-        {/* Location section */}
-        <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 flex flex-col gap-3">
-          <p className="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
-            <MapPin size={12} className="text-brand-500" /> Location
-          </p>
-          <Input label="Venue name" value={form.locationName}
-            onChange={e => set('locationName', e.target.value)}
-            placeholder="e.g. Art Center Tirana, Studio 12" />
-          <Input label="Address" value={form.locationAddress}
-            onChange={e => set('locationAddress', e.target.value)}
-            placeholder="e.g. Rruga Ismail Qemali 10, Tirana" />
-          <Input label="Google Maps / location URL" value={form.locationUrl}
-            onChange={e => set('locationUrl', e.target.value)}
-            placeholder="https://maps.google.com/..." />
-        </div>
+        {/* Responsible teacher */}
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Responsible teacher</span>
+          <select value={form.teacherId}
+            onChange={e => set('teacherId', e.target.value)}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-400/40 focus:border-brand-400">
+            <option value="">— No teacher assigned —</option>
+            {specialists.filter(s => s.isActive).map(s => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+        </label>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Input label="Max capacity" type="number" min={1}
-            value={form.maxCapacity}
-            onChange={e => set('maxCapacity', e.target.value)}
-            placeholder="Leave empty = unlimited" />
-          <Input label="Price (ALL)" type="number" min={0}
+        {/* Price + capacity */}
+        <div className="grid grid-cols-3 gap-3">
+          <Input label="Price / child (ALL)" type="number" min={0}
             value={form.price}
             onChange={e => set('price', e.target.value)}
             placeholder="e.g. 1500" />
+          <Input label="Min capacity" type="number" min={1}
+            value={form.minCapacity}
+            onChange={e => set('minCapacity', e.target.value)}
+            placeholder="Optional" />
+          <Input label="Max capacity" type="number" min={1}
+            value={form.maxCapacity}
+            onChange={e => set('maxCapacity', e.target.value)}
+            placeholder="Optional" />
         </div>
 
         {error && (
@@ -117,7 +141,7 @@ function SpecialEventModal({ event, onClose, onSaved }: {
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
-export function SpecialEventsPage() {
+export function SpecialEventsPage({ specialists }: { specialists: Specialist[] }) {
   const [events, setEvents]   = useState<SpecialEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<SpecialEvent | null>(null);
@@ -141,16 +165,15 @@ export function SpecialEventsPage() {
     finally { setDeletingId(null); }
   }
 
-  const upcoming = events.filter(e => e.date >= new Date().toISOString().slice(0, 10));
-  const past     = events.filter(e => e.date <  new Date().toISOString().slice(0, 10));
-
   return (
     <div className="h-full flex flex-col gap-3">
       {/* Header */}
       <div className="flex items-center justify-between flex-shrink-0">
         <div>
           <h1 className="text-lg font-semibold text-slate-800">Special Events</h1>
-          <p className="text-xs text-slate-400">{upcoming.length} upcoming · {past.length} past</p>
+          <p className="text-xs text-slate-400">
+            {events.length} event{events.length !== 1 ? 's' : ''} configured
+          </p>
         </div>
         <Button size="sm" onClick={() => setShowNew(true)}>
           <Plus size={14} /> New event
@@ -158,39 +181,45 @@ export function SpecialEventsPage() {
       </div>
 
       {/* List */}
-      <div className="flex-1 overflow-y-auto min-h-0 space-y-4">
+      <div className="flex-1 overflow-y-auto min-h-0">
         {loading ? <Spinner /> : events.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 text-slate-400 gap-2">
-            <CalendarDays size={32} className="opacity-30" />
-            <p className="text-sm">No special events yet</p>
+            <Star size={32} className="opacity-30" />
+            <p className="text-sm">No special events configured yet</p>
             <Button size="sm" variant="outline" onClick={() => setShowNew(true)}>
               <Plus size={13} /> Add your first event
             </Button>
           </div>
         ) : (
-          <>
-            {upcoming.length > 0 && (
-              <section>
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 px-1">Upcoming</p>
-                <div className="space-y-2">
-                  {upcoming.map(ev => <EventCard key={ev.id} event={ev} onEdit={() => setEditing(ev)} onDelete={() => handleDelete(ev)} deleting={deletingId === ev.id} />)}
-                </div>
-              </section>
-            )}
-            {past.length > 0 && (
-              <section>
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 px-1">Past events</p>
-                <div className="space-y-2 opacity-60">
-                  {past.map(ev => <EventCard key={ev.id} event={ev} onEdit={() => setEditing(ev)} onDelete={() => handleDelete(ev)} deleting={deletingId === ev.id} />)}
-                </div>
-              </section>
-            )}
-          </>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {events.map(ev => (
+              <EventCard
+                key={ev.id}
+                event={ev}
+                onEdit={() => setEditing(ev)}
+                onDelete={() => handleDelete(ev)}
+                deleting={deletingId === ev.id}
+              />
+            ))}
+          </div>
         )}
       </div>
 
-      {showNew && <SpecialEventModal onClose={() => setShowNew(false)} onSaved={() => { setShowNew(false); load(); }} />}
-      {editing  && <SpecialEventModal event={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
+      {showNew && (
+        <SpecialEventModal
+          specialists={specialists}
+          onClose={() => setShowNew(false)}
+          onSaved={() => { setShowNew(false); load(); }}
+        />
+      )}
+      {editing && (
+        <SpecialEventModal
+          event={editing}
+          specialists={specialists}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); load(); }}
+        />
+      )}
     </div>
   );
 }
@@ -199,75 +228,72 @@ export function SpecialEventsPage() {
 function EventCard({ event, onEdit, onDelete, deleting }: {
   event: SpecialEvent; onEdit: () => void; onDelete: () => void; deleting: boolean;
 }) {
-  const hasLocation = event.locationName || event.locationAddress;
-
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 p-4 flex gap-4">
-      {/* Date block */}
-      <div className="flex-shrink-0 w-12 flex flex-col items-center justify-center bg-brand-50 rounded-xl py-2">
-        <span className="text-[10px] font-medium text-brand-400 uppercase">
-          {format(parseISO(event.date), 'MMM')}
-        </span>
-        <span className="text-xl font-bold text-brand-700 leading-none">
-          {format(parseISO(event.date), 'd')}
-        </span>
-        <span className="text-[10px] text-brand-400">
-          {format(parseISO(event.date), 'yyyy')}
-        </span>
-      </div>
-
-      {/* Info */}
-      <div className="flex-1 min-w-0">
-        <p className="font-semibold text-slate-800 truncate">{event.title}</p>
-        {event.description && (
-          <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{event.description}</p>
-        )}
-
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
-          <span className="flex items-center gap-1 text-xs text-slate-500">
-            <Clock size={10} /> {event.startTime}–{event.endTime}
-          </span>
-          {event.price > 0 && (
-            <span className="text-xs font-medium text-brand-600">{event.price.toLocaleString()} ALL</span>
-          )}
-          {event.maxCapacity && (
-            <span className="text-xs text-slate-400">{event.maxCapacity} spots</span>
+    <div className="bg-white rounded-2xl border border-slate-200 p-5 flex flex-col gap-4 shadow-sm">
+      {/* Title row + actions */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-slate-800 truncate">{event.title}</p>
+          {event.description && (
+            <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{event.description}</p>
           )}
         </div>
+        <div className="flex gap-1 flex-shrink-0">
+          <button onClick={onEdit}
+            className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-brand-500 transition-colors">
+            <Pencil size={14} />
+          </button>
+          <button onClick={onDelete} disabled={deleting}
+            className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors">
+            <Trash2 size={14} />
+          </button>
+        </div>
+      </div>
 
-        {hasLocation && (
-          <div className="flex items-start gap-1 mt-2">
-            <MapPin size={11} className="text-slate-400 mt-0.5 flex-shrink-0" />
-            <div className="min-w-0">
-              {event.locationName && (
-                <p className="text-xs font-medium text-slate-600 truncate">{event.locationName}</p>
-              )}
-              {event.locationAddress && (
-                <p className="text-xs text-slate-400 truncate">{event.locationAddress}</p>
-              )}
-            </div>
-            {event.locationUrl && (
-              <a href={event.locationUrl} target="_blank" rel="noopener noreferrer"
-                className="ml-1 flex-shrink-0 text-brand-500 hover:text-brand-600"
-                title="Open in Maps" onClick={e => e.stopPropagation()}>
-                <ExternalLink size={11} />
-              </a>
-            )}
-          </div>
+      {/* Stats row */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+        {/* Duration */}
+        <span className="flex items-center gap-1 text-xs text-slate-600">
+          <Clock size={11} className="text-brand-400" />
+          {formatDuration(event.durationMinutes)}
+        </span>
+
+        {/* Price */}
+        {event.price > 0 && (
+          <span className="text-xs font-semibold text-brand-600">
+            {event.price.toLocaleString()} ALL / child
+          </span>
+        )}
+
+        {/* Capacity */}
+        {(event.minCapacity || event.maxCapacity) && (
+          <span className="flex items-center gap-1 text-xs text-slate-500">
+            <Users size={11} />
+            {event.minCapacity && event.maxCapacity
+              ? `${event.minCapacity}–${event.maxCapacity} children`
+              : event.maxCapacity
+                ? `Up to ${event.maxCapacity} children`
+                : `Min ${event.minCapacity} children`}
+          </span>
         )}
       </div>
 
-      {/* Actions */}
-      <div className="flex flex-col gap-1 flex-shrink-0">
-        <button onClick={onEdit}
-          className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-brand-500 transition-colors">
-          <Pencil size={14} />
-        </button>
-        <button onClick={onDelete} disabled={deleting}
-          className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors">
-          <Trash2 size={14} />
-        </button>
-      </div>
+      {/* Teacher */}
+      {event.teacherName ? (
+        <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+          <span
+            className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[9px] font-bold"
+            style={{ backgroundColor: event.teacherColor || '#6366f1' }}>
+            {event.teacherName.charAt(0).toUpperCase()}
+          </span>
+          <span className="text-xs text-slate-600 truncate">{event.teacherName}</span>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+          <User size={13} className="text-slate-300 flex-shrink-0" />
+          <span className="text-xs text-slate-400 italic">No teacher assigned</span>
+        </div>
+      )}
     </div>
   );
 }

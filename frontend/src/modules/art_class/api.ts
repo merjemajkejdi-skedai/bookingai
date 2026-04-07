@@ -88,7 +88,7 @@ export const api = {
 
   // Special events
   getSpecialEvents: () => req<SpecialEvent[]>('/special-events'),
-  createSpecialEvent: (data: Omit<SpecialEvent, 'id'|'tenantId'|'isActive'|'createdAt'>) =>
+  createSpecialEvent: (data: Omit<SpecialEvent, 'id'|'tenantId'|'isActive'|'createdAt'|'teacherName'|'teacherColor'>) =>
     req<SpecialEvent>('/special-events', { method: 'POST', body: JSON.stringify(data) }),
   updateSpecialEvent: (id: string, data: Partial<SpecialEvent>) =>
     req<SpecialEvent>('/special-events/' + id, { method: 'PUT', body: JSON.stringify(data) }),

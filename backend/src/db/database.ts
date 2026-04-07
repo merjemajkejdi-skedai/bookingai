@@ -231,14 +231,11 @@ const SCHEMA = `
     tenant_id TEXT NOT NULL,
     title TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
-    date TEXT NOT NULL,
-    start_time TEXT NOT NULL DEFAULT '10:00',
-    end_time TEXT NOT NULL DEFAULT '12:00',
-    location_name TEXT NOT NULL DEFAULT '',
-    location_address TEXT NOT NULL DEFAULT '',
-    location_url TEXT NOT NULL DEFAULT '',
+    duration_minutes INTEGER NOT NULL DEFAULT 60,
+    min_capacity INTEGER,
     max_capacity INTEGER,
     price INTEGER NOT NULL DEFAULT 0,
+    teacher_id TEXT,
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
   );
@@ -392,7 +389,10 @@ export async function runMigrations() {
       `ALTER TABLE hotel_config ADD COLUMN IF NOT EXISTS menu_url TEXT`,
       `ALTER TABLE art_events ADD COLUMN IF NOT EXISTS recurrence_group_id TEXT`,
       `CREATE TABLE IF NOT EXISTS art_class_plans (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', classes_per_month INTEGER NOT NULL DEFAULT 4, price INTEGER NOT NULL DEFAULT 0, is_active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP))`,
-      `CREATE TABLE IF NOT EXISTS art_special_events (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', date TEXT NOT NULL, start_time TEXT NOT NULL DEFAULT '10:00', end_time TEXT NOT NULL DEFAULT '12:00', location_name TEXT NOT NULL DEFAULT '', location_address TEXT NOT NULL DEFAULT '', location_url TEXT NOT NULL DEFAULT '', max_capacity INTEGER, price INTEGER NOT NULL DEFAULT 0, is_active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP))`,
+      `CREATE TABLE IF NOT EXISTS art_special_events (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', duration_minutes INTEGER NOT NULL DEFAULT 60, min_capacity INTEGER, max_capacity INTEGER, price INTEGER NOT NULL DEFAULT 0, teacher_id TEXT, is_active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP))`,
+      `ALTER TABLE art_special_events ADD COLUMN IF NOT EXISTS duration_minutes INTEGER NOT NULL DEFAULT 60`,
+      `ALTER TABLE art_special_events ADD COLUMN IF NOT EXISTS min_capacity INTEGER`,
+      `ALTER TABLE art_special_events ADD COLUMN IF NOT EXISTS teacher_id TEXT`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -407,6 +407,17 @@ export async function runMigrations() {
     for (const sql of priceSeeds) {
       await pool.query(sql).catch((e: any) => console.warn('PG price seed skipped:', e.message));
     }
+    // One-time data fix: set all active upcoming art_events for WeArt to 2000 ALL
+    await pool.query(`
+      UPDATE art_events
+      SET    price = 2000
+      WHERE  is_active = 1
+        AND  date >= CURRENT_DATE
+        AND  tenant_id = (SELECT id FROM tenants WHERE LOWER(name) LIKE '%weart%' LIMIT 1)
+    `).then(r => {
+      if (r.rowCount && r.rowCount > 0)
+        console.log(`✅ WeArt price fix: updated ${r.rowCount} event(s) to 2000 ALL`);
+    }).catch((e: any) => console.warn('WeArt price fix skipped:', e.message));
     console.log('✅ PostgreSQL migrations complete');
     return;
   }
@@ -440,6 +451,15 @@ export async function runMigrations() {
     .all().map((r: any) => r.name as string);
   if (!tmplCols.includes('price'))
     exec('ALTER TABLE event_templates ADD COLUMN price INTEGER NOT NULL DEFAULT 0');
+
+  const specialEventCols = prepare("SELECT name FROM pragma_table_info('art_special_events')")
+    .all().map((r: any) => r.name as string);
+  if (!specialEventCols.includes('duration_minutes'))
+    exec('ALTER TABLE art_special_events ADD COLUMN duration_minutes INTEGER NOT NULL DEFAULT 60');
+  if (!specialEventCols.includes('min_capacity'))
+    exec('ALTER TABLE art_special_events ADD COLUMN min_capacity INTEGER');
+  if (!specialEventCols.includes('teacher_id'))
+    exec('ALTER TABLE art_special_events ADD COLUMN teacher_id TEXT');
 
   for (const [col, def] of [
     ['whatsapp_number', "whatsapp_number TEXT NOT NULL DEFAULT ''"],

@@ -469,18 +469,27 @@ artClassRouter.delete('/subscription-plans/:id', requireAuth, async (req: Reques
 function mapSpecialEvent(r: any) {
   return {
     id: r.id, tenantId: r.tenant_id, title: r.title, description: r.description,
-    date: r.date, startTime: r.start_time, endTime: r.end_time,
-    locationName: r.location_name, locationAddress: r.location_address, locationUrl: r.location_url,
-    maxCapacity: r.max_capacity ?? null, price: r.price,
+    durationMinutes: r.duration_minutes ?? 60,
+    minCapacity: r.min_capacity ?? null, maxCapacity: r.max_capacity ?? null,
+    price: r.price ?? 0,
+    teacherId: r.teacher_id ?? null,
+    teacherName: r.teacher_name ?? null,
+    teacherColor: r.teacher_color ?? null,
     isActive: !!r.is_active, createdAt: r.created_at,
   };
 }
+
+const SPECIAL_EVENT_JOIN = `
+  SELECT e.*, s.name AS teacher_name, s.color AS teacher_color
+  FROM art_special_events e
+  LEFT JOIN specialists s ON s.id = e.teacher_id
+`;
 
 artClassRouter.get('/special-events', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
   try {
     const rows = await dbAll(
-      `SELECT * FROM art_special_events WHERE tenant_id = ? AND is_active = 1 ORDER BY date, start_time`,
+      `${SPECIAL_EVENT_JOIN} WHERE e.tenant_id = ? AND e.is_active = 1 ORDER BY e.title ASC`,
       tenantId,
     ) as any[];
     ok(res, rows.map(mapSpecialEvent));
@@ -489,32 +498,32 @@ artClassRouter.get('/special-events', requireAuth, async (req: Request, res: Res
 
 artClassRouter.post('/special-events', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
-  const { title, description = '', date, startTime, endTime, locationName = '', locationAddress = '', locationUrl = '', maxCapacity, price } = req.body;
-  if (!title || !date) return err(res, 'title and date are required');
+  const { title, description = '', durationMinutes, minCapacity, maxCapacity, price, teacherId } = req.body;
+  if (!title) return err(res, 'title is required');
   const id = crypto.randomUUID();
   try {
     await dbRun(
-      `INSERT INTO art_special_events (id, tenant_id, title, description, date, start_time, end_time, location_name, location_address, location_url, max_capacity, price) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-      id, tenantId, title, description, date, startTime || '10:00', endTime || '12:00',
-      locationName, locationAddress, locationUrl, maxCapacity ?? null, price ?? 0,
+      `INSERT INTO art_special_events (id, tenant_id, title, description, duration_minutes, min_capacity, max_capacity, price, teacher_id) VALUES (?,?,?,?,?,?,?,?,?)`,
+      id, tenantId, title, description, durationMinutes ?? 60,
+      minCapacity ?? null, maxCapacity ?? null, price ?? 0, teacherId ?? null,
     );
-    const row = await dbGet('SELECT * FROM art_special_events WHERE id = ?', id) as any;
+    const row = await dbGet(`${SPECIAL_EVENT_JOIN} WHERE e.id = ?`, id) as any;
     ok(res, mapSpecialEvent(row));
   } catch (e: any) { err(res, e.message, 500); }
 });
 
 artClassRouter.put('/special-events/:id', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
-  const { title, description, date, startTime, endTime, locationName, locationAddress, locationUrl, maxCapacity, price } = req.body;
-  if (!title || !date) return err(res, 'title and date are required');
+  const { title, description, durationMinutes, minCapacity, maxCapacity, price, teacherId } = req.body;
+  if (!title) return err(res, 'title is required');
   try {
     await dbRun(
-      `UPDATE art_special_events SET title=?, description=?, date=?, start_time=?, end_time=?, location_name=?, location_address=?, location_url=?, max_capacity=?, price=? WHERE id=? AND tenant_id=?`,
-      title, description ?? '', date, startTime || '10:00', endTime || '12:00',
-      locationName ?? '', locationAddress ?? '', locationUrl ?? '',
-      maxCapacity ?? null, price ?? 0, req.params.id, tenantId,
+      `UPDATE art_special_events SET title=?, description=?, duration_minutes=?, min_capacity=?, max_capacity=?, price=?, teacher_id=? WHERE id=? AND tenant_id=?`,
+      title, description ?? '', durationMinutes ?? 60,
+      minCapacity ?? null, maxCapacity ?? null, price ?? 0,
+      teacherId ?? null, req.params.id, tenantId,
     );
-    const row = await dbGet('SELECT * FROM art_special_events WHERE id = ?', req.params.id) as any;
+    const row = await dbGet(`${SPECIAL_EVENT_JOIN} WHERE e.id = ?`, req.params.id) as any;
     ok(res, mapSpecialEvent(row));
   } catch (e: any) { err(res, e.message, 500); }
 });
