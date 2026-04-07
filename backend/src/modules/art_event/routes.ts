@@ -4,7 +4,18 @@
 import { Router, Request, Response } from 'express';
 import { isPg, prepare, query, queryOne, queryRun } from '../../db/database.js';
 import { requireAuth, resolveTenantId } from '../../middleware/auth.js';
-import { format } from 'date-fns';
+import { format, addDays } from 'date-fns';
+
+function getDatesInRange(startDate: string, endDate: string, days: number[]): string[] {
+  const dates: string[] = [];
+  let cur = new Date(startDate + 'T12:00:00Z');
+  const end = new Date(endDate + 'T12:00:00Z');
+  while (cur <= end) {
+    if (days.includes(cur.getUTCDay())) dates.push(cur.toISOString().slice(0, 10));
+    cur = addDays(cur, 1);
+  }
+  return dates;
+}
 
 export const artEventRouter = Router();
 
@@ -44,7 +55,7 @@ artEventRouter.get('/events', requireAuth, async (req: Request, res: Response) =
   if (end)       { sql += ' AND e.date <= ?'; params.push(end); }
   if (teacherId) { sql += ' AND e.teacher_id = ?'; params.push(teacherId); }
 
-  sql += ' GROUP BY e.id, e.tenant_id, e.teacher_id, e.title, e.description, e.date, e.start_time, e.end_time, e.age_min, e.age_max, e.max_capacity, e.price, e.is_active, e.created_at, s.name, s.color ORDER BY e.date, e.start_time';
+  sql += ' GROUP BY e.id, e.tenant_id, e.teacher_id, e.title, e.description, e.date, e.start_time, e.end_time, e.age_min, e.age_max, e.max_capacity, e.price, e.recurrence_group_id, e.is_active, e.created_at, s.name, s.color ORDER BY e.date, e.start_time';
 
   try {
     const rows = await dbAll(sql, ...params) as any[];
@@ -57,6 +68,7 @@ artEventRouter.get('/events', requireAuth, async (req: Request, res: Response) =
       maxCapacity: r.max_capacity ?? null,
       price: r.price ?? 0,
       registrationCount: Number(r.registration_count),
+      recurrenceGroupId: r.recurrence_group_id ?? null,
       isActive: !!r.is_active, createdAt: r.created_at,
     })));
   } catch (e: any) { err(res, e.message, 500); }
@@ -65,18 +77,38 @@ artEventRouter.get('/events', requireAuth, async (req: Request, res: Response) =
 // ── POST /events ──────────────────────────────────────────────────────────────
 artEventRouter.post('/events', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
-  const { title, description = '', date, startTime, endTime, teacherId, ageMin, ageMax, maxCapacity, price } = req.body;
+  const { title, description = '', date, startTime, endTime, teacherId, ageMin, ageMax, maxCapacity, price, recurrence } = req.body;
 
-  if (!title || !date) return err(res, 'title and date are required');
+  if (!title) return err(res, 'title is required');
 
-  const id = crypto.randomUUID();
+  const sTime = startTime || '10:00';
+  const eTime = endTime   || '11:00';
+
   try {
+    // ── Recurring ────────────────────────────────────────────────────────────
+    if (recurrence && recurrence.startDate && recurrence.endDate && Array.isArray(recurrence.days) && recurrence.days.length) {
+      const dates = getDatesInRange(recurrence.startDate, recurrence.endDate, recurrence.days);
+      if (!dates.length) return err(res, 'No dates match the selected days in that range');
+      const groupId = crypto.randomUUID();
+      for (const d of dates) {
+        await dbRun(
+          `INSERT INTO art_events(id,tenant_id,teacher_id,title,description,date,start_time,end_time,age_min,age_max,max_capacity,price,recurrence_group_id)
+           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          crypto.randomUUID(), tenantId, teacherId ?? null, title, description,
+          d, sTime, eTime, ageMin ?? null, ageMax ?? null, maxCapacity ?? null, price ?? 0, groupId,
+        );
+      }
+      return ok(res, { created: dates.length, recurrenceGroupId: groupId });
+    }
+
+    // ── Single event ─────────────────────────────────────────────────────────
+    if (!date) return err(res, 'date is required');
+    const id = crypto.randomUUID();
     await dbRun(
       `INSERT INTO art_events(id,tenant_id,teacher_id,title,description,date,start_time,end_time,age_min,age_max,max_capacity,price)
        VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
       id, tenantId, teacherId ?? null, title, description,
-      date, startTime || '10:00', endTime || '11:00',
-      ageMin ?? null, ageMax ?? null, maxCapacity ?? null, price ?? 0
+      date, sTime, eTime, ageMin ?? null, ageMax ?? null, maxCapacity ?? null, price ?? 0,
     );
     const row = await dbGet('SELECT * FROM art_events WHERE id=?', id) as any;
     ok(res, {
@@ -85,7 +117,7 @@ artEventRouter.post('/events', requireAuth, async (req: Request, res: Response) 
       date: row.date, startTime: row.start_time, endTime: row.end_time,
       ageMin: row.age_min ?? null, ageMax: row.age_max ?? null,
       maxCapacity: row.max_capacity ?? null, price: row.price ?? 0, registrationCount: 0,
-      isActive: !!row.is_active, createdAt: row.created_at,
+      recurrenceGroupId: null, isActive: !!row.is_active, createdAt: row.created_at,
     });
   } catch (e: any) { err(res, e.message, 500); }
 });
@@ -123,6 +155,19 @@ artEventRouter.put('/events/:id', requireAuth, async (req: Request, res: Respons
 });
 
 // ── DELETE /events/:id ────────────────────────────────────────────────────────
+// DELETE /events/group/:groupId — must come before /events/:id to avoid param collision
+artEventRouter.delete('/events/group/:groupId', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const { groupId } = req.params;
+  try {
+    await dbRun(
+      `UPDATE art_events SET is_active=0 WHERE recurrence_group_id=? AND tenant_id=?`,
+      groupId, tenantId,
+    );
+    ok(res, { deleted: true });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
 artEventRouter.delete('/events/:id', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
   const { id } = req.params;
