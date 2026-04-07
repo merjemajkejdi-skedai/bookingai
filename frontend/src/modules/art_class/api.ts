@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import type { Specialist, ArtEvent, EventRegistration, EventTemplate } from './types';
+import type { Specialist, ArtEvent, EventRegistration, EventTemplate, SubscriptionPlan, SpecialEvent } from './types';
 
 const BASE = `${import.meta.env.VITE_API_URL || ''}/api`;
 
@@ -76,4 +76,22 @@ export const api = {
 
   getAnalytics: (from: string, to: string) =>
     req<any>(`/analytics/art-class?from=${from}&to=${to}`),
+
+  // Subscription plans
+  getPlans: () => req<SubscriptionPlan[]>('/subscription-plans'),
+  createPlan: (data: Omit<SubscriptionPlan, 'id'|'tenantId'|'createdAt'>) =>
+    req<SubscriptionPlan>('/subscription-plans', { method: 'POST', body: JSON.stringify(data) }),
+  updatePlan: (id: string, data: Partial<SubscriptionPlan>) =>
+    req('/subscription-plans/' + id, { method: 'PUT', body: JSON.stringify(data) }),
+  deletePlan: (id: string) =>
+    req('/subscription-plans/' + id, { method: 'DELETE' }),
+
+  // Special events
+  getSpecialEvents: () => req<SpecialEvent[]>('/special-events'),
+  createSpecialEvent: (data: Omit<SpecialEvent, 'id'|'tenantId'|'isActive'|'createdAt'>) =>
+    req<SpecialEvent>('/special-events', { method: 'POST', body: JSON.stringify(data) }),
+  updateSpecialEvent: (id: string, data: Partial<SpecialEvent>) =>
+    req<SpecialEvent>('/special-events/' + id, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteSpecialEvent: (id: string) =>
+    req('/special-events/' + id, { method: 'DELETE' }),
 };

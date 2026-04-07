@@ -408,3 +408,121 @@ artClassRouter.get('/analytics/art-class', requireAuth, async (req: Request, res
     });
   } catch (e: any) { err(res, e.message, 500); }
 });
+
+// ── SUBSCRIPTION PLANS ────────────────────────────────────────────────────────
+
+artClassRouter.get('/subscription-plans', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    const rows = await dbAll(
+      `SELECT * FROM art_class_plans WHERE tenant_id = ? ORDER BY price ASC`,
+      tenantId,
+    ) as any[];
+    ok(res, rows.map(r => ({
+      id: r.id, tenantId: r.tenant_id, name: r.name, description: r.description,
+      classesPerMonth: r.classes_per_month, price: r.price,
+      isActive: !!r.is_active, createdAt: r.created_at,
+    })));
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+artClassRouter.post('/subscription-plans', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const { name, description = '', classesPerMonth, price } = req.body;
+  if (!name) return err(res, 'name is required');
+  const id = crypto.randomUUID();
+  try {
+    await dbRun(
+      `INSERT INTO art_class_plans (id, tenant_id, name, description, classes_per_month, price) VALUES (?,?,?,?,?,?)`,
+      id, tenantId, name, description, classesPerMonth ?? 4, price ?? 0,
+    );
+    const row = await dbGet('SELECT * FROM art_class_plans WHERE id = ?', id) as any;
+    ok(res, { id: row.id, tenantId: row.tenant_id, name: row.name, description: row.description,
+      classesPerMonth: row.classes_per_month, price: row.price, isActive: !!row.is_active, createdAt: row.created_at });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+artClassRouter.put('/subscription-plans/:id', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const { name, description, classesPerMonth, price, isActive } = req.body;
+  if (!name) return err(res, 'name is required');
+  try {
+    await dbRun(
+      `UPDATE art_class_plans SET name=?, description=?, classes_per_month=?, price=?, is_active=? WHERE id=? AND tenant_id=?`,
+      name, description ?? '', classesPerMonth ?? 4, price ?? 0,
+      isActive === false ? 0 : 1, req.params.id, tenantId,
+    );
+    ok(res, { updated: true });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+artClassRouter.delete('/subscription-plans/:id', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    await dbRun('DELETE FROM art_class_plans WHERE id=? AND tenant_id=?', req.params.id, tenantId);
+    ok(res, { deleted: true });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// ── SPECIAL EVENTS ────────────────────────────────────────────────────────────
+
+function mapSpecialEvent(r: any) {
+  return {
+    id: r.id, tenantId: r.tenant_id, title: r.title, description: r.description,
+    date: r.date, startTime: r.start_time, endTime: r.end_time,
+    locationName: r.location_name, locationAddress: r.location_address, locationUrl: r.location_url,
+    maxCapacity: r.max_capacity ?? null, price: r.price,
+    isActive: !!r.is_active, createdAt: r.created_at,
+  };
+}
+
+artClassRouter.get('/special-events', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    const rows = await dbAll(
+      `SELECT * FROM art_special_events WHERE tenant_id = ? AND is_active = 1 ORDER BY date, start_time`,
+      tenantId,
+    ) as any[];
+    ok(res, rows.map(mapSpecialEvent));
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+artClassRouter.post('/special-events', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const { title, description = '', date, startTime, endTime, locationName = '', locationAddress = '', locationUrl = '', maxCapacity, price } = req.body;
+  if (!title || !date) return err(res, 'title and date are required');
+  const id = crypto.randomUUID();
+  try {
+    await dbRun(
+      `INSERT INTO art_special_events (id, tenant_id, title, description, date, start_time, end_time, location_name, location_address, location_url, max_capacity, price) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      id, tenantId, title, description, date, startTime || '10:00', endTime || '12:00',
+      locationName, locationAddress, locationUrl, maxCapacity ?? null, price ?? 0,
+    );
+    const row = await dbGet('SELECT * FROM art_special_events WHERE id = ?', id) as any;
+    ok(res, mapSpecialEvent(row));
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+artClassRouter.put('/special-events/:id', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const { title, description, date, startTime, endTime, locationName, locationAddress, locationUrl, maxCapacity, price } = req.body;
+  if (!title || !date) return err(res, 'title and date are required');
+  try {
+    await dbRun(
+      `UPDATE art_special_events SET title=?, description=?, date=?, start_time=?, end_time=?, location_name=?, location_address=?, location_url=?, max_capacity=?, price=? WHERE id=? AND tenant_id=?`,
+      title, description ?? '', date, startTime || '10:00', endTime || '12:00',
+      locationName ?? '', locationAddress ?? '', locationUrl ?? '',
+      maxCapacity ?? null, price ?? 0, req.params.id, tenantId,
+    );
+    const row = await dbGet('SELECT * FROM art_special_events WHERE id = ?', req.params.id) as any;
+    ok(res, mapSpecialEvent(row));
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+artClassRouter.delete('/special-events/:id', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    await dbRun('UPDATE art_special_events SET is_active=0 WHERE id=? AND tenant_id=?', req.params.id, tenantId);
+    ok(res, { deleted: true });
+  } catch (e: any) { err(res, e.message, 500); }
+});

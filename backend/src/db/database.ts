@@ -216,6 +216,32 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_event_regs_event  ON event_registrations(event_id);
   CREATE INDEX IF NOT EXISTS idx_event_regs_phone  ON event_registrations(parent_phone);
   CREATE INDEX IF NOT EXISTS idx_event_templates_tenant ON event_templates(tenant_id);
+  CREATE TABLE IF NOT EXISTS art_class_plans (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    classes_per_month INTEGER NOT NULL DEFAULT 4,
+    price INTEGER NOT NULL DEFAULT 0,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE TABLE IF NOT EXISTS art_special_events (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    date TEXT NOT NULL,
+    start_time TEXT NOT NULL DEFAULT '10:00',
+    end_time TEXT NOT NULL DEFAULT '12:00',
+    location_name TEXT NOT NULL DEFAULT '',
+    location_address TEXT NOT NULL DEFAULT '',
+    location_url TEXT NOT NULL DEFAULT '',
+    max_capacity INTEGER,
+    price INTEGER NOT NULL DEFAULT 0,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
   CREATE TABLE IF NOT EXISTS restaurant_zones (
     id TEXT PRIMARY KEY,
     tenant_id TEXT NOT NULL,
@@ -365,6 +391,8 @@ export async function runMigrations() {
       `ALTER TABLE hotel_config ADD COLUMN IF NOT EXISTS location_url TEXT`,
       `ALTER TABLE hotel_config ADD COLUMN IF NOT EXISTS menu_url TEXT`,
       `ALTER TABLE art_events ADD COLUMN IF NOT EXISTS recurrence_group_id TEXT`,
+      `CREATE TABLE IF NOT EXISTS art_class_plans (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', classes_per_month INTEGER NOT NULL DEFAULT 4, price INTEGER NOT NULL DEFAULT 0, is_active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP))`,
+      `CREATE TABLE IF NOT EXISTS art_special_events (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', date TEXT NOT NULL, start_time TEXT NOT NULL DEFAULT '10:00', end_time TEXT NOT NULL DEFAULT '12:00', location_name TEXT NOT NULL DEFAULT '', location_address TEXT NOT NULL DEFAULT '', location_url TEXT NOT NULL DEFAULT '', max_capacity INTEGER, price INTEGER NOT NULL DEFAULT 0, is_active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP))`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));

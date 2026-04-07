@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Users, Shield, LogOut, BookTemplate, BarChart2 } from 'lucide-react';
+import { Calendar, Users, Shield, LogOut, BookTemplate, BarChart2, CreditCard, Star } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from './api';
 import type { Specialist } from './types';
@@ -7,10 +7,12 @@ import { EventsPage } from './components/EventsPage';
 import { TemplatesPage } from './components/TemplatesPage';
 import { SpecialistsPage } from './components/SpecialistsPage';
 import { AnalyticsPage } from './components/AnalyticsPage';
+import { SubscriptionPlansPage } from './components/SubscriptionPlansPage';
+import { SpecialEventsPage } from './components/SpecialEventsPage';
 import { AdminPage } from '../../pages/AdminPage';
 import { isAdmin, getStoredUser, clearAuth } from '../../shared/lib/auth';
 
-type Page = 'classes' | 'templates' | 'specialists' | 'admin' | 'analytics';
+type Page = 'classes' | 'templates' | 'specialists' | 'plans' | 'special-events' | 'analytics' | 'admin';
 interface Props { onLogout: () => void; }
 
 export function ArtClassModule({ onLogout }: Props) {
@@ -34,9 +36,11 @@ export function ArtClassModule({ onLogout }: Props) {
   }
 
   const nav: { id: Page; label: string; icon: React.ReactNode }[] = [
-    { id: 'classes',     label: 'Classes',   icon: <Calendar size={16} /> },
-    { id: 'templates',   label: 'Templates', icon: <BookTemplate size={16} /> },
-    { id: 'specialists', label: 'Teachers',  icon: <Users size={16} /> },
+    { id: 'classes',        label: 'Classes',        icon: <Calendar size={16} /> },
+    { id: 'templates',      label: 'Templates',      icon: <BookTemplate size={16} /> },
+    { id: 'specialists',    label: 'Teachers',       icon: <Users size={16} /> },
+    { id: 'plans',          label: 'Subscriptions',  icon: <CreditCard size={16} /> },
+    { id: 'special-events', label: 'Special Events', icon: <Star size={16} /> },
     ...(hasAnalytics ? [{ id: 'analytics' as Page, label: 'Analytics', icon: <BarChart2 size={16} /> }] : []),
     ...(isAdmin() ? [{ id: 'admin' as Page, label: 'Admin', icon: <Shield size={16} /> }] : []),
   ];
@@ -98,8 +102,10 @@ export function ArtClassModule({ onLogout }: Props) {
             onRefresh={() => api.getSpecialists().then(setSpecialists)}
           />
         )}
-        {page === 'analytics' && <AnalyticsPage />}
-        {page === 'admin' && <AdminPage />}
+        {page === 'plans'          && <SubscriptionPlansPage />}
+        {page === 'special-events' && <SpecialEventsPage />}
+        {page === 'analytics'      && <AnalyticsPage />}
+        {page === 'admin'          && <AdminPage />}
       </main>
 
       {/* Mobile bottom nav */}

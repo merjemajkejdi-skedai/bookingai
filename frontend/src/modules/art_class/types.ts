@@ -24,6 +24,22 @@ export interface EventRegistration {
   participantName: string; parentPhone: string; parentName: string;
   notes: string; registeredAt: string;
 }
+export interface SubscriptionPlan {
+  id: string; tenantId: string;
+  name: string; description: string;
+  classesPerMonth: number; price: number;
+  isActive: boolean; createdAt: string;
+}
+
+export interface SpecialEvent {
+  id: string; tenantId: string;
+  title: string; description: string;
+  date: string; startTime: string; endTime: string;
+  locationName: string; locationAddress: string; locationUrl: string;
+  maxCapacity?: number | null; price: number;
+  isActive: boolean; createdAt: string;
+}
+
 export interface EventTemplate {
   id: string; tenantId: string;
   teacherId?: string | null; teacherName?: string | null; teacherColor?: string | null;
