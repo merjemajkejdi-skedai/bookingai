@@ -77,6 +77,11 @@ export const api = {
   getAnalytics: (from: string, to: string) =>
     req<any>(`/analytics/art-class?from=${from}&to=${to}`),
 
+  // Studio config
+  getConfig: () => req<{ ownerWhatsapp: string }>('/art-class/config'),
+  updateConfig: (data: { ownerWhatsapp: string }) =>
+    req('/art-class/config', { method: 'PUT', body: JSON.stringify(data) }),
+
   // Subscription plans
   getPlans: () => req<SubscriptionPlan[]>('/subscription-plans'),
   createPlan: (data: Omit<SubscriptionPlan, 'id'|'tenantId'|'createdAt'>) =>

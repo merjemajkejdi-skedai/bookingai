@@ -374,6 +374,7 @@ export async function runMigrations() {
       `ALTER TABLE tenants  ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'starter'`,
       `ALTER TABLE tenants  ADD COLUMN IF NOT EXISTS is_active INTEGER NOT NULL DEFAULT 1`,
       `ALTER TABLE tenants  ADD COLUMN IF NOT EXISTS billing_email TEXT NOT NULL DEFAULT ''`,
+      `ALTER TABLE tenants  ADD COLUMN IF NOT EXISTS owner_whatsapp TEXT NOT NULL DEFAULT ''`,
       `ALTER TABLE art_events ADD COLUMN IF NOT EXISTS price INTEGER NOT NULL DEFAULT 0`,
       `ALTER TABLE event_templates ADD COLUMN IF NOT EXISTS price INTEGER NOT NULL DEFAULT 0`,
       `ALTER TABLE specialists ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT ''`,
@@ -470,6 +471,7 @@ export async function runMigrations() {
     ['is_active',       'is_active INTEGER NOT NULL DEFAULT 1'],
     ['billing_email',   "billing_email TEXT NOT NULL DEFAULT ''"],
     ['has_analytics',   'has_analytics INTEGER NOT NULL DEFAULT 0'],
+    ['owner_whatsapp',  "owner_whatsapp TEXT NOT NULL DEFAULT ''"],
   ] as [string,string][]) {
     if (!cols.includes(col)) exec(`ALTER TABLE tenants ADD COLUMN ${def}`);
   }

@@ -409,6 +409,25 @@ artClassRouter.get('/analytics/art-class', requireAuth, async (req: Request, res
   } catch (e: any) { err(res, e.message, 500); }
 });
 
+// ── STUDIO CONFIG (owner WhatsApp) ───────────────────────────────────────────
+
+artClassRouter.get('/art-class/config', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    const row = await dbGet('SELECT owner_whatsapp FROM tenants WHERE id = ?', tenantId) as any;
+    ok(res, { ownerWhatsapp: row?.owner_whatsapp || '' });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+artClassRouter.put('/art-class/config', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const { ownerWhatsapp = '' } = req.body;
+  try {
+    await dbRun('UPDATE tenants SET owner_whatsapp = ? WHERE id = ?', ownerWhatsapp, tenantId);
+    ok(res, { ownerWhatsapp });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
 // ── SUBSCRIPTION PLANS ────────────────────────────────────────────────────────
 
 artClassRouter.get('/subscription-plans', requireAuth, async (req: Request, res: Response) => {

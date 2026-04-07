@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "landing",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "-p", "4500", "-s", "landing"],
+      "port": 4500
+    }
+  ]
+}

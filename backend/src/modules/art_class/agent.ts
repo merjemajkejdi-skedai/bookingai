@@ -3,8 +3,9 @@
 //       present options → collect parent name + child name → register.
 
 import Anthropic from '@anthropic-ai/sdk';
-import { format, addDays, parseISO } from 'date-fns';
+import { format, addDays, parseISO, addMinutes } from 'date-fns';
 import { prepare, isPg, query, queryOne, queryRun } from '../../db/database.js';
+import { sendWhatsAppMessage } from '../../whatsapp/twilio.js';
 
 async function dbAll(sql: string, ...p: unknown[]) { return isPg ? query(sql, p) : prepare(sql).all(...p); }
 async function dbGet(sql: string, ...p: unknown[]) { return isPg ? queryOne(sql, p) : prepare(sql).get(...p); }
@@ -66,6 +67,40 @@ const tools: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'get_special_event_catalog',
+    description:
+      'Fetch the list of special events the studio offers (e.g. birthday parties, workshops). ' +
+      'Call this when the parent/customer asks about special events, parties, or group activities. ' +
+      'Returns event name, description, duration, price per child, and capacity limits.',
+    input_schema: { type: 'object' as const, properties: {}, required: [] },
+  },
+  {
+    name: 'schedule_special_event',
+    description:
+      'Creates a calendar entry for a special event booking AND sends a WhatsApp notification ' +
+      'to the studio owner with all the details. Call this ONLY after showing a full recap and ' +
+      'receiving explicit confirmation from the customer.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        special_event_id: { type: 'string', description: 'ID of the special event from the catalog' },
+        date:             { type: 'string', description: 'Preferred date (YYYY-MM-DD)' },
+        start_time:       { type: 'string', description: 'Preferred start time (HH:MM), e.g. "17:00"' },
+        children_count:   { type: 'number', description: 'Number of children attending' },
+        contact_name:     { type: 'string', description: 'Name of the parent/organiser' },
+        notes:            { type: 'string', description: 'Any additional details or requests (optional)' },
+      },
+      required: ['special_event_id', 'date', 'start_time', 'contact_name'],
+    },
+  },
+  {
+    name: 'get_owner_contact',
+    description:
+      'Returns the studio owner\'s WhatsApp number. ' +
+      'Call this when the customer says they want to speak with a human or contact someone directly.',
+    input_schema: { type: 'object' as const, properties: {}, required: [] },
+  },
+  {
     name: 'get_my_registrations',
     description: "List upcoming class registrations for this phone number.",
     input_schema: { type: 'object' as const, properties: {}, required: [] },
@@ -113,6 +148,111 @@ async function executeTool(
           price: `${p.price} ALL/month`,
         })),
       });
+    }
+
+    // ── get_special_event_catalog ──────────────────────────────────────────
+    case 'get_special_event_catalog': {
+      const rows = await dbAll(`
+        SELECT e.id, e.title, e.description, e.duration_minutes,
+               e.min_capacity, e.max_capacity, e.price,
+               s.name AS teacher_name
+        FROM art_special_events e
+        LEFT JOIN specialists s ON s.id = e.teacher_id
+        WHERE e.tenant_id = ? AND e.is_active = 1
+        ORDER BY e.title ASC
+      `, tenantId) as any[];
+      if (!rows.length) return JSON.stringify({ found: false, message: 'No special events configured.' });
+      return JSON.stringify({
+        found: true,
+        events: rows.map((r: any) => ({
+          id: r.id,
+          title: r.title,
+          description: r.description || '',
+          duration: r.duration_minutes < 60
+            ? `${r.duration_minutes} min`
+            : `${Math.floor(r.duration_minutes / 60)}h${r.duration_minutes % 60 ? ` ${r.duration_minutes % 60}min` : ''}`,
+          duration_minutes: r.duration_minutes,
+          price_per_child: r.price ? `${r.price} ALL` : 'Free',
+          min_capacity: r.min_capacity ?? null,
+          max_capacity: r.max_capacity ?? null,
+          responsible_teacher: r.teacher_name ?? null,
+        })),
+      });
+    }
+
+    // ── schedule_special_event ─────────────────────────────────────────────
+    case 'schedule_special_event': {
+      const { special_event_id, date, start_time, children_count, contact_name, notes = '' } = input as any;
+
+      // Look up the special event template
+      const tmpl = await dbGet(`
+        SELECT e.*, s.name AS teacher_name
+        FROM art_special_events e
+        LEFT JOIN specialists s ON s.id = e.teacher_id
+        WHERE e.id = ? AND e.tenant_id = ?
+      `, special_event_id, tenantId) as any;
+      if (!tmpl) return JSON.stringify({ error: 'Special event not found' });
+
+      // Calculate end time
+      const [hh, mm] = (start_time as string).split(':').map(Number);
+      const startDate = new Date(2000, 0, 1, hh, mm);
+      const endDate = addMinutes(startDate, tmpl.duration_minutes || 60);
+      const end_time = format(endDate, 'HH:mm');
+
+      // Build description
+      const description = [
+        tmpl.description,
+        contact_name ? `Organiser: ${contact_name}` : null,
+        children_count ? `Children: ${children_count}` : null,
+        notes ? `Notes: ${notes}` : null,
+      ].filter(Boolean).join('\n');
+
+      // Create the calendar event
+      const eventId = crypto.randomUUID();
+      await dbRun(`
+        INSERT INTO art_events(id, tenant_id, teacher_id, title, description, date, start_time, end_time, price)
+        VALUES (?,?,?,?,?,?,?,?,?)
+      `, eventId, tenantId, tmpl.teacher_id ?? null, tmpl.title, description,
+         date, start_time, end_time, tmpl.price ?? 0);
+
+      // Send WhatsApp notification to owner
+      const tenantRow = await dbGet('SELECT name, owner_whatsapp FROM tenants WHERE id = ?', tenantId) as any;
+      const ownerNumber = tenantRow?.owner_whatsapp || '';
+      if (ownerNumber) {
+        const dateLabel = format(parseISO(date), 'EEEE d MMMM yyyy');
+        const msg = [
+          `📅 New special event inquiry!`,
+          ``,
+          `Event: ${tmpl.title}`,
+          `Date: ${dateLabel} at ${start_time}`,
+          `Duration: ${tmpl.duration_minutes < 60 ? `${tmpl.duration_minutes} min` : `${Math.floor(tmpl.duration_minutes / 60)}h${tmpl.duration_minutes % 60 ? ` ${tmpl.duration_minutes % 60}min` : ''}`}`,
+          children_count ? `Children: ${children_count}` : null,
+          `Organiser: ${contact_name}`,
+          `Phone: ${customerPhone}`,
+          notes ? `Notes: ${notes}` : null,
+        ].filter(Boolean).join('\n');
+
+        try { await sendWhatsAppMessage(ownerNumber, msg); }
+        catch (e: any) { console.warn('Owner WhatsApp notification failed:', e.message); }
+      }
+
+      return JSON.stringify({
+        success: true,
+        event_id: eventId,
+        title: tmpl.title,
+        date_label: format(parseISO(date), 'EEEE d MMMM yyyy'),
+        time: `${start_time} – ${end_time}`,
+        responsible_teacher: tmpl.teacher_name ?? null,
+        owner_notified: !!ownerNumber,
+      });
+    }
+
+    // ── get_owner_contact ──────────────────────────────────────────────────
+    case 'get_owner_contact': {
+      const row = await dbGet('SELECT owner_whatsapp FROM tenants WHERE id = ?', tenantId) as any;
+      const num = row?.owner_whatsapp || '';
+      if (!num) return JSON.stringify({ found: false, message: 'No owner contact number configured.' });
+      return JSON.stringify({ found: true, whatsapp: num });
     }
 
     // ── find_classes_for_age ───────────────────────────────────────────────
@@ -294,8 +434,14 @@ Always respond in the same language the parent writes in.
 Today is ${now}.
 
 === GREETING ===
-If the parent just says hi or hello, greet them warmly, introduce the studio as an art school for kids, and ask how you can help.
+If the parent/customer just says hi or hello, greet them warmly, introduce the studio as an art school for kids, and ask how you can help.
 Do NOT ask for the child's age unprompted.
+
+You handle two types of requests:
+1. Regular classes and monthly subscriptions — for parents who want to enrol their child in weekly art classes
+2. Special events — for customers who want to organise a party, group workshop, or one-off event
+
+Wait for the customer to indicate which they want before starting either flow.
 
 === MAIN FLOW — when the parent asks about classes, subscriptions, prices, or registration ===
 
@@ -372,7 +518,61 @@ After all 4 registrations succeed, send one warm message confirming all 4 classe
 English: "Done! [child] is registered for all 4 classes. We look forward to seeing you! 🎨"
 Albanian: "Gati! [child] është regjistruar për të 4 orët. Ju presim! 🎨"
 
-=== OTHER SITUATIONS ===
+=== SPECIAL EVENT FLOW — when the customer asks about parties, group events, or special workshops ===
+
+STEP A — PRESENT THE CATALOG
+Call get_special_event_catalog and present the available special events clearly:
+  - Event name and description
+  - Duration
+  - Price per child
+  - Capacity (e.g. "minimum 8, maximum 20 children")
+  - Responsible teacher (if assigned)
+Ask the customer which event type interests them.
+
+STEP B — COLLECT DETAILS
+Ask for the following, one natural conversation at a time:
+  1. Preferred date
+  2. Preferred start time
+  3. Number of children attending
+  4. Organiser's name (the person contacting)
+Check that the number of children fits within the min/max capacity of the chosen event.
+If the count is outside the range, tell the customer politely and ask them to adjust.
+
+STEP C — RECAP AND CONFIRM
+Send a summary and wait for confirmation before creating the booking:
+  English:
+    "Here are the details for your special event:
+    🎉 Event: [title]
+    📅 Date: [day, date] at [time]
+    ⏱ Duration: [duration]
+    👧 Children: [count]
+    👤 Organiser: [name]
+    💰 Price: [price per child] × [count] = [total]
+    Shall I confirm this booking? (Yes / No)"
+  Albanian:
+    "Ja detajet e eventit tuaj special:
+    🎉 Eventi: [titulli]
+    📅 Data: [dita, data] në orën [ora]
+    ⏱ Kohëzgjatja: [kohëzgjatja]
+    👧 Fëmijë: [numri]
+    👤 Organizuesi: [emri]
+    💰 Çmimi: [çmimi] × [numri] = [totali]
+    Ta konfirmoj rezervimin? (Po / Jo)"
+
+STEP D — SCHEDULE AND NOTIFY
+After explicit confirmation, call schedule_special_event.
+Then send a warm closing message:
+  English: "Done! Your [title] is booked for [day date] at [time]. The studio team will be in touch to confirm the final details. 🎉"
+  Albanian: "Gati! [titulli] juaj është rezervuar për [ditën] [data] në orën [ora]. Ekipi i studios do të kontaktojë së shpejti. 🎉"
+
+=== HUMAN HANDOFF ===
+If the customer says they want to speak with a human, contact someone directly, or prefers to call/message the studio:
+- Call get_owner_contact
+- Share the number warmly:
+  English: "Of course! You can reach us directly on WhatsApp at [number]. We'll be happy to help you personally."
+  Albanian: "Sigurisht! Mund të na kontaktoni direkt në WhatsApp në numrin [number]. Do të jemi të lumtur t'ju ndihmojmë personalisht."
+
+=== REGULAR CLASS SITUATIONS ===
 - Parent asks about existing registrations → call get_my_registrations
 - Parent wants to cancel → call get_my_registrations first, confirm class name and date, then cancel_registration
 - A class is full between search and registration → apologise and call find_classes_for_age again to find alternatives
