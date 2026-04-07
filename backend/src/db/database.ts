@@ -393,6 +393,9 @@ export async function runMigrations() {
       `ALTER TABLE art_special_events ADD COLUMN IF NOT EXISTS duration_minutes INTEGER NOT NULL DEFAULT 60`,
       `ALTER TABLE art_special_events ADD COLUMN IF NOT EXISTS min_capacity INTEGER`,
       `ALTER TABLE art_special_events ADD COLUMN IF NOT EXISTS teacher_id TEXT`,
+      `ALTER TABLE art_special_events ALTER COLUMN date DROP NOT NULL`,
+      `ALTER TABLE art_special_events ALTER COLUMN start_time DROP NOT NULL`,
+      `ALTER TABLE art_special_events ALTER COLUMN end_time DROP NOT NULL`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
