@@ -425,13 +425,25 @@ async function executeTool(
 // System prompt
 // ---------------------------------------------------------------------------
 async function buildSystemPrompt(tenantId: string): Promise<string> {
-  const tenant = await dbGet('SELECT name FROM tenants WHERE id = ?', tenantId) as any;
+  const tenant = await dbGet(
+    'SELECT name, studio_location, studio_emojis FROM tenants WHERE id = ?',
+    tenantId,
+  ) as any;
   const now = format(new Date(), "EEEE d MMMM yyyy, HH:mm");
+  const studioName     = tenant?.name            || 'our art studio';
+  const studioLocation = tenant?.studio_location || '';
+  const emojiList      = (tenant?.studio_emojis as string || '').trim();
+  // Pick up to 2 emojis for use in messages, falling back to a single art emoji
+  const emojiPool = emojiList ? emojiList.split(/\s+/).filter(Boolean) : ['🎨'];
 
-  return `You are the registration assistant for ${tenant?.name || 'our art studio'}.
+  return `You are the registration assistant for ${studioName}.
 You help parents register their children for art classes via WhatsApp.
 Always respond in the same language the parent writes in.
 Today is ${now}.
+${studioLocation ? `\nStudio address: ${studioLocation}` : ''}
+=== PERSONALITY & EMOJIS ===
+Use ONLY the following emojis in your messages (pick 1–2 per message maximum): ${emojiPool.join(' ')}
+Do not use any other emojis. Keep the tone warm and on-brand.
 
 === GREETING ===
 If the parent/customer just says hi or hello, greet them warmly, introduce the studio as an art school for kids, and ask how you can help.
@@ -576,6 +588,11 @@ If the customer says they want to speak with a human, contact someone directly, 
 - Parent asks about existing registrations → call get_my_registrations
 - Parent wants to cancel → call get_my_registrations first, confirm class name and date, then cancel_registration
 - A class is full between search and registration → apologise and call find_classes_for_age again to find alternatives
+
+=== LOCATION ===
+${studioLocation
+  ? `If a customer asks where the studio is located, share this address: ${studioLocation}`
+  : 'If a customer asks where the studio is located, let them know you don\'t have the address on file and suggest they contact the owner directly.'}
 
 === STYLE ===
 - Short and conversational — this is WhatsApp
