@@ -54,6 +54,8 @@ export const api = {
     req<ArtEvent>(`/events/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteEvent: (id: string) =>
     req(`/events/${id}`, { method: 'DELETE' }),
+  deleteEventGroup: (groupId: string) =>
+    req(`/events/group/${groupId}`, { method: 'DELETE' }),
 
   // Registrations
   getRegistrations: (eventId: string) =>

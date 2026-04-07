@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
-  addMonths, subMonths, eachDayOfInterval, isSameMonth, isSameDay, isToday,
+  addMonths, subMonths, eachDayOfInterval, isSameMonth, isToday,
   parseISO,
 } from 'date-fns';
-import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, Users, X, AlertCircle, BookTemplate } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, Users, X, AlertCircle, BookTemplate, Repeat2 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../api';
 import type { ArtEvent, EventRegistration, EventTemplate, Specialist } from '../types';
@@ -17,6 +17,13 @@ interface EventsPageProps {
   specialists: Specialist[];
 }
 
+// Mon=1 Tue=2 Wed=3 Thu=4 Fri=5 Sat=6 Sun=0  (JS getDay() values)
+const WEEK_DAY_OPTIONS = [
+  { label: 'Mon', value: 1 }, { label: 'Tue', value: 2 }, { label: 'Wed', value: 3 },
+  { label: 'Thu', value: 4 }, { label: 'Fri', value: 5 }, { label: 'Sat', value: 6 },
+  { label: 'Sun', value: 0 },
+];
+
 // ── ClassForm Modal ───────────────────────────────────────────────────────────
 function ClassFormModal({
   event, specialists, prefillDate, onClose, onSaved,
@@ -27,10 +34,12 @@ function ClassFormModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const today = new Date().toISOString().slice(0, 10);
+
   const [form, setForm] = useState({
     title:       event?.title       ?? '',
     description: event?.description ?? '',
-    date:        event?.date        ?? prefillDate ?? '',
+    date:        event?.date        ?? prefillDate ?? today,
     startTime:   event?.startTime   ?? '10:00',
     endTime:     event?.endTime     ?? '11:00',
     teacherId:   event?.teacherId   ?? '',
@@ -39,6 +48,13 @@ function ClassFormModal({
     maxCapacity: event?.maxCapacity != null ? String(event.maxCapacity) : '',
     price:       event?.price != null ? String(event.price) : '0',
   });
+
+  // Recurrence state (only available when creating, not editing)
+  const [recurring, setRecurring]         = useState(false);
+  const [recurStart, setRecurStart]       = useState(prefillDate ?? today);
+  const [recurEnd, setRecurEnd]           = useState('');
+  const [recurDays, setRecurDays]         = useState<number[]>([]);
+
   const [saving, setSaving]         = useState(false);
   const [error, setError]           = useState('');
   const [templates, setTemplates]   = useState<EventTemplate[]>([]);
@@ -51,6 +67,10 @@ function ClassFormModal({
   }, [event]);
 
   function set(k: keyof typeof form, v: string) { setForm(f => ({ ...f, [k]: v })); }
+
+  function toggleDay(v: number) {
+    setRecurDays(d => d.includes(v) ? d.filter(x => x !== v) : [...d, v]);
+  }
 
   function applyTemplate(tmpl: EventTemplate) {
     setForm(f => ({
@@ -65,23 +85,37 @@ function ClassFormModal({
 
   async function handleSave() {
     if (!form.title.trim()) { setError('Title is required'); return; }
-    if (!form.date)          { setError('Date is required');  return; }
+
+    if (!event && recurring) {
+      if (!recurStart)           { setError('Start date is required'); return; }
+      if (!recurEnd)             { setError('End date is required'); return; }
+      if (recurEnd < recurStart) { setError('End date must be after start date'); return; }
+      if (!recurDays.length)     { setError('Select at least one day of the week'); return; }
+    } else {
+      if (!form.date) { setError('Date is required'); return; }
+    }
+
     setSaving(true); setError('');
-    const payload = {
+    const base = {
       title:       form.title.trim(),
       description: form.description.trim(),
-      date:        form.date,
       startTime:   form.startTime,
       endTime:     form.endTime,
       teacherId:   form.teacherId || null,
       ageMin:      form.ageMin      !== '' ? Number(form.ageMin)      : null,
       ageMax:      form.ageMax      !== '' ? Number(form.ageMax)      : null,
       maxCapacity: form.maxCapacity !== '' ? Number(form.maxCapacity) : null,
-      price: form.price !== '' ? Number(form.price) : 0,
+      price:       form.price !== '' ? Number(form.price) : 0,
     };
+
     try {
-      if (event) { await api.updateEvent(event.id, payload as any); }
-      else { await api.createEvent(payload as any); }
+      if (event) {
+        await api.updateEvent(event.id, { ...base, date: form.date } as any);
+      } else if (recurring) {
+        await api.createEvent({ ...base, recurrence: { startDate: recurStart, endDate: recurEnd, days: recurDays } } as any);
+      } else {
+        await api.createEvent({ ...base, date: form.date } as any);
+      }
       onSaved();
     } catch (e: any) { setError(e.message || 'Failed to save'); }
     finally { setSaving(false); }
@@ -131,26 +165,74 @@ function ClassFormModal({
 
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Description</span>
-          <textarea value={form.description} onChange={e => set('description', e.target.value)} rows={3}
+          <textarea value={form.description} onChange={e => set('description', e.target.value)} rows={2}
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-400/40 focus:border-brand-400 resize-none"
             placeholder="Describe what this class is about..." />
         </label>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Input label="Date *" type="date" value={form.date} onChange={e => set('date', e.target.value)} />
-          <div className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-slate-700">Teacher</span>
-            <select value={form.teacherId} onChange={e => set('teacherId', e.target.value)}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-400/40 focus:border-brand-400">
-              <option value="">— No teacher —</option>
-              {specialists.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
+        {/* ── Recurring toggle (create only) ── */}
+        {!event && (
+          <button
+            type="button"
+            onClick={() => setRecurring(r => !r)}
+            className={clsx(
+              'flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg border transition-colors w-full justify-center',
+              recurring
+                ? 'bg-brand-500 text-white border-brand-500'
+                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50',
+            )}>
+            <Repeat2 size={13} />
+            {recurring ? 'Recurring class ✓' : 'Make recurring'}
+          </button>
+        )}
+
+        {/* ── Date fields ── */}
+        {!event && recurring ? (
+          <div className="rounded-xl border border-brand-200 bg-brand-50/40 p-3 flex flex-col gap-3">
+            <div className="grid grid-cols-2 gap-3">
+              <Input label="Start date *" type="date" value={recurStart}
+                onChange={e => setRecurStart(e.target.value)} />
+              <Input label="End date *"   type="date" value={recurEnd}
+                onChange={e => setRecurEnd(e.target.value)} min={recurStart} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-slate-700">Repeat on *</span>
+              <div className="flex gap-1.5 flex-wrap">
+                {WEEK_DAY_OPTIONS.map(d => (
+                  <button key={d.value} type="button" onClick={() => toggleDay(d.value)}
+                    className={clsx(
+                      'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
+                      recurDays.includes(d.value)
+                        ? 'bg-brand-500 text-white border-brand-500'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-brand-50',
+                    )}>
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+              {recurStart && recurEnd && recurDays.length > 0 && (
+                <p className="text-xs text-brand-600 mt-0.5">
+                  Creates classes every {recurDays.map(v => WEEK_DAY_OPTIONS.find(d => d.value === v)?.label).join(', ')} from {recurStart} to {recurEnd}
+                </p>
+              )}
+            </div>
           </div>
-        </div>
+        ) : (
+          <Input label="Date *" type="date" value={form.date} onChange={e => set('date', e.target.value)} />
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <Input label="Start time" type="time" value={form.startTime} onChange={e => set('startTime', e.target.value)} />
           <Input label="End time"   type="time" value={form.endTime}   onChange={e => set('endTime',   e.target.value)} />
+        </div>
+
+        <div className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Teacher</span>
+          <select value={form.teacherId} onChange={e => set('teacherId', e.target.value)}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-400/40 focus:border-brand-400">
+            <option value="">— No teacher —</option>
+            {specialists.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -165,11 +247,8 @@ function ClassFormModal({
 
         <Input
           label="Price per person (ALL)"
-          type="number"
-          min={0}
-          value={form.price}
-          onChange={e => set('price', e.target.value)}
-          placeholder="e.g. 3500"
+          type="number" min={0} value={form.price}
+          onChange={e => set('price', e.target.value)} placeholder="e.g. 3500"
         />
 
         {error && (
@@ -180,7 +259,7 @@ function ClassFormModal({
         <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
           <Button onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving…' : event ? 'Save changes' : 'Create class'}
+            {saving ? 'Saving…' : event ? 'Save changes' : recurring ? 'Create series' : 'Create class'}
           </Button>
         </div>
       </div>
@@ -277,7 +356,14 @@ function EventDetailPanel({ event, specialists, onClose, onEdit, onDelete, onReg
     <div className="flex flex-col h-full">
       <div className="flex items-start justify-between gap-2 pb-4 border-b border-slate-100">
         <div className="flex-1 min-w-0">
-          <h2 className="text-base font-semibold text-slate-800">{event.title}</h2>
+          <div className="flex items-center gap-1.5">
+            <h2 className="text-base font-semibold text-slate-800">{event.title}</h2>
+            {event.recurrenceGroupId && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-medium bg-brand-50 text-brand-600 border border-brand-200 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                <Repeat2 size={9} /> Recurring
+              </span>
+            )}
+          </div>
           <p className="text-sm text-slate-500 mt-0.5">
             {format(parseISO(event.date), 'EEEE, d MMMM yyyy')} · {event.startTime}–{event.endTime}
           </p>
@@ -366,6 +452,49 @@ function EventDetailPanel({ event, specialists, onClose, onEdit, onDelete, onReg
   );
 }
 
+// ── DeleteSeriesModal ─────────────────────────────────────────────────────────
+function DeleteSeriesModal({ event, onClose, onDeleted }: {
+  event: ArtEvent; onClose: () => void; onDeleted: () => void;
+}) {
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDelete(mode: 'single' | 'series') {
+    setDeleting(true);
+    try {
+      if (mode === 'series' && event.recurrenceGroupId) {
+        await api.deleteEventGroup(event.recurrenceGroupId);
+      } else {
+        await api.deleteEvent(event.id);
+      }
+      onDeleted();
+    } catch (e: any) { alert(e.message || 'Failed to delete'); setDeleting(false); }
+  }
+
+  return (
+    <Modal title="Delete recurring class" onClose={onClose}>
+      <div className="flex flex-col gap-4">
+        <p className="text-sm text-slate-600">
+          <span className="font-medium">"{event.title}"</span> is part of a recurring series.
+          What would you like to delete?
+        </p>
+        <div className="flex flex-col gap-2">
+          <Button variant="outline" disabled={deleting} onClick={() => handleDelete('single')}
+            className="justify-start">
+            This class only ({format(parseISO(event.date), 'd MMM yyyy')})
+          </Button>
+          <Button variant="outline" disabled={deleting} onClick={() => handleDelete('series')}
+            className="justify-start text-red-500 hover:text-red-600 hover:bg-red-50 border-red-200">
+            <Trash2 size={13} /> Entire series
+          </Button>
+        </div>
+        <div className="flex justify-end pt-1 border-t border-slate-100">
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 // ── Main EventsPage ───────────────────────────────────────────────────────────
 const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -379,6 +508,7 @@ export function EventsPage({ specialists }: EventsPageProps) {
   const [showNewEvent, setShowNewEvent]   = useState(false);
   const [newEventDate, setNewEventDate]   = useState<string | undefined>();
   const [filterTeacherId, setFilterTeacherId] = useState<string | null>(null);
+  const [deletingEvent, setDeletingEvent] = useState<ArtEvent | null>(null);
 
   const loadEvents = useCallback(async (): Promise<ArtEvent[]> => {
     setLoading(true); setLoadError(null);
@@ -409,6 +539,10 @@ export function EventsPage({ specialists }: EventsPageProps) {
   }
 
   async function handleDeleteEvent(ev: ArtEvent) {
+    if (ev.recurrenceGroupId) {
+      setDeletingEvent(ev);
+      return;
+    }
     if (!confirm(`Delete "${ev.title}"? This cannot be undone.`)) return;
     try { await api.deleteEvent(ev.id); setSelectedEvent(null); loadEvents(); }
     catch (e: any) { alert(e.message || 'Failed to delete'); }
@@ -526,10 +660,11 @@ export function EventsPage({ specialists }: EventsPageProps) {
                         {dayEvents.slice(0, 3).map(ev => (
                           <button key={ev.id}
                             onClick={e => { e.stopPropagation(); setSelectedEvent(ev); }}
-                            className="w-full text-left px-1.5 py-0.5 rounded text-xs font-medium truncate transition-opacity hover:opacity-75"
+                            className="w-full text-left px-1.5 py-0.5 rounded text-xs font-medium truncate transition-opacity hover:opacity-75 flex items-center gap-1"
                             style={{ background: teacherColor(ev) + '20', color: teacherColor(ev), borderLeft: `2.5px solid ${teacherColor(ev)}` }}
-                            title={`${ev.title} · ${ev.startTime}`}>
-                            {ev.startTime} {ev.title}
+                            title={`${ev.title} · ${ev.startTime}${ev.recurrenceGroupId ? ' · Recurring' : ''}`}>
+                            {ev.recurrenceGroupId && <Repeat2 size={9} className="flex-shrink-0 opacity-70" />}
+                            <span className="truncate">{ev.startTime} {ev.title}</span>
                           </button>
                         ))}
                         {dayEvents.length > 3 && <p className="text-xs text-slate-400 px-1">+{dayEvents.length - 3} more</p>}
@@ -578,6 +713,14 @@ export function EventsPage({ specialists }: EventsPageProps) {
             const updated = data.find(e => e.id === editId);
             if (updated) setSelectedEvent(updated);
           }}
+        />
+      )}
+
+      {deletingEvent && (
+        <DeleteSeriesModal
+          event={deletingEvent}
+          onClose={() => setDeletingEvent(null)}
+          onDeleted={() => { setDeletingEvent(null); setSelectedEvent(null); loadEvents(); }}
         />
       )}
     </div>

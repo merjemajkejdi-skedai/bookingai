@@ -179,6 +179,7 @@ const SCHEMA = `
     age_max INTEGER,
     max_capacity INTEGER,
     price INTEGER NOT NULL DEFAULT 0,
+    recurrence_group_id TEXT,
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
   );
@@ -363,6 +364,7 @@ export async function runMigrations() {
       `ALTER TABLE hotel_requests ADD COLUMN IF NOT EXISTS guest_name TEXT`,
       `ALTER TABLE hotel_config ADD COLUMN IF NOT EXISTS location_url TEXT`,
       `ALTER TABLE hotel_config ADD COLUMN IF NOT EXISTS menu_url TEXT`,
+      `ALTER TABLE art_events ADD COLUMN IF NOT EXISTS recurrence_group_id TEXT`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -403,6 +405,8 @@ export async function runMigrations() {
     .all().map((r: any) => r.name as string);
   if (!artEventCols.includes('price'))
     exec('ALTER TABLE art_events ADD COLUMN price INTEGER NOT NULL DEFAULT 0');
+  if (!artEventCols.includes('recurrence_group_id'))
+    exec('ALTER TABLE art_events ADD COLUMN recurrence_group_id TEXT');
 
   const tmplCols = prepare("SELECT name FROM pragma_table_info('event_templates')")
     .all().map((r: any) => r.name as string);

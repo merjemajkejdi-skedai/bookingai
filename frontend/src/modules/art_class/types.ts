@@ -16,6 +16,7 @@ export interface ArtEvent {
   maxCapacity?: number | null;
   price?: number | null;
   registrationCount?: number;
+  recurrenceGroupId?: string | null;
   isActive: boolean; createdAt: string;
 }
 export interface EventRegistration {
