@@ -124,6 +124,29 @@ function ClassFormModal({
   return (
     <Modal title={event ? 'Edit Class' : 'New Class'} onClose={onClose}>
       <div className="flex flex-col gap-4">
+        {/* Row 1: Title + recurring toggle side by side */}
+        <div className="flex gap-2 items-end">
+          <div className="flex-1">
+            <Input label="Title *" value={form.title} onChange={e => set('title', e.target.value)}
+              placeholder="e.g. Watercolour for Kids" autoFocus />
+          </div>
+          {!event && (
+            <button
+              type="button"
+              onClick={() => setRecurring(r => !r)}
+              title={recurring ? 'Switch to single class' : 'Make recurring'}
+              className={clsx(
+                'flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border transition-colors whitespace-nowrap flex-shrink-0 h-[38px]',
+                recurring
+                  ? 'bg-brand-500 text-white border-brand-500'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50',
+              )}>
+              <Repeat2 size={13} />
+              {recurring ? 'Recurring ✓' : 'Recurring'}
+            </button>
+          )}
+        </div>
+
         {/* Template picker — only shown when creating a new class */}
         {!event && templates.length > 0 && (
           <div>
@@ -160,31 +183,12 @@ function ClassFormModal({
           </div>
         )}
 
-        <Input label="Title *" value={form.title} onChange={e => set('title', e.target.value)}
-          placeholder="e.g. Watercolour for Kids" autoFocus />
-
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Description</span>
           <textarea value={form.description} onChange={e => set('description', e.target.value)} rows={2}
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-400/40 focus:border-brand-400 resize-none"
-            placeholder="Describe what this class is about..." />
+            placeholder="Optional notes about this class..." />
         </label>
-
-        {/* ── Recurring toggle (create only) ── */}
-        {!event && (
-          <button
-            type="button"
-            onClick={() => setRecurring(r => !r)}
-            className={clsx(
-              'flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg border transition-colors w-full justify-center',
-              recurring
-                ? 'bg-brand-500 text-white border-brand-500'
-                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50',
-            )}>
-            <Repeat2 size={13} />
-            {recurring ? 'Recurring class ✓' : 'Make recurring'}
-          </button>
-        )}
 
         {/* ── Date fields ── */}
         {!event && recurring ? (
