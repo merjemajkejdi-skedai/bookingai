@@ -415,26 +415,28 @@ artClassRouter.get('/art-class/config', requireAuth, async (req: Request, res: R
   const tenantId = resolveTenantId(req);
   try {
     const row = await dbGet(
-      'SELECT owner_whatsapp, studio_location, studio_emojis FROM tenants WHERE id = ?',
+      'SELECT owner_whatsapp, studio_location, studio_emojis, studio_greeting, studio_farewell FROM tenants WHERE id = ?',
       tenantId,
     ) as any;
     ok(res, {
       ownerWhatsapp:   row?.owner_whatsapp   || '',
       studioLocation:  row?.studio_location  || '',
       studioEmojis:    row?.studio_emojis    || '',
+      studioGreeting:  row?.studio_greeting  || '',
+      studioFarewell:  row?.studio_farewell  || '',
     });
   } catch (e: any) { err(res, e.message, 500); }
 });
 
 artClassRouter.put('/art-class/config', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
-  const { ownerWhatsapp = '', studioLocation = '', studioEmojis = '' } = req.body;
+  const { ownerWhatsapp = '', studioLocation = '', studioEmojis = '', studioGreeting = '', studioFarewell = '' } = req.body;
   try {
     await dbRun(
-      'UPDATE tenants SET owner_whatsapp = ?, studio_location = ?, studio_emojis = ? WHERE id = ?',
-      ownerWhatsapp, studioLocation, studioEmojis, tenantId,
+      'UPDATE tenants SET owner_whatsapp = ?, studio_location = ?, studio_emojis = ?, studio_greeting = ?, studio_farewell = ? WHERE id = ?',
+      ownerWhatsapp, studioLocation, studioEmojis, studioGreeting, studioFarewell, tenantId,
     );
-    ok(res, { ownerWhatsapp, studioLocation, studioEmojis });
+    ok(res, { ownerWhatsapp, studioLocation, studioEmojis, studioGreeting, studioFarewell });
   } catch (e: any) { err(res, e.message, 500); }
 });
 

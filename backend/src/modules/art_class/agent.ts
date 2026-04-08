@@ -426,14 +426,15 @@ async function executeTool(
 // ---------------------------------------------------------------------------
 async function buildSystemPrompt(tenantId: string): Promise<string> {
   const tenant = await dbGet(
-    'SELECT name, studio_location, studio_emojis FROM tenants WHERE id = ?',
+    'SELECT name, studio_location, studio_emojis, studio_greeting, studio_farewell FROM tenants WHERE id = ?',
     tenantId,
   ) as any;
   const now = format(new Date(), "EEEE d MMMM yyyy, HH:mm");
-  const studioName     = tenant?.name            || 'our art studio';
-  const studioLocation = tenant?.studio_location || '';
+  const studioName     = tenant?.name             || 'our art studio';
+  const studioLocation = tenant?.studio_location  || '';
+  const studioGreeting = tenant?.studio_greeting  || '';
+  const studioFarewell = tenant?.studio_farewell  || '';
   const emojiList      = (tenant?.studio_emojis as string || '').trim();
-  // Pick up to 2 emojis for use in messages, falling back to a single art emoji
   const emojiPool = emojiList ? emojiList.split(/\s+/).filter(Boolean) : ['🎨'];
 
   return `You are the registration assistant for ${studioName}.
@@ -444,6 +445,16 @@ ${studioLocation ? `\nStudio address: ${studioLocation}` : ''}
 === PERSONALITY & EMOJIS ===
 Use ONLY the following emojis in your messages (pick 1–2 per message maximum): ${emojiPool.join(' ')}
 Do not use any other emojis. Keep the tone warm and on-brand.
+
+=== GREETING TEMPLATE ===
+${studioGreeting
+  ? `When greeting a customer use this exact message (translate it if the customer writes in a different language, keep the spirit):\n"${studioGreeting}"`
+  : `Greet customers warmly, introduce the studio as an art school for kids, and ask how you can help.`}
+
+=== CLOSING TEMPLATE ===
+${studioFarewell
+  ? `After every successful registration or booking, end the conversation with this message (translate if needed):\n"${studioFarewell}"`
+  : `After every successful registration or booking, send a warm closing message confirming the details and expressing excitement to see them at the studio.`}
 
 === ROUTING — read the customer's FIRST message carefully ===
 BEFORE doing anything else, classify the request:
@@ -521,7 +532,7 @@ STEP 7 — REGISTER ALL 4
 Only after the parent confirms — call register_for_class once for each of the 4 classes (same child_name and parent_name each time).
 
 STEP 8 — CLOSING MESSAGE
-After all 4 succeed, send one warm confirmation message.
+After all 4 succeed, send the configured CLOSING TEMPLATE message (adapted to the parent's language). Include the child's name and a brief recap of the first class date.
 
 === SPECIAL EVENT FLOW — birthday parties, group events, celebrations, workshops ===
 
@@ -567,9 +578,7 @@ Use 1–2 of your configured emojis in the recap naturally — do not force an e
 
 STEP D — SCHEDULE AND NOTIFY
 After explicit confirmation, call schedule_special_event.
-Then send a warm closing message:
-  English: "Done! Your [title] is booked for [day date] at [time]. The studio team will be in touch to confirm the final details. 🎉"
-  Albanian: "Gati! [titulli] juaj është rezervuar për [ditën] [data] në orën [ora]. Ekipi i studios do të kontaktojë së shpejti. 🎉"
+Then send the configured CLOSING TEMPLATE message (adapted to the customer's language). Include the event title and booked date/time. If no template is set, say something like: "Done! Your [title] is booked for [day date] at [time]. The studio team will be in touch to confirm the final details."
 
 === HUMAN HANDOFF ===
 If the customer says they want to speak with a human, contact someone directly, or prefers to call/message the studio:

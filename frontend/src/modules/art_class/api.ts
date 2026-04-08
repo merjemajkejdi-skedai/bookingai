@@ -78,8 +78,8 @@ export const api = {
     req<any>(`/analytics/art-class?from=${from}&to=${to}`),
 
   // Studio config
-  getConfig: () => req<{ ownerWhatsapp: string; studioLocation: string; studioEmojis: string }>('/art-class/config'),
-  updateConfig: (data: { ownerWhatsapp: string; studioLocation: string; studioEmojis: string }) =>
+  getConfig: () => req<{ ownerWhatsapp: string; studioLocation: string; studioEmojis: string; studioGreeting: string; studioFarewell: string }>('/art-class/config'),
+  updateConfig: (data: { ownerWhatsapp: string; studioLocation: string; studioEmojis: string; studioGreeting: string; studioFarewell: string }) =>
     req('/art-class/config', { method: 'PUT', body: JSON.stringify(data) }),
 
   // Subscription plans
