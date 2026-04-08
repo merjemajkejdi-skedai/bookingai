@@ -6,6 +6,7 @@ import { runArtEventAgent } from '../modules/art_event/agent.js';
 import { runArtClassAgent } from '../modules/art_class/agent.js';
 import { runRestaurantAgent } from '../modules/restaurant/agent.js';
 import { runHotelAgent } from '../hotel/agent.js';
+import { runSkedAIAgent } from '../skedai/agent.js';
 import { isPg, prepare, query, queryOne } from '../db/database.js';
 
 export const whatsappRouter = Router();
@@ -113,6 +114,21 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
     }
 
     console.log(`🏪 Tenant: ${tenant.id} (type: ${tenant.type})`);
+
+    // ── SkedAI — dedicated sales & support agent, manages its own session ──
+    if (tenant.type === 'skedai') {
+      const reply = await runSkedAIAgent(messageText, phone, tenant.id);
+      if (reply) {
+        const skedaiClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+        await skedaiClient.messages.create({
+          from: process.env.SKEDAI_WHATSAPP_NUMBER || process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886',
+          to: From,
+          body: reply,
+        });
+        console.log(`✅ SkedAI reply sent to ${phone}`);
+      }
+      return;
+    }
 
     const history = getSession(phone);
     const reply = await runAgent(messageText, history, phone, tenant.id, tenant.type);
