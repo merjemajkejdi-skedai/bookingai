@@ -350,6 +350,14 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_hotel_stays_phone  ON hotel_guest_stays(tenant_id, guest_phone);
   CREATE INDEX IF NOT EXISTS idx_hotel_requests_status ON hotel_requests(tenant_id, status);
   CREATE INDEX IF NOT EXISTS idx_hotel_faq_tenant   ON hotel_faq(tenant_id);
+  CREATE TABLE IF NOT EXISTS skedai_config (
+    tenant_id TEXT PRIMARY KEY,
+    forward_phone TEXT NOT NULL DEFAULT '',
+    calendly_url TEXT NOT NULL DEFAULT '',
+    support_faq TEXT NOT NULL DEFAULT '[]',
+    health_check_urls TEXT NOT NULL DEFAULT '[]',
+    industries TEXT NOT NULL DEFAULT '[]'
+  );
   CREATE TABLE IF NOT EXISTS hotel_departments (
     id           TEXT PRIMARY KEY,
     tenant_id    TEXT NOT NULL,
@@ -379,6 +387,7 @@ export async function runMigrations() {
       `ALTER TABLE tenants  ADD COLUMN IF NOT EXISTS studio_emojis TEXT NOT NULL DEFAULT ''`,
       `ALTER TABLE tenants  ADD COLUMN IF NOT EXISTS studio_greeting TEXT NOT NULL DEFAULT ''`,
       `ALTER TABLE tenants  ADD COLUMN IF NOT EXISTS studio_farewell TEXT NOT NULL DEFAULT ''`,
+      `CREATE TABLE IF NOT EXISTS skedai_config (tenant_id TEXT PRIMARY KEY, forward_phone TEXT NOT NULL DEFAULT '', calendly_url TEXT NOT NULL DEFAULT '', support_faq TEXT NOT NULL DEFAULT '[]', health_check_urls TEXT NOT NULL DEFAULT '[]', industries TEXT NOT NULL DEFAULT '[]')`,
       `ALTER TABLE art_events ADD COLUMN IF NOT EXISTS price INTEGER NOT NULL DEFAULT 0`,
       `ALTER TABLE event_templates ADD COLUMN IF NOT EXISTS price INTEGER NOT NULL DEFAULT 0`,
       `ALTER TABLE specialists ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT ''`,

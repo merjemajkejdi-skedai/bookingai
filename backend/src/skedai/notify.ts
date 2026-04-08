@@ -3,24 +3,25 @@
 
 import twilio from 'twilio';
 
-const OWNER_PHONE   = process.env.SKEDAI_OWNER_PHONE   || '';   // e.g. whatsapp:+355XXXXXXXXX
-const SKEDAI_NUMBER = process.env.SKEDAI_WHATSAPP_NUMBER        // e.g. whatsapp:+1XXXXXXXXX
-                   || process.env.TWILIO_WHATSAPP_FROM
-                   || 'whatsapp:+14155238886';
+const ENV_OWNER_PHONE  = process.env.SKEDAI_OWNER_PHONE || '';
+const SKEDAI_NUMBER    = process.env.SKEDAI_WHATSAPP_NUMBER
+                      || process.env.TWILIO_WHATSAPP_FROM
+                      || 'whatsapp:+14155238886';
 
-async function send(body: string): Promise<void> {
-  if (!OWNER_PHONE) return;
+async function send(to: string, body: string): Promise<void> {
   const sid   = process.env.TWILIO_ACCOUNT_SID;
   const token = process.env.TWILIO_AUTH_TOKEN;
-  if (!sid || !token) return;
-  const to   = OWNER_PHONE.startsWith('whatsapp:') ? OWNER_PHONE : `whatsapp:${OWNER_PHONE}`;
-  const from = SKEDAI_NUMBER.startsWith('whatsapp:') ? SKEDAI_NUMBER : `whatsapp:${SKEDAI_NUMBER}`;
+  if (!sid || !token || !to) return;
+  const toFmt   = to.startsWith('whatsapp:')          ? to          : `whatsapp:${to}`;
+  const fromFmt = SKEDAI_NUMBER.startsWith('whatsapp:') ? SKEDAI_NUMBER : `whatsapp:${SKEDAI_NUMBER}`;
   try {
-    await twilio(sid, token).messages.create({ from, to, body });
+    await twilio(sid, token).messages.create({ from: fromFmt, to: toFmt, body });
   } catch (e: any) {
     console.error('[SkedAI notify] Failed:', e.message);
   }
 }
+
+function ownerPhone(override?: string) { return override || ENV_OWNER_PHONE; }
 
 // ── Support notifications ─────────────────────────────────────────────────────
 export interface ServiceStatus { service: string; status: string; ok: boolean }
@@ -29,16 +30,15 @@ export async function notifySupportRequest(
   from: string,
   message: string,
   systemStatus: ServiceStatus[],
+  overridePhone?: string,
 ): Promise<void> {
-  if (!OWNER_PHONE) return;
+  const phone = ownerPhone(overridePhone);
+  if (!phone) return;
 
-  const statusLines = systemStatus
-    .map(s => `${s.ok ? '✅' : '❌'} ${s.service}: ${s.status}`)
-    .join('\n');
+  const statusLines = systemStatus.map(s => `${s.ok ? '✅' : '❌'} ${s.service}: ${s.status}`).join('\n');
+  const hasIssue    = systemStatus.some(s => !s.ok);
 
-  const hasIssue = systemStatus.some(s => !s.ok);
-
-  await send([
+  await send(phone, [
     `🔔 Support request received`,
     ``,
     `From: ${from}`,
@@ -57,10 +57,12 @@ export async function notifySalesLead(
   message: string,
   intent: string,
   context?: string,
+  overridePhone?: string,
 ): Promise<void> {
-  if (!OWNER_PHONE) return;
+  const phone = ownerPhone(overridePhone);
+  if (!phone) return;
 
-  await send([
+  await send(phone, [
     `🎯 New sales lead!`,
     ``,
     `From: ${from}`,

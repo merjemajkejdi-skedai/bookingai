@@ -3,11 +3,12 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { format } from 'date-fns';
+import { isPg, prepare, query, queryOne } from '../db/database.js';
 import { getSession, saveSession } from './session.js';
 import {
   INTENT_DETECTION_PROMPT,
-  SUPPORT_SYSTEM_PROMPT,
-  SALES_SYSTEM_PROMPT,
+  buildSupportPrompt,
+  buildSalesPrompt,
 } from './prompts.js';
 import {
   notifySupportRequest,
@@ -15,47 +16,58 @@ import {
   type ServiceStatus,
 } from './notify.js';
 
+async function dbGet(sql: string, ...p: unknown[]) {
+  return isPg ? queryOne(sql, p) : prepare(sql).get(...p);
+}
+
+async function loadConfig(tenantId: string) {
+  try {
+    const row = await dbGet('SELECT * FROM skedai_config WHERE tenant_id = ?', tenantId) as any;
+    if (!row) return null;
+    const parse = (v: any, fb: unknown) => { try { return JSON.parse(v || '[]'); } catch { return fb; } };
+    return {
+      forwardPhone:    row.forward_phone    || '',
+      calendlyUrl:     row.calendly_url     || '',
+      supportFaq:      parse(row.support_faq,       []),
+      healthCheckUrls: parse(row.health_check_urls, []),
+      industries:      parse(row.industries,        []),
+    };
+  } catch { return null; }
+}
+
 const client = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
 const MODEL   = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 
-// ── Health checks ─────────────────────────────────────────────────────────────
-const HEALTH_CHECKS: Array<{
-  service: string;
-  url: string;
-  headers?: Record<string, string>;
-  parse: (r: Response) => Promise<string>;
-}> = [
-  {
-    service: 'Railway (backend)',
-    url: process.env.RAILWAY_HEALTH_URL || 'https://bookingai-production-8d5d.up.railway.app/health',
-    parse: async (r) => {
-      try { const d = await r.json(); return d.status === 'ok' ? 'ok' : 'degraded'; }
-      catch { return r.ok ? 'ok' : `http ${r.status}`; }
+// ── Health checks (uses DB config + Twilio built-in) ──────────────────────────
+async function runHealthChecks(configChecks: Array<{name:string;url:string}>): Promise<ServiceStatus[]> {
+  // Merge DB-configured checks with the built-in Twilio check
+  const allChecks = [
+    ...configChecks.map(c => ({
+      service: c.name,
+      url: c.url,
+      headers: {} as Record<string, string>,
+      parse: async (r: Response) => {
+        try { const d = await r.json(); return (d.status === 'ok' || d.ok) ? 'ok' : 'degraded'; }
+        catch { return r.ok ? 'ok' : `http ${r.status}`; }
+      },
+    })),
+    {
+      service: 'Twilio',
+      url: `https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}.json`,
+      headers: {
+        Authorization: `Basic ${Buffer.from(
+          `${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`
+        ).toString('base64')}`,
+      } as Record<string, string>,
+      parse: async (r: Response) => r.ok ? 'ok' : `http ${r.status}`,
     },
-  },
-  {
-    service: 'Vercel (dashboard)',
-    url: process.env.VERCEL_HEALTH_URL || 'https://app.skedai.net',
-    parse: async (r) => r.ok ? 'ok' : `http ${r.status}`,
-  },
-  {
-    service: 'Twilio',
-    url: `https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}.json`,
-    headers: {
-      Authorization: `Basic ${Buffer.from(
-        `${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`
-      ).toString('base64')}`,
-    },
-    parse: async (r) => r.ok ? 'ok' : `http ${r.status}`,
-  },
-];
+  ];
 
-async function runHealthChecks(): Promise<ServiceStatus[]> {
   const results = await Promise.allSettled(
-    HEALTH_CHECKS.map(async (check) => {
+    allChecks.map(async (check) => {
       try {
         const r = await fetch(check.url, {
-          headers: check.headers || {},
+          headers: check.headers,
           signal: AbortSignal.timeout(5000),
         });
         const status = await check.parse(r);
@@ -112,12 +124,16 @@ async function runConversation(
 export async function runSkedAIAgent(
   message: string,
   phone: string,
-  _tenantId: string,
+  tenantId: string,
 ): Promise<string> {
   const now = format(new Date(), "EEEE d MMMM yyyy, HH:mm");
   console.log(`[SkedAI] ${now} — message from ${phone}: "${message.slice(0, 80)}"`);
 
   try {
+    // Load DB config (falls back gracefully if table/row not found)
+    const config = await loadConfig(tenantId);
+    const overridePhone = config?.forwardPhone || '';
+
     const session = await getSession(phone);
     const isFirstMessage = session.messages.length === 0;
 
@@ -137,26 +153,28 @@ export async function runSkedAIAgent(
     let reply = '';
 
     if (route === 'support') {
+      const supportPrompt = buildSupportPrompt(config?.supportFaq || []);
       // Health checks + agent response in parallel
       const [healthResults, agentReply] = await Promise.all([
-        runHealthChecks(),
-        runConversation(SUPPORT_SYSTEM_PROMPT, history, message),
+        runHealthChecks(config?.healthCheckUrls || []),
+        runConversation(supportPrompt, history, message),
       ]);
       reply = agentReply;
-      await notifySupportRequest(phone, message, healthResults);
+      await notifySupportRequest(phone, message, healthResults, overridePhone);
 
     } else if (route === 'sales') {
-      reply = await runConversation(SALES_SYSTEM_PROMPT, history, message);
+      const salesPrompt = buildSalesPrompt(config?.industries || [], config?.calendlyUrl || '');
+      reply = await runConversation(salesPrompt, history, message);
 
       // Notify on first message (new lead)
       if (isFirstMessage) {
-        await notifySalesLead(phone, message, 'new inquiry');
+        await notifySalesLead(phone, message, 'new inquiry', undefined, overridePhone);
       }
 
       // Extra notification when demo is requested
       const demoKeywords = ['demo', 'demonstrate', 'show me', 'try it', 'test', 'book a demo', 'schedule'];
       if (demoKeywords.some(k => message.toLowerCase().includes(k))) {
-        await notifySalesLead(phone, message, 'demo request');
+        await notifySalesLead(phone, message, 'demo request', undefined, overridePhone);
       }
 
     } else {
