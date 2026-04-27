@@ -1,11 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { MessageSquare, RefreshCw, Send, User, Bot, UserCheck, Search } from 'lucide-react';
+import { MessageSquare, RefreshCw, Send, User, Bot, UserCheck, Search, Bell, BellOff } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../api';
 import type { Conversation, HotelMessage } from '../types';
 import { Spinner, Button } from '../ui';
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const INBOX_POLL_MS        = 8_000;
+const THREAD_POLL_MS       = 4_000;
+const NOTIF_COOLDOWN_MS    = 30_000;
+const BANNER_DISMISSED_KEY = 'hotel_notif_banner_dismissed';
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function timeAgo(iso: string) {
   const diff = Date.now() - new Date(iso).getTime();
@@ -23,6 +30,104 @@ function formatTime(iso: string) {
 
 function displayPhone(phone: string) {
   return phone.replace('whatsapp:', '');
+}
+
+// ── fireNotification ──────────────────────────────────────────────────────────
+
+function fireNotification(
+  phone: string,
+  name: string | null,
+  preview: string,
+  cooldownRef: React.MutableRefObject<Map<string, number>>,
+) {
+  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  const now  = Date.now();
+  const last = cooldownRef.current.get(phone) ?? 0;
+  if (now - last < NOTIF_COOLDOWN_MS) return;
+  cooldownRef.current.set(phone, now);
+
+  const notif = new Notification(`New message from ${name ?? displayPhone(phone)}`, {
+    body: preview.slice(0, 100),
+    icon: '/favicon.ico',
+    tag:  `hotel-${phone}`,
+  });
+  notif.onclick = () => {
+    window.focus();
+    window.dispatchEvent(new CustomEvent('hotel:open-conversation', { detail: { guestPhone: phone } }));
+    notif.close();
+  };
+}
+
+// ── useNotificationPermission ─────────────────────────────────────────────────
+
+function useNotificationPermission() {
+  const [permission, setPermission] = useState<NotificationPermission>(
+    typeof Notification !== 'undefined' ? Notification.permission : 'default',
+  );
+
+  async function request() {
+    if (typeof Notification === 'undefined') return;
+    const result = await Notification.requestPermission();
+    setPermission(result);
+  }
+
+  return { permission, request };
+}
+
+// ── LiveIndicator ─────────────────────────────────────────────────────────────
+
+function LiveIndicator() {
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className="relative flex h-2 w-2">
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+        <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+      </span>
+      <span className="text-[10px] font-medium text-green-600">Live</span>
+    </span>
+  );
+}
+
+// ── NotificationBanner ────────────────────────────────────────────────────────
+
+function NotificationBanner({ permission, onRequest }: {
+  permission: NotificationPermission;
+  onRequest: () => void;
+}) {
+  const [dismissed, setDismissed] = useState(
+    () => localStorage.getItem(BANNER_DISMISSED_KEY) === '1',
+  );
+
+  if (dismissed || permission !== 'default') return null;
+
+  function dismiss() {
+    localStorage.setItem(BANNER_DISMISSED_KEY, '1');
+    setDismissed(true);
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs flex-shrink-0">
+      <span className="flex items-center gap-2 text-amber-800">
+        <Bell size={13} className="flex-shrink-0 text-amber-500" />
+        Enable desktop notifications to be alerted when guests message you.
+      </span>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <button
+          onClick={onRequest}
+          className="px-2.5 py-1 rounded-lg bg-amber-500 text-white font-medium hover:bg-amber-600 transition-colors"
+        >
+          Enable
+        </button>
+        <button
+          onClick={dismiss}
+          className="text-amber-400 hover:text-amber-600"
+          aria-label="Dismiss"
+        >
+          <BellOff size={13} />
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // ── Message bubble ────────────────────────────────────────────────────────────
@@ -43,7 +148,7 @@ function MessageBubble({ msg, guestName, roomNumber }: {
         'flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center mt-1',
         isGuest ? 'bg-slate-200 text-slate-500' :
         isAI    ? 'bg-brand-100 text-brand-600' :
-                  'bg-blue-100 text-blue-600'
+                  'bg-blue-100 text-blue-600',
       )}>
         {isGuest ? <User size={13} /> : isAI ? <Bot size={13} /> : <UserCheck size={13} />}
       </div>
@@ -63,7 +168,7 @@ function MessageBubble({ msg, guestName, roomNumber }: {
             ? 'bg-white border border-slate-200 text-slate-800 rounded-tl-sm'
             : isAI
               ? 'bg-brand-500 text-white rounded-tr-sm'
-              : 'bg-blue-500 text-white rounded-tr-sm'
+              : 'bg-blue-500 text-white rounded-tr-sm',
         )}>
           {msg.content}
         </div>
@@ -78,10 +183,10 @@ function MessageBubble({ msg, guestName, roomNumber }: {
 // ── Thread panel ──────────────────────────────────────────────────────────────
 
 function ThreadPanel({ conv, onClose }: { conv: Conversation; onClose: () => void }) {
-  const [messages, setMessages]   = useState<HotelMessage[]>(conv.messages ?? []);
-  const [reply, setReply]         = useState('');
-  const [sending, setSending]     = useState(false);
-  const [loading, setLoading]     = useState(false);
+  const [messages, setMessages] = useState<HotelMessage[]>(conv.messages ?? []);
+  const [reply, setReply]       = useState('');
+  const [sending, setSending]   = useState(false);
+  const [loading, setLoading]   = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Load full thread on mount
@@ -91,6 +196,16 @@ function ThreadPanel({ conv, onClose }: { conv: Conversation; onClose: () => voi
       .then(full => { if (full?.messages) setMessages(full.messages); })
       .catch(() => {})
       .finally(() => setLoading(false));
+  }, [conv.guest_phone]);
+
+  // Poll thread every 4s
+  useEffect(() => {
+    const id = setInterval(() => {
+      api.getConversation(conv.guest_phone)
+        .then(full => { if (full?.messages) setMessages(full.messages); })
+        .catch(() => {});
+    }, THREAD_POLL_MS);
+    return () => clearInterval(id);
   }, [conv.guest_phone]);
 
   // Scroll to bottom whenever messages change
@@ -122,20 +237,18 @@ function ThreadPanel({ conv, onClose }: { conv: Conversation; onClose: () => voi
     <div className="flex flex-col h-full bg-slate-50">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-slate-200 flex-shrink-0">
-        <div>
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center">
-              <User size={15} className="text-brand-600" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-slate-800">
-                {conv.guest_name ?? displayPhone(conv.guest_phone)}
-              </p>
-              <p className="text-xs text-slate-400">
-                {displayPhone(conv.guest_phone)}
-                {conv.room_number && ` · Room ${conv.room_number}`}
-              </p>
-            </div>
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center">
+            <User size={15} className="text-brand-600" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-slate-800">
+              {conv.guest_name ?? displayPhone(conv.guest_phone)}
+            </p>
+            <p className="text-xs text-slate-400">
+              {displayPhone(conv.guest_phone)}
+              {conv.room_number && ` · Room ${conv.room_number}`}
+            </p>
           </div>
         </div>
         <button onClick={onClose} className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1 rounded hover:bg-slate-100">
@@ -193,26 +306,83 @@ function ThreadPanel({ conv, onClose }: { conv: Conversation; onClose: () => voi
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export function ConversationsPage() {
-  const [convs, setConvs]         = useState<Conversation[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [selected, setSelected]   = useState<Conversation | null>(null);
-  const [search, setSearch]       = useState('');
+  const [convs, setConvs]       = useState<Conversation[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [selected, setSelected] = useState<Conversation | null>(null);
+  const [search, setSearch]     = useState('');
 
-  const load = useCallback(() => {
-    setLoading(true);
-    api.getConversations()
-      .then(setConvs)
-      .catch(() => {})
-      .finally(() => setLoading(false));
+  const { permission, request: requestNotifPermission } = useNotificationPermission();
+
+  // Stable refs — safe to use inside setInterval / event listeners
+  const convsRef         = useRef<Conversation[]>([]);
+  const lastSeenRef      = useRef(new Map<string, string>());   // phone → updated_at (ISO)
+  const lastOpenedRef    = useRef(new Map<string, string>());   // phone → ISO when opened
+  const notifCooldownRef = useRef(new Map<string, number>());   // phone → epoch ms of last notif
+  const initializedRef   = useRef(false);
+
+  // ── Load / poll convs ─────────────────────────────────────────────────────
+  const loadConvs = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    try {
+      const fresh = await api.getConversations();
+      setConvs(fresh);
+      convsRef.current = fresh;
+
+      if (!initializedRef.current) {
+        // First load — seed lastSeen baseline, no notifications
+        fresh.forEach(c => lastSeenRef.current.set(c.guest_phone, c.updated_at));
+        initializedRef.current = true;
+      } else {
+        // Subsequent polls — detect new inbound guest messages
+        fresh.forEach(c => {
+          const prev  = lastSeenRef.current.get(c.guest_phone);
+          const isNew = !prev || new Date(c.updated_at) > new Date(prev);
+          if (isNew && c.last_message_preview?.role === 'user') {
+            fireNotification(
+              c.guest_phone,
+              c.guest_name,
+              c.last_message_preview.content,
+              notifCooldownRef,
+            );
+          }
+          lastSeenRef.current.set(c.guest_phone, c.updated_at);
+        });
+      }
+    } catch {
+      // Silently ignore network errors during background polling
+    } finally {
+      if (!silent) setLoading(false);
+    }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  // Initial load
+  useEffect(() => { loadConvs(); }, [loadConvs]);
 
-  // Auto-refresh every 30s
+  // Inbox poll every 8s (silent — no loading spinner flicker)
   useEffect(() => {
-    const id = setInterval(load, 30_000);
+    const id = setInterval(() => loadConvs(true), INBOX_POLL_MS);
     return () => clearInterval(id);
-  }, [load]);
+  }, [loadConvs]);
+
+  // Listen for notification-click events → open that conversation
+  useEffect(() => {
+    function handler(e: Event) {
+      const { guestPhone } = (e as CustomEvent<{ guestPhone: string }>).detail;
+      const conv = convsRef.current.find(c => c.guest_phone === guestPhone);
+      if (conv) {
+        lastOpenedRef.current.set(conv.guest_phone, new Date().toISOString());
+        setSelected(conv);
+      }
+    }
+    window.addEventListener('hotel:open-conversation', handler);
+    return () => window.removeEventListener('hotel:open-conversation', handler);
+  }, []);
+
+  // Open a conversation and mark it as read
+  function openConversation(c: Conversation) {
+    lastOpenedRef.current.set(c.guest_phone, new Date().toISOString());
+    setSelected(c);
+  }
 
   const filtered = convs.filter(c => {
     const q = search.toLowerCase();
@@ -233,10 +403,19 @@ export function ConversationsPage() {
 
   return (
     <div className="h-full flex flex-col gap-3">
+      {/* Notification permission banner */}
+      <NotificationBanner permission={permission} onRequest={requestNotifPermission} />
+
       {/* Header */}
       <div className="flex items-center justify-between flex-shrink-0">
-        <h1 className="text-lg font-semibold text-slate-800">Conversations</h1>
-        <button onClick={load} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-colors">
+        <div className="flex items-center gap-3">
+          <h1 className="text-lg font-semibold text-slate-800">Conversations</h1>
+          <LiveIndicator />
+        </div>
+        <button
+          onClick={() => loadConvs()}
+          className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-colors"
+        >
           <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
         </button>
       </div>
@@ -262,26 +441,41 @@ export function ConversationsPage() {
         ) : (
           <div className="space-y-2">
             {filtered.map(c => {
-              const preview = c.last_message_preview;
-              const isStaff = preview?.role === 'staff';
-              const isAI    = preview?.role === 'assistant';
+              const preview    = c.last_message_preview;
+              const isStaff    = preview?.role === 'staff';
+              const isAI       = preview?.role === 'assistant';
+              const lastOpened = lastOpenedRef.current.get(c.guest_phone);
+              const isUnread   = preview?.role === 'user' &&
+                (!lastOpened || new Date(c.updated_at) > new Date(lastOpened));
+
               return (
                 <button
                   key={c.id}
-                  onClick={() => setSelected(c)}
-                  className="w-full text-left bg-white border border-slate-200 rounded-xl p-4 hover:border-brand-300 hover:shadow-sm transition-all"
+                  onClick={() => openConversation(c)}
+                  className={clsx(
+                    'w-full text-left bg-white border rounded-xl p-4 hover:border-brand-300 hover:shadow-sm transition-all',
+                    isUnread ? 'border-brand-300 shadow-sm' : 'border-slate-200',
+                  )}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex gap-3 min-w-0">
-                      {/* Avatar */}
-                      <div className="flex-shrink-0 w-9 h-9 rounded-full bg-brand-50 flex items-center justify-center">
-                        <User size={16} className="text-brand-500" />
+                      {/* Avatar + unread dot */}
+                      <div className="relative flex-shrink-0">
+                        <div className="w-9 h-9 rounded-full bg-brand-50 flex items-center justify-center">
+                          <User size={16} className="text-brand-500" />
+                        </div>
+                        {isUnread && (
+                          <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-brand-500 border-2 border-white" />
+                        )}
                       </div>
 
                       {/* Content */}
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 mb-0.5">
-                          <span className="text-sm font-semibold text-slate-800 truncate">
+                          <span className={clsx(
+                            'text-sm truncate',
+                            isUnread ? 'font-bold text-slate-900' : 'font-semibold text-slate-800',
+                          )}>
                             {c.guest_name ?? displayPhone(c.guest_phone)}
                           </span>
                           {c.room_number && (
@@ -294,10 +488,13 @@ export function ConversationsPage() {
                           {displayPhone(c.guest_phone)}
                         </p>
                         {preview && (
-                          <p className="text-xs text-slate-500 truncate">
+                          <p className={clsx(
+                            'text-xs truncate',
+                            isUnread ? 'text-slate-700 font-medium' : 'text-slate-500',
+                          )}>
                             <span className={clsx(
                               'font-medium mr-1',
-                              isStaff ? 'text-blue-500' : isAI ? 'text-brand-500' : 'text-slate-400'
+                              isStaff ? 'text-blue-500' : isAI ? 'text-brand-500' : 'text-slate-400',
                             )}>
                               {isStaff ? 'You:' : isAI ? 'AI:' : ''}
                             </span>

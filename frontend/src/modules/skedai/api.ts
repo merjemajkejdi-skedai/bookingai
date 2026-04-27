@@ -1,4 +1,4 @@
-import { getStoredUser, getAdminTenant } from '../../shared/lib/auth';
+import { getToken, getAdminTenant } from '../../shared/lib/auth';
 import type { SkedAIConfig } from './types';
 
 function base() {
@@ -6,8 +6,7 @@ function base() {
 }
 
 function headers() {
-  const user = getStoredUser();
-  const token = user?.token ?? '';
+  const token = getToken() ?? '';
   const at = getAdminTenant();
   const h: Record<string, string> = {
     'Content-Type': 'application/json',
