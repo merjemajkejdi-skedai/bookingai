@@ -410,6 +410,12 @@ export async function runMigrations() {
       `ALTER TABLE art_special_events ALTER COLUMN date DROP NOT NULL`,
       `ALTER TABLE art_special_events ALTER COLUMN start_time DROP NOT NULL`,
       `ALTER TABLE art_special_events ALTER COLUMN end_time DROP NOT NULL`,
+      // provider_001 — dual provider support (Twilio + Meta Cloud API)
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS provider TEXT DEFAULT 'twilio'`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS meta_phone_number_id TEXT`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS meta_access_token TEXT`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS meta_waba_id TEXT`,
+      `UPDATE tenants SET provider = 'twilio' WHERE provider IS NULL`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -488,7 +494,11 @@ export async function runMigrations() {
     ['studio_location',  "studio_location TEXT NOT NULL DEFAULT ''"],
     ['studio_emojis',    "studio_emojis TEXT NOT NULL DEFAULT ''"],
     ['studio_greeting',  "studio_greeting TEXT NOT NULL DEFAULT ''"],
-    ['studio_farewell',  "studio_farewell TEXT NOT NULL DEFAULT ''"],
+    ['studio_farewell',        "studio_farewell TEXT NOT NULL DEFAULT ''"],
+    ['provider',               "provider TEXT DEFAULT 'twilio'"],
+    ['meta_phone_number_id',   'meta_phone_number_id TEXT'],
+    ['meta_access_token',      'meta_access_token TEXT'],
+    ['meta_waba_id',           'meta_waba_id TEXT'],
   ] as [string,string][]) {
     if (!cols.includes(col)) exec(`ALTER TABLE tenants ADD COLUMN ${def}`);
   }

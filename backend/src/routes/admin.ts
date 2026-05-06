@@ -40,8 +40,11 @@ adminRouter.get('/tenants', async (_req: Request, res: Response) => {
 
 // POST /admin/tenants
 adminRouter.post('/tenants', async (req: Request, res: Response) => {
-  const { name, type='barbershop', timezone='Europe/Tirane',
-    ownerEmail, ownerPassword, whatsappNumber='', plan='starter', billingEmail='' } = req.body;
+  const {
+    name, type='barbershop', timezone='Europe/Tirane',
+    ownerEmail, ownerPassword, whatsappNumber='', plan='starter', billingEmail='',
+    provider='twilio', metaPhoneNumberId='', metaAccessToken='', metaWabaId='',
+  } = req.body;
 
   if (!name || !ownerEmail || !ownerPassword)
     return err(res, 'name, ownerEmail and ownerPassword are required');
@@ -56,12 +59,16 @@ adminRouter.post('/tenants', async (req: Request, res: Response) => {
   const hash     = bcrypt.hashSync(ownerPassword, 10);
 
   await dbRun(
-    'INSERT INTO tenants(id,name,type,timezone,whatsapp_number,plan,is_active,billing_email) VALUES (?,?,?,?,?,?,1,?)',
-    tenantId, name, type, timezone, whatsappNumber, plan, billingEmail
+    `INSERT INTO tenants
+       (id,name,type,timezone,whatsapp_number,plan,is_active,billing_email,
+        provider,meta_phone_number_id,meta_access_token,meta_waba_id)
+     VALUES (?,?,?,?,?,?,1,?,?,?,?,?)`,
+    tenantId, name, type, timezone, whatsappNumber, plan, billingEmail,
+    provider, metaPhoneNumberId||null, metaAccessToken||null, metaWabaId||null,
   );
   await dbRun(
     "INSERT INTO users(id,email,password_hash,role,tenant_id,is_active) VALUES (?,?,?,'shop_owner',?,1)",
-    userId, ownerEmail.toLowerCase(), hash, tenantId
+    userId, ownerEmail.toLowerCase(), hash, tenantId,
   );
 
   ok(res, {
@@ -72,14 +79,31 @@ adminRouter.post('/tenants', async (req: Request, res: Response) => {
 
 // PUT /admin/tenants/:id
 adminRouter.put('/tenants/:id', async (req: Request, res: Response) => {
-  const { name, whatsappNumber, plan, isActive, billingEmail, type, timezone, hasAnalytics } = req.body;
+  const {
+    name, whatsappNumber, plan, isActive, billingEmail, type, timezone, hasAnalytics,
+    provider, metaPhoneNumberId, metaAccessToken, metaWabaId,
+  } = req.body;
   await dbRun(
-    'UPDATE tenants SET name=COALESCE(?,name),whatsapp_number=COALESCE(?,whatsapp_number),plan=COALESCE(?,plan),is_active=COALESCE(?,is_active),billing_email=COALESCE(?,billing_email),type=COALESCE(?,type),timezone=COALESCE(?,timezone),has_analytics=COALESCE(?,has_analytics) WHERE id=?',
+    `UPDATE tenants SET
+       name                 = COALESCE(?,name),
+       whatsapp_number      = COALESCE(?,whatsapp_number),
+       plan                 = COALESCE(?,plan),
+       is_active            = COALESCE(?,is_active),
+       billing_email        = COALESCE(?,billing_email),
+       type                 = COALESCE(?,type),
+       timezone             = COALESCE(?,timezone),
+       has_analytics        = COALESCE(?,has_analytics),
+       provider             = COALESCE(?,provider),
+       meta_phone_number_id = COALESCE(?,meta_phone_number_id),
+       meta_access_token    = COALESCE(?,meta_access_token),
+       meta_waba_id         = COALESCE(?,meta_waba_id)
+     WHERE id=?`,
     name??null, whatsappNumber??null, plan??null,
-    isActive !== undefined ? (isActive?1:0) : null,
+    isActive !== undefined ? (isActive ? 1 : 0) : null,
     billingEmail??null, type??null, timezone??null,
     hasAnalytics !== undefined ? (hasAnalytics ? 1 : 0) : null,
-    req.params.id
+    provider??null, metaPhoneNumberId??null, metaAccessToken??null, metaWabaId??null,
+    req.params.id,
   );
   ok(res, await dbGet('SELECT * FROM tenants WHERE id=?', req.params.id));
 });

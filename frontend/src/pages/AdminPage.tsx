@@ -193,6 +193,8 @@ function CreateTenantModal({ onClose, onSaved }: { onClose: () => void; onSaved:
     name: '', type: 'barbershop', timezone: 'Europe/Tirane',
     ownerEmail: '', ownerPassword: '',
     whatsappNumber: '', plan: 'starter', billingEmail: '',
+    provider: 'twilio',
+    metaPhoneNumberId: '', metaAccessToken: '', metaWabaId: '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
@@ -228,6 +230,27 @@ function CreateTenantModal({ onClose, onSaved }: { onClose: () => void; onSaved:
           </Select>
         </div>
         <Input label="Billing email (optional)" type="email" value={form.billingEmail} onChange={set('billingEmail')} placeholder="billing@shop.com" />
+
+        {/* Provider selector */}
+        <div className="grid grid-cols-2 gap-3">
+          <Select label="WhatsApp provider" value={form.provider} onChange={set('provider')}>
+            <option value="twilio">Twilio</option>
+            <option value="meta">Meta Cloud API</option>
+          </Select>
+        </div>
+
+        {/* Meta credentials — shown only when Meta is selected */}
+        {form.provider === 'meta' && (
+          <div className="space-y-3 p-3 bg-green-50 rounded-lg border border-green-200">
+            <p className="text-xs font-medium text-green-700">
+              Meta Cloud API credentials — get these from Meta Developer Portal
+            </p>
+            <Input label="Phone Number ID" value={form.metaPhoneNumberId} onChange={set('metaPhoneNumberId')} placeholder="e.g. 123456789012345" />
+            <Input label="Access Token" value={form.metaAccessToken} onChange={set('metaAccessToken')} placeholder="EAAxxxxxxxxx…" />
+            <Input label="WABA ID (optional)" value={form.metaWabaId} onChange={set('metaWabaId')} placeholder="WhatsApp Business Account ID" />
+          </div>
+        )}
+
         {error && <p className="text-sm text-red-500">{error}</p>}
         <div className="flex justify-end gap-2 pt-2 border-t">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
@@ -240,18 +263,28 @@ function CreateTenantModal({ onClose, onSaved }: { onClose: () => void; onSaved:
 
 // --- Edit tenant modal -------------------------------------------------------
 function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: () => void; onSaved: () => void }) {
-  const [name, setName]               = useState(tenant.name);
-  const [whatsapp, setWhatsapp]       = useState(tenant.whatsapp_number || '');
-  const [plan, setPlan]               = useState(tenant.plan || 'starter');
-  const [billingEmail, setBilling]    = useState(tenant.billing_email || '');
-  const [type, setType]               = useState(tenant.type || 'barbershop');
-  const [saving, setSaving]           = useState(false);
-  const [error, setError]             = useState('');
+  const [name, setName]                       = useState(tenant.name);
+  const [whatsapp, setWhatsapp]               = useState(tenant.whatsapp_number || '');
+  const [plan, setPlan]                       = useState(tenant.plan || 'starter');
+  const [billingEmail, setBilling]            = useState(tenant.billing_email || '');
+  const [type, setType]                       = useState(tenant.type || 'barbershop');
+  const [provider, setProvider]               = useState(tenant.provider || 'twilio');
+  const [metaPhoneNumberId, setMetaPhoneId]   = useState(tenant.meta_phone_number_id || '');
+  const [metaAccessToken, setMetaToken]       = useState(tenant.meta_access_token || '');
+  const [metaWabaId, setMetaWabaId]           = useState(tenant.meta_waba_id || '');
+  const [saving, setSaving]                   = useState(false);
+  const [error, setError]                     = useState('');
 
   async function save() {
     setSaving(true); setError('');
     try {
-      await adminApi.updateTenant(tenant.id, { name, whatsappNumber: whatsapp, plan, billingEmail, type });
+      await adminApi.updateTenant(tenant.id, {
+        name, whatsappNumber: whatsapp, plan, billingEmail, type,
+        provider,
+        metaPhoneNumberId: metaPhoneNumberId || null,
+        metaAccessToken:   metaAccessToken   || null,
+        metaWabaId:        metaWabaId        || null,
+      });
       onSaved();
     } catch (e: any) { setError(e.message); }
     finally { setSaving(false); }
@@ -273,6 +306,27 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
           </Select>
         </div>
         <Input label="Billing email" value={billingEmail} onChange={(e: any) => setBilling(e.target.value)} />
+
+        {/* Provider selector */}
+        <div className="grid grid-cols-2 gap-3">
+          <Select label="WhatsApp provider" value={provider} onChange={(e: any) => setProvider(e.target.value)}>
+            <option value="twilio">Twilio</option>
+            <option value="meta">Meta Cloud API</option>
+          </Select>
+        </div>
+
+        {/* Meta credentials — shown only when Meta is selected */}
+        {provider === 'meta' && (
+          <div className="space-y-3 p-3 bg-green-50 rounded-lg border border-green-200">
+            <p className="text-xs font-medium text-green-700">
+              Meta Cloud API credentials — get these from Meta Developer Portal
+            </p>
+            <Input label="Phone Number ID" value={metaPhoneNumberId} onChange={(e: any) => setMetaPhoneId(e.target.value)} placeholder="e.g. 123456789012345" />
+            <Input label="Access Token" value={metaAccessToken} onChange={(e: any) => setMetaToken(e.target.value)} placeholder="EAAxxxxxxxxx…" />
+            <Input label="WABA ID (optional)" value={metaWabaId} onChange={(e: any) => setMetaWabaId(e.target.value)} placeholder="WhatsApp Business Account ID" />
+          </div>
+        )}
+
         {error && <p className="text-sm text-red-500">{error}</p>}
         <div className="flex justify-end gap-2 pt-2 border-t">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
