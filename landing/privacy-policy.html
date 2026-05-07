@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy — SkedAI</title>
+  <link rel="icon" href="logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --teal-dark:  #0b5e52;
+      --teal-mid:   #0f7a6a;
+      --teal-light: #1aa882;
+      --green:      #25c07a;
+      --green-soft: #d1f5e8;
+      --slate-50:   #f8fafc;
+      --slate-100:  #f1f5f9;
+      --slate-200:  #e2e8f0;
+      --slate-400:  #94a3b8;
+      --slate-500:  #64748b;
+      --slate-600:  #475569;
+      --slate-700:  #334155;
+      --slate-800:  #1e293b;
+      --slate-900:  #0f172a;
+    }
+    html { scroll-behavior: smooth; }
+    body { font-family: 'DM Sans', sans-serif; background: #fff; color: var(--slate-800); line-height: 1.6; }
+
+    /* ── NAV ─────────────────────────────────────── */
+    nav {
+      position: sticky; top: 0; z-index: 50;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 6%; height: 68px;
+      background: rgba(255,255,255,0.92);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--slate-200);
+    }
+    .nav-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+    .nav-logo img { height: 40px; width: auto; }
+    .nav-logo-text { font-size: 20px; font-weight: 800; color: var(--slate-900); letter-spacing: -0.5px; }
+    .nav-logo-text span { color: var(--teal-light); }
+    .nav-links { display: flex; align-items: center; gap: 26px; }
+    .nav-links a { text-decoration: none; font-size: 14px; font-weight: 500; color: var(--slate-600); transition: color .2s; }
+    .nav-links a:hover { color: var(--teal-mid); }
+    .btn-nav {
+      background: var(--teal-mid); color: #fff;
+      padding: 8px 20px; border-radius: 8px;
+      font-size: 14px; font-weight: 600;
+      text-decoration: none; transition: background .2s;
+    }
+    .btn-nav:hover { background: var(--teal-dark); }
+
+    /* ── HERO STRIP ──────────────────────────────── */
+    .page-header {
+      background: linear-gradient(170deg, #e8faf3 0%, #fff 60%);
+      padding: 64px 6% 48px;
+      border-bottom: 1px solid var(--slate-200);
+    }
+    .page-header-inner { max-width: 760px; margin: 0 auto; }
+    .page-label {
+      font-size: 12px; font-weight: 700;
+      color: var(--teal-light); letter-spacing: 2.5px;
+      text-transform: uppercase; margin-bottom: 12px;
+    }
+    .page-header h1 {
+      font-size: clamp(28px, 4vw, 42px);
+      font-weight: 800; letter-spacing: -1.5px;
+      color: var(--slate-900); margin-bottom: 10px;
+      text-align: left;
+    }
+    .page-header .effective {
+      font-size: 14px; color: var(--slate-500);
+    }
+
+    /* ── PROSE BODY ──────────────────────────────── */
+    .prose-wrap {
+      max-width: 760px; margin: 0 auto;
+      padding: 56px 6% 80px;
+    }
+    .prose-wrap section { margin-bottom: 44px; }
+
+    .prose-wrap h2 {
+      font-size: 18px; font-weight: 700;
+      color: var(--slate-900); letter-spacing: -0.4px;
+      margin-bottom: 12px; text-align: left;
+      padding-bottom: 8px;
+      border-bottom: 1.5px solid var(--slate-200);
+    }
+    .prose-wrap h2 .sec-num {
+      display: inline-block;
+      width: 26px; height: 26px; line-height: 26px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--teal-mid), var(--teal-dark));
+      color: #fff; font-size: 12px; font-weight: 800;
+      text-align: center; margin-right: 10px;
+      vertical-align: middle; flex-shrink: 0;
+    }
+    .prose-wrap p {
+      font-size: 15px; color: var(--slate-600);
+      line-height: 1.75; margin-bottom: 12px;
+    }
+    .prose-wrap p:last-child { margin-bottom: 0; }
+    .prose-wrap ul {
+      list-style: none; margin: 10px 0 12px;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .prose-wrap ul li {
+      display: flex; align-items: flex-start; gap: 10px;
+      font-size: 15px; color: var(--slate-600); line-height: 1.65;
+    }
+    .prose-wrap ul li::before {
+      content: '✓';
+      color: var(--green); font-weight: 700;
+      flex-shrink: 0; margin-top: 1px;
+    }
+    .prose-wrap a { color: var(--teal-mid); text-decoration: none; }
+    .prose-wrap a:hover { text-decoration: underline; }
+
+    .highlight-box {
+      background: var(--slate-50);
+      border: 1.5px solid var(--slate-200);
+      border-left: 3px solid var(--teal-light);
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin: 14px 0;
+    }
+    .highlight-box p { margin-bottom: 0; }
+
+    /* ── FOOTER ──────────────────────────────────── */
+    footer {
+      padding: 30px 6%; border-top: 1px solid var(--slate-200);
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 16px;
+    }
+    .footer-logo { display: flex; align-items: center; gap: 9px; text-decoration: none; }
+    .footer-logo img { height: 30px; width: auto; }
+    .footer-logo-text { font-size: 15px; font-weight: 800; color: var(--slate-800); letter-spacing: -0.3px; }
+    .footer-logo-text span { color: var(--teal-mid); }
+    .footer-copy { font-size: 13px; color: var(--slate-400); }
+    .footer-links { display: flex; gap: 20px; }
+    .footer-links a { font-size: 13px; color: var(--slate-500); text-decoration: none; }
+    .footer-links a:hover { color: var(--teal-mid); }
+    .footer-links a.active { color: var(--teal-mid); font-weight: 600; }
+
+    @media (max-width: 640px) {
+      .nav-links { display: none; }
+      footer { flex-direction: column; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══ NAV ═══════════════════════════════════════════════ -->
+<nav>
+  <a href="/" class="nav-logo">
+    <img src="logo.png" alt="SkedAI logo" />
+    <span class="nav-logo-text">Sked<span>AI</span></span>
+  </a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a>
+    <a href="/#industries">Industries</a>
+    <a href="/#pricing">Pricing</a>
+    <a href="/#contact">Contact</a>
+    <a href="https://app.skedai.net" class="btn-nav">Log in →</a>
+  </div>
+</nav>
+
+<!-- ═══ PAGE HEADER ════════════════════════════════════════ -->
+<div class="page-header">
+  <div class="page-header-inner">
+    <p class="page-label">Legal</p>
+    <h1>Privacy Policy</h1>
+    <p class="effective">Effective Date: 7 May 2025</p>
+  </div>
+</div>
+
+<!-- ═══ CONTENT ════════════════════════════════════════════ -->
+<div class="prose-wrap">
+
+  <section>
+    <h2><span class="sec-num">1</span>Introduction</h2>
+    <p>
+      SkedAI ("we", "us", or "our") provides an AI-powered booking service via WhatsApp for multi-industry businesses — including barbershops, salons, art studios, restaurants, and hotels — as well as an AI concierge service for hotel guests. We are committed to protecting your personal data and complying with the General Data Protection Regulation (EU) 2016/679 ("GDPR") and applicable national data protection law.
+    </p>
+    <p>
+      This Privacy Policy explains what personal data we collect, why we collect it, how we use it, and what rights you have in relation to it. Please read it carefully before using our platform.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="sec-num">2</span>Data Controller</h2>
+    <p>
+      The data controller responsible for your personal data is:
+    </p>
+    <div class="highlight-box">
+      <p><strong>SkedAI</strong><br />
+      Email: <a href="mailto:support@skedai.net">support@skedai.net</a><br />
+      Website: <a href="https://skedai.net">https://skedai.net</a></p>
+    </div>
+    <p>
+      If you have any questions or concerns about how we handle your personal data, please contact us at the email address above.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="sec-num">3</span>Personal Data We Collect</h2>
+    <p>
+      We collect the minimum personal data necessary to provide our service. Specifically, we collect only:
+    </p>
+    <ul>
+      <li><strong>Email address</strong> — used as your account identifier and to communicate service-related information.</li>
+      <li><strong>Password</strong> — stored in encrypted (hashed) form to authenticate you securely.</li>
+    </ul>
+    <p>
+      We do not collect names, phone numbers, payment card details, browsing data, location data, or any other categories of personal data beyond those listed above. We do not collect or process any special categories of sensitive personal data.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="sec-num">4</span>Legal Basis for Processing</h2>
+    <p>
+      We process your personal data on the following legal basis under GDPR:
+    </p>
+    <div class="highlight-box">
+      <p><strong>Article 6(1)(b) — Performance of a contract:</strong> Processing your email address and password is necessary to create and maintain your account and to provide the SkedAI service you have signed up for.</p>
+    </div>
+    <p>
+      We do not rely on consent as a legal basis for processing your authentication data, as processing is strictly necessary to fulfil our contractual obligations to you.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="sec-num">5</span>How We Use Your Data</h2>
+    <p>
+      Your personal data is used solely for the following purpose:
+    </p>
+    <ul>
+      <li>Authenticating your identity when you log in to your SkedAI account.</li>
+      <li>Sending transactional communications directly related to your account (e.g. password reset emails).</li>
+    </ul>
+    <p>
+      We do <strong>not</strong> use your data for any of the following:
+    </p>
+    <ul>
+      <li>Marketing or promotional communications.</li>
+      <li>Profiling or automated decision-making.</li>
+      <li>Behavioural analytics or advertising.</li>
+      <li>Any purpose beyond account authentication and service delivery.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2><span class="sec-num">6</span>Data Retention</h2>
+    <p>
+      We retain your personal data only for as long as necessary to provide the service. Specifically:
+    </p>
+    <ul>
+      <li>Your email address and hashed password are retained for the duration of your account.</li>
+      <li>Upon closure of your account, your personal data will be permanently deleted within <strong>30 days</strong>.</li>
+    </ul>
+    <p>
+      To request account closure and deletion of your data, contact us at <a href="mailto:support@skedai.net">support@skedai.net</a>.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="sec-num">7</span>Data Sharing and Third Parties</h2>
+    <p>
+      We do not sell, rent, or trade your personal data to any third party. We may share your data with trusted service providers (data processors) who assist us in operating our platform — for example, database hosting providers. Any such processors:
+    </p>
+    <ul>
+      <li>Act only on our documented instructions.</li>
+      <li>Are bound by GDPR-compliant data processing agreements.</li>
+      <li>Implement appropriate technical and organisational security measures.</li>
+    </ul>
+    <p>
+      We do not share your data with advertisers, data brokers, or any party for commercial purposes.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="sec-num">8</span>International Data Transfers</h2>
+    <p>
+      Your personal data is stored and processed within the European Economic Area (EEA). We do not transfer your personal data to countries outside the EEA. If this position changes, we will update this policy and implement appropriate safeguards (such as Standard Contractual Clauses) before any transfer takes place.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="sec-num">9</span>Data Security</h2>
+    <p>
+      We take the security of your personal data seriously and have implemented appropriate technical and organisational measures, including:
+    </p>
+    <ul>
+      <li><strong>Password hashing</strong> — passwords are never stored in plain text; they are encrypted using industry-standard hashing algorithms (bcrypt).</li>
+      <li><strong>HTTPS encryption</strong> — all data transmitted between your browser and our servers is encrypted in transit via TLS/SSL.</li>
+      <li><strong>Access controls</strong> — access to personal data is restricted to authorised personnel only, on a need-to-know basis.</li>
+    </ul>
+    <p>
+      While we take all reasonable steps to protect your data, no method of transmission or storage is 100% secure. If you become aware of any security vulnerability, please notify us immediately at <a href="mailto:support@skedai.net">support@skedai.net</a>.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="sec-num">10</span>Your Rights Under GDPR</h2>
+    <p>
+      As a data subject under GDPR, you have the following rights regarding your personal data:
+    </p>
+    <ul>
+      <li><strong>Right of access</strong> — to obtain a copy of the personal data we hold about you.</li>
+      <li><strong>Right to rectification</strong> — to have inaccurate personal data corrected.</li>
+      <li><strong>Right to erasure</strong> ("right to be forgotten") — to request deletion of your personal data, subject to applicable legal obligations.</li>
+      <li><strong>Right to data portability</strong> — to receive your personal data in a structured, commonly used, machine-readable format.</li>
+      <li><strong>Right to object</strong> — to object to processing of your personal data where we rely on legitimate interests.</li>
+      <li><strong>Right to restriction of processing</strong> — to request that we limit how we use your data in certain circumstances.</li>
+      <li><strong>Right to withdraw consent</strong> — where processing is based on consent, to withdraw that consent at any time without affecting the lawfulness of prior processing.</li>
+    </ul>
+    <p>
+      To exercise any of these rights, please contact us at <a href="mailto:support@skedai.net">support@skedai.net</a>. We will respond to your request within one calendar month.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="sec-num">11</span>Right to Lodge a Complaint</h2>
+    <p>
+      If you believe we have not handled your personal data in accordance with applicable law, you have the right to lodge a complaint with your local supervisory authority (data protection authority). In the EU, you can find your national authority through the European Data Protection Board: <a href="https://edpb.europa.eu" target="_blank" rel="noopener">edpb.europa.eu</a>.
+    </p>
+    <p>
+      We would, however, appreciate the opportunity to address your concern directly before you contact a supervisory authority — please reach out to us first at <a href="mailto:support@skedai.net">support@skedai.net</a>.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="sec-num">12</span>Cookies and Tracking</h2>
+    <p>
+      We do not use cookies, tracking pixels, web beacons, or any other tracking technologies on our platform. We do not use analytics tools that collect personal data (such as Google Analytics). No data is collected about your browsing behaviour.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="sec-num">13</span>Children's Privacy</h2>
+    <p>
+      Our platform is not directed at individuals under the age of 16. We do not knowingly collect personal data from children. If you believe a child has provided us with personal data, please contact us immediately at <a href="mailto:support@skedai.net">support@skedai.net</a> and we will delete it promptly.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="sec-num">14</span>Changes to This Privacy Policy</h2>
+    <p>
+      We may update this Privacy Policy from time to time to reflect changes in our practices or applicable law. When we do, we will update the effective date at the top of this page. We encourage you to review this policy periodically. Continued use of the SkedAI platform after any changes constitutes your acceptance of the updated policy.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="sec-num">15</span>Contact Us</h2>
+    <p>
+      If you have any questions about this Privacy Policy or your personal data, please contact us:
+    </p>
+    <div class="highlight-box">
+      <p>
+        📧 <a href="mailto:support@skedai.net">support@skedai.net</a><br />
+        🌐 <a href="https://skedai.net">https://skedai.net</a>
+      </p>
+    </div>
+  </section>
+
+</div>
+
+<!-- ═══ FOOTER ══════════════════════════════════════════════ -->
+<footer>
+  <a href="/" class="footer-logo">
+    <img src="logo.png" alt="SkedAI" />
+    <span class="footer-logo-text">Sked<span>AI</span></span>
+  </a>
+  <span class="footer-copy">© 2025 SkedAI. All rights reserved.</span>
+  <div class="footer-links">
+    <a href="/privacy-policy" class="active">Privacy</a>
+    <a href="#">Terms</a>
+    <a href="/#contact">Contact</a>
+  </div>
+</footer>
+
+</body>
+</html>
