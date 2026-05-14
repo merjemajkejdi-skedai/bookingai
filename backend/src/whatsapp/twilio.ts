@@ -1,16 +1,23 @@
 import twilio from 'twilio';
 
-const twilioClient = twilio(
-  process.env.TWILIO_ACCOUNT_SID,
-  process.env.TWILIO_AUTH_TOKEN,
-);
-
 // ── Send via Twilio ───────────────────────────────────────────────────────────
+// Client is created per-call so tenant-specific credentials can be used.
+// Falls back to global env vars for tenants without their own credentials.
 
-async function sendViaTwilio(to: string, message: string, fromNumber: string): Promise<void> {
-  const toNum   = to.startsWith('whatsapp:')         ? to         : `whatsapp:${to}`;
-  const fromNum = fromNumber.startsWith('whatsapp:')  ? fromNumber : `whatsapp:${fromNumber}`;
-  await twilioClient.messages.create({ body: message, from: fromNum, to: toNum });
+async function sendViaTwilio(
+  to: string,
+  message: string,
+  fromNumber: string,
+  tenant?: any,
+): Promise<void> {
+  const accountSid = tenant?.twilio_account_sid || process.env.TWILIO_ACCOUNT_SID;
+  const authToken  = tenant?.twilio_auth_token  || process.env.TWILIO_AUTH_TOKEN;
+
+  const client  = twilio(accountSid, authToken);
+  const toNum   = to.startsWith('whatsapp:')        ? to         : `whatsapp:${to}`;
+  const fromNum = fromNumber.startsWith('whatsapp:') ? fromNumber : `whatsapp:${fromNumber}`;
+
+  await client.messages.create({ body: message, from: fromNum, to: toNum });
 }
 
 // ── Send via Meta Cloud API ───────────────────────────────────────────────────
@@ -46,9 +53,9 @@ async function sendViaMeta(to: string, message: string, tenant: any): Promise<vo
 
 // ── Unified send — routes to Twilio or Meta based on tenant.provider ──────────
 // tenantOrFromNumber can be:
-//   - undefined / omitted   → Twilio with TWILIO_WHATSAPP_FROM env var
+//   - undefined / omitted   → Twilio with global env vars + TWILIO_WHATSAPP_FROM
 //   - a string              → Twilio with that string as from-number (legacy callers)
-//   - a tenant object       → use tenant.provider to route ('twilio' or 'meta')
+//   - a tenant object       → use tenant.provider; tenant credentials if present
 
 export async function sendWhatsAppMessage(
   to: string,
@@ -57,7 +64,7 @@ export async function sendWhatsAppMessage(
 ): Promise<void> {
   try {
     if (typeof tenantOrFromNumber === 'string' || tenantOrFromNumber === undefined) {
-      // Legacy / simple call — always Twilio
+      // Legacy / simple call — Twilio with global credentials
       const fromNumber =
         typeof tenantOrFromNumber === 'string'
           ? tenantOrFromNumber
@@ -71,12 +78,12 @@ export async function sendWhatsAppMessage(
     if (tenant?.provider === 'meta') {
       await sendViaMeta(to, message, tenant);
     } else {
-      // Default: Twilio — use tenant's own WhatsApp number
+      // Twilio — use tenant's WhatsApp number; tenant credentials if set
       const fromNumber =
         tenant?.whatsapp_number ||
         process.env.TWILIO_WHATSAPP_FROM ||
         'whatsapp:+14155238886';
-      await sendViaTwilio(to, message, fromNumber);
+      await sendViaTwilio(to, message, fromNumber, tenant);
     }
   } catch (err) {
     console.error('[sendWhatsAppMessage error]', err);

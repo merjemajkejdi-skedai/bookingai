@@ -51,6 +51,7 @@ adminRouter.post('/tenants', async (req: Request, res: Response) => {
     name, type='barbershop', timezone='Europe/Tirane',
     ownerEmail, ownerPassword, whatsappNumber='', plan='starter', billingEmail='',
     provider='twilio', metaPhoneNumberId='', metaAccessToken='', metaWabaId='',
+    twilioAccountSid='', twilioAuthToken='',
   } = req.body;
 
   if (!name || !ownerEmail || !ownerPassword)
@@ -69,10 +70,12 @@ adminRouter.post('/tenants', async (req: Request, res: Response) => {
   await dbRun(
     `INSERT INTO tenants
        (id,name,type,timezone,whatsapp_number,plan,is_active,billing_email,
-        provider,meta_phone_number_id,meta_access_token,meta_waba_id)
-     VALUES (?,?,?,?,?,?,1,?,?,?,?,?)`,
+        provider,meta_phone_number_id,meta_access_token,meta_waba_id,
+        twilio_account_sid,twilio_auth_token)
+     VALUES (?,?,?,?,?,?,1,?,?,?,?,?,?,?)`,
     tenantId, name, type, timezone, normalisedWhatsapp, plan, billingEmail,
     provider, metaPhoneNumberId||null, metaAccessToken||null, metaWabaId||null,
+    twilioAccountSid||null, twilioAuthToken||null,
   );
   await dbRun(
     "INSERT INTO users(id,email,password_hash,role,tenant_id,is_active) VALUES (?,?,?,'shop_owner',?,1)",
@@ -90,6 +93,7 @@ adminRouter.put('/tenants/:id', async (req: Request, res: Response) => {
   const {
     name, whatsappNumber, plan, isActive, billingEmail, type, timezone, hasAnalytics,
     provider, metaPhoneNumberId, metaAccessToken, metaWabaId,
+    twilioAccountSid, twilioAuthToken,
   } = req.body;
 
   // Normalise: always store with whatsapp: prefix; empty string → null (don't overwrite)
@@ -110,13 +114,16 @@ adminRouter.put('/tenants/:id', async (req: Request, res: Response) => {
        provider             = COALESCE(?,provider),
        meta_phone_number_id = COALESCE(?,meta_phone_number_id),
        meta_access_token    = COALESCE(?,meta_access_token),
-       meta_waba_id         = COALESCE(?,meta_waba_id)
+       meta_waba_id         = COALESCE(?,meta_waba_id),
+       twilio_account_sid   = COALESCE(?,twilio_account_sid),
+       twilio_auth_token    = COALESCE(?,twilio_auth_token)
      WHERE id=?`,
     name??null, normalisedWhatsapp, plan??null,
     isActive !== undefined ? (isActive ? 1 : 0) : null,
     billingEmail??null, type??null, timezone??null,
     hasAnalytics !== undefined ? (hasAnalytics ? 1 : 0) : null,
     provider??null, metaPhoneNumberId??null, metaAccessToken??null, metaWabaId??null,
+    twilioAccountSid||null, twilioAuthToken||null,
     req.params.id,
   );
   ok(res, await dbGet('SELECT * FROM tenants WHERE id=?', req.params.id));

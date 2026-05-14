@@ -195,6 +195,7 @@ function CreateTenantModal({ onClose, onSaved }: { onClose: () => void; onSaved:
     whatsappNumber: '', plan: 'starter', billingEmail: '',
     provider: 'twilio',
     metaPhoneNumberId: '', metaAccessToken: '', metaWabaId: '',
+    twilioAccountSid: '', twilioAuthToken: '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
@@ -251,6 +252,18 @@ function CreateTenantModal({ onClose, onSaved }: { onClose: () => void; onSaved:
           </div>
         )}
 
+        {/* Custom Twilio credentials — shown only when Twilio is selected */}
+        {form.provider === 'twilio' && (
+          <div className="space-y-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+            <p className="text-xs font-medium text-slate-500">
+              Custom Twilio credentials — only needed if this tenant uses their own Twilio account.
+              Leave blank to use the platform default.
+            </p>
+            <Input label="Twilio Account SID (optional)" value={form.twilioAccountSid} onChange={set('twilioAccountSid')} placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
+            <Input label="Twilio Auth Token (optional)" type="password" value={form.twilioAuthToken} onChange={set('twilioAuthToken')} placeholder="Your Twilio auth token" />
+          </div>
+        )}
+
         {error && <p className="text-sm text-red-500">{error}</p>}
         <div className="flex justify-end gap-2 pt-2 border-t">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
@@ -272,6 +285,8 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
   const [metaPhoneNumberId, setMetaPhoneId]   = useState(tenant.meta_phone_number_id || '');
   const [metaAccessToken, setMetaToken]       = useState(tenant.meta_access_token || '');
   const [metaWabaId, setMetaWabaId]           = useState(tenant.meta_waba_id || '');
+  const [twilioAccountSid, setTwilioSid]      = useState(tenant.twilio_account_sid || '');
+  const [twilioAuthToken, setTwilioToken]     = useState(tenant.twilio_auth_token || '');
   const [saving, setSaving]                   = useState(false);
   const [error, setError]                     = useState('');
 
@@ -284,6 +299,8 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
         metaPhoneNumberId: metaPhoneNumberId || null,
         metaAccessToken:   metaAccessToken   || null,
         metaWabaId:        metaWabaId        || null,
+        twilioAccountSid:  twilioAccountSid  || null,
+        twilioAuthToken:   twilioAuthToken   || null,
       });
       onSaved();
     } catch (e: any) { setError(e.message); }
@@ -324,6 +341,18 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
             <Input label="Phone Number ID" value={metaPhoneNumberId} onChange={(e: any) => setMetaPhoneId(e.target.value)} placeholder="e.g. 123456789012345" />
             <Input label="Access Token" value={metaAccessToken} onChange={(e: any) => setMetaToken(e.target.value)} placeholder="EAAxxxxxxxxx…" />
             <Input label="WABA ID (optional)" value={metaWabaId} onChange={(e: any) => setMetaWabaId(e.target.value)} placeholder="WhatsApp Business Account ID" />
+          </div>
+        )}
+
+        {/* Custom Twilio credentials — shown only when Twilio is selected */}
+        {provider === 'twilio' && (
+          <div className="space-y-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+            <p className="text-xs font-medium text-slate-500">
+              Custom Twilio credentials — only needed if this tenant uses their own Twilio account.
+              Leave blank to use the platform default.
+            </p>
+            <Input label="Twilio Account SID (optional)" value={twilioAccountSid} onChange={(e: any) => setTwilioSid(e.target.value)} placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
+            <Input label="Twilio Auth Token (optional)" type="password" value={twilioAuthToken} onChange={(e: any) => setTwilioToken(e.target.value)} placeholder="Your Twilio auth token" />
           </div>
         )}
 

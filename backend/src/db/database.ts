@@ -416,6 +416,9 @@ export async function runMigrations() {
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS meta_access_token TEXT`,
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS meta_waba_id TEXT`,
       `UPDATE tenants SET provider = 'twilio' WHERE provider IS NULL`,
+      // twilio_001 — per-tenant Twilio credentials (NULL = use global env vars)
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS twilio_account_sid TEXT`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS twilio_auth_token TEXT`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -499,6 +502,8 @@ export async function runMigrations() {
     ['meta_phone_number_id',   'meta_phone_number_id TEXT'],
     ['meta_access_token',      'meta_access_token TEXT'],
     ['meta_waba_id',           'meta_waba_id TEXT'],
+    ['twilio_account_sid',     'twilio_account_sid TEXT'],
+    ['twilio_auth_token',      'twilio_auth_token TEXT'],
   ] as [string,string][]) {
     if (!cols.includes(col)) exec(`ALTER TABLE tenants ADD COLUMN ${def}`);
   }
