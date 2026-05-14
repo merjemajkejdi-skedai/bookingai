@@ -248,6 +248,24 @@ hotelRouter.post('/faq', requireAuth, async (req: Request, res: Response) => {
   } catch (e: any) { err(res, e.message, 500); }
 });
 
+// PUT /hotel/faq/:id
+hotelRouter.put('/faq/:id', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const { question, answer, category } = req.body as {
+    question: string; answer: string; category: string;
+  };
+  if (!question || !answer || !category)
+    return err(res, 'question, answer and category are required');
+  try {
+    await dbRun(
+      'UPDATE hotel_faq SET question = ?, answer = ?, category = ? WHERE id = ? AND tenant_id = ?',
+      question, answer, category, req.params.id, tenantId,
+    );
+    const row = await dbGet('SELECT * FROM hotel_faq WHERE id = ?', req.params.id);
+    ok(res, row);
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
 // DELETE /hotel/faq/:id
 hotelRouter.delete('/faq/:id', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);

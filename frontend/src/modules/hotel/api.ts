@@ -72,6 +72,8 @@ export const api = {
   getFaq: () => req<FaqEntry[]>('/hotel/faq'),
   createFaq: (data: { question: string; answer: string; category: string }) =>
     req<FaqEntry>('/hotel/faq', { method: 'POST', body: JSON.stringify(data) }),
+  updateFaq: (id: string, data: { question: string; answer: string; category: string }) =>
+    req<FaqEntry>(`/hotel/faq/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteFaq: (id: string) =>
     req(`/hotel/faq/${id}`, { method: 'DELETE' }),
 

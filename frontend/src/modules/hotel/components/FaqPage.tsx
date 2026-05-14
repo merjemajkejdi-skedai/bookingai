@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, BookOpen, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Trash2, Pencil, BookOpen, ChevronDown, ChevronUp } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../api';
 import type { FaqEntry } from '../types';
@@ -23,7 +23,11 @@ function CategoryBadge({ category }: { category: string }) {
   );
 }
 
-function FaqItem({ entry, onDelete }: { entry: FaqEntry; onDelete: () => void }) {
+function FaqItem({ entry, onEdit, onDelete }: {
+  entry: FaqEntry;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -38,6 +42,12 @@ function FaqItem({ entry, onDelete }: { entry: FaqEntry; onDelete: () => void })
           <p className="text-sm font-medium text-slate-800 leading-snug">{entry.question}</p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            onClick={e => { e.stopPropagation(); onEdit(); }}
+            className="p-1 rounded text-slate-300 hover:text-brand-500 hover:bg-brand-50 transition-colors"
+          >
+            <Pencil size={13} />
+          </button>
           <button
             onClick={e => { e.stopPropagation(); onDelete(); }}
             className="p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
@@ -57,11 +67,13 @@ function FaqItem({ entry, onDelete }: { entry: FaqEntry; onDelete: () => void })
 }
 
 export function FaqPage() {
-  const [entries, setEntries] = useState<FaqEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ question: '', answer: '', category: 'general' });
-  const [saving, setSaving] = useState(false);
+  const [entries, setEntries]   = useState<FaqEntry[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [showAdd, setShowAdd]   = useState(false);
+  const [editing, setEditing]   = useState<FaqEntry | null>(null);
+  const [form, setForm]         = useState({ question: '', answer: '', category: 'general' });
+  const [editForm, setEditForm] = useState({ question: '', answer: '', category: 'general' });
+  const [saving, setSaving]     = useState(false);
 
   function load() {
     setLoading(true);
@@ -78,6 +90,24 @@ export function FaqPage() {
       setShowAdd(false);
       setForm({ question: '', answer: '', category: 'general' });
       load();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function openEdit(entry: FaqEntry) {
+    setEditing(entry);
+    setEditForm({ question: entry.question, answer: entry.answer, category: entry.category });
+  }
+
+  async function handleEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editing) return;
+    setSaving(true);
+    try {
+      const updated = await api.updateFaq(editing.id, editForm);
+      setEntries(es => es.map(x => x.id === editing.id ? updated : x));
+      setEditing(null);
     } finally {
       setSaving(false);
     }
@@ -125,7 +155,12 @@ export function FaqPage() {
                 </p>
                 <div className="space-y-2">
                   {items.map(entry => (
-                    <FaqItem key={entry.id} entry={entry} onDelete={() => handleDelete(entry.id)} />
+                    <FaqItem
+                      key={entry.id}
+                      entry={entry}
+                      onEdit={() => openEdit(entry)}
+                      onDelete={() => handleDelete(entry.id)}
+                    />
                   ))}
                 </div>
               </div>
@@ -166,6 +201,41 @@ export function FaqPage() {
                 {saving ? 'Saving…' : 'Add Entry'}
               </Button>
               <Button type="button" variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* Edit modal */}
+      {editing && (
+        <Modal title="Edit FAQ Entry" onClose={() => setEditing(null)} wide>
+          <form onSubmit={handleEdit} className="space-y-4">
+            <Select
+              label="Category"
+              value={editForm.category}
+              onChange={(e: any) => setEditForm(f => ({ ...f, category: e.target.value }))}
+            >
+              {CATEGORIES.map(c => (
+                <option key={c} value={c} className="capitalize">{c.charAt(0).toUpperCase() + c.slice(1)}</option>
+              ))}
+            </Select>
+            <Input
+              label="Question"
+              value={editForm.question}
+              onChange={e => setEditForm(f => ({ ...f, question: e.target.value }))}
+              required
+            />
+            <Textarea
+              label="Answer"
+              value={editForm.answer}
+              onChange={(e: any) => setEditForm(f => ({ ...f, answer: e.target.value }))}
+              required
+            />
+            <div className="flex gap-2 pt-2">
+              <Button type="submit" disabled={saving} className="flex-1">
+                {saving ? 'Saving…' : 'Save changes'}
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
             </div>
           </form>
         </Modal>
