@@ -46,9 +46,9 @@ export async function runHotelAgent(
     console.warn('[Hotel] blocklist check failed:', e.message);
   }
 
-  // ── GUARD 2: Checked-in guests only ──────────────────────────────────────
-  // AI only responds to guests registered in hotel_guest_stays.
-  // Check only if the hotel has ANY guests loaded (avoids breaking empty installs).
+  // ── GUARD 2: Guest check — temporarily disabled ──────────────────────────
+  // To re-enable: uncomment the block below
+  /*
   try {
     const anyGuests = await dbAll(
       `SELECT 1 FROM hotel_guest_stays WHERE tenant_id = ? LIMIT 1`,
@@ -75,6 +75,7 @@ export async function runHotelAgent(
   } catch (e: any) {
     console.warn('[Hotel] guest guard check failed:', e.message);
   }
+  */
 
   // ── Load config + history ─────────────────────────────────────────────────
   const [tenantRow, hotelConfig, hotelHistory] = await Promise.all([
