@@ -23,12 +23,15 @@ async function dbGet(sql: string, ...p: unknown[]) {
 // Returns the full tenant row so provider / meta fields are available.
 // ---------------------------------------------------------------------------
 async function resolveTenant(toNumber: string): Promise<Record<string, any> | null> {
-  const normalized = toNumber.replace('whatsapp:', '').trim();
+  // Accept both "whatsapp:+355..." and "+355..." — match whichever format is stored
+  const withPrefix    = toNumber.startsWith('whatsapp:') ? toNumber : `whatsapp:${toNumber}`;
+  const withoutPrefix = toNumber.replace('whatsapp:', '').trim();
 
   try {
     const tenant = await dbGet(
-      'SELECT * FROM tenants WHERE whatsapp_number = ? AND is_active = 1 LIMIT 1',
-      normalized,
+      'SELECT * FROM tenants WHERE (whatsapp_number = ? OR whatsapp_number = ?) AND is_active = 1 LIMIT 1',
+      withPrefix,
+      withoutPrefix,
     ) as any;
     if (tenant) return tenant;
   } catch (e: any) {

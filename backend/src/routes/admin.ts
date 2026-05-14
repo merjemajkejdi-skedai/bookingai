@@ -38,6 +38,13 @@ adminRouter.get('/tenants', async (_req: Request, res: Response) => {
   ok(res, tenants);
 });
 
+// Normalise a WhatsApp number — always stored with whatsapp: prefix
+function normaliseWhatsapp(raw: string | undefined | null): string {
+  if (!raw) return '';
+  const cleaned = raw.trim();
+  return cleaned.startsWith('whatsapp:') ? cleaned : `whatsapp:${cleaned}`;
+}
+
 // POST /admin/tenants
 adminRouter.post('/tenants', async (req: Request, res: Response) => {
   const {
@@ -54,16 +61,17 @@ adminRouter.post('/tenants', async (req: Request, res: Response) => {
   const existing = await dbGet('SELECT id FROM users WHERE email=?', ownerEmail.toLowerCase());
   if (existing) return err(res, 'Email already in use');
 
-  const tenantId = crypto.randomUUID();
-  const userId   = crypto.randomUUID();
-  const hash     = bcrypt.hashSync(ownerPassword, 10);
+  const tenantId           = crypto.randomUUID();
+  const userId             = crypto.randomUUID();
+  const hash               = bcrypt.hashSync(ownerPassword, 10);
+  const normalisedWhatsapp = normaliseWhatsapp(whatsappNumber);
 
   await dbRun(
     `INSERT INTO tenants
        (id,name,type,timezone,whatsapp_number,plan,is_active,billing_email,
         provider,meta_phone_number_id,meta_access_token,meta_waba_id)
      VALUES (?,?,?,?,?,?,1,?,?,?,?,?)`,
-    tenantId, name, type, timezone, whatsappNumber, plan, billingEmail,
+    tenantId, name, type, timezone, normalisedWhatsapp, plan, billingEmail,
     provider, metaPhoneNumberId||null, metaAccessToken||null, metaWabaId||null,
   );
   await dbRun(
@@ -83,6 +91,12 @@ adminRouter.put('/tenants/:id', async (req: Request, res: Response) => {
     name, whatsappNumber, plan, isActive, billingEmail, type, timezone, hasAnalytics,
     provider, metaPhoneNumberId, metaAccessToken, metaWabaId,
   } = req.body;
+
+  // Normalise: always store with whatsapp: prefix; empty string → null (don't overwrite)
+  const normalisedWhatsapp = whatsappNumber
+    ? normaliseWhatsapp(whatsappNumber)
+    : null;
+
   await dbRun(
     `UPDATE tenants SET
        name                 = COALESCE(?,name),
@@ -98,7 +112,7 @@ adminRouter.put('/tenants/:id', async (req: Request, res: Response) => {
        meta_access_token    = COALESCE(?,meta_access_token),
        meta_waba_id         = COALESCE(?,meta_waba_id)
      WHERE id=?`,
-    name??null, whatsappNumber??null, plan??null,
+    name??null, normalisedWhatsapp, plan??null,
     isActive !== undefined ? (isActive ? 1 : 0) : null,
     billingEmail??null, type??null, timezone??null,
     hasAnalytics !== undefined ? (hasAnalytics ? 1 : 0) : null,
