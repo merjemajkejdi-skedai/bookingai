@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express';
-import twilio from 'twilio';
+import { sendWhatsAppMessage } from '../whatsapp/twilio.js';
 import * as XLSX from 'xlsx';
 import { requireAuth, resolveTenantId } from '../middleware/auth.js';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
@@ -477,24 +477,16 @@ hotelRouter.post('/conversations/:phone/reply', requireAuth, async (req: Request
   if (!message?.trim()) return err(res, 'message is required');
 
   try {
-    // Get tenant WhatsApp from number
+    // Get full tenant row so per-tenant Twilio credentials are available
     const tenantRow = await dbGet(
-      'SELECT whatsapp_number FROM tenants WHERE id = ?',
+      'SELECT * FROM tenants WHERE id = ?',
       tenantId,
     ) as any;
     if (!tenantRow) return err(res, 'Tenant not found', 404);
 
-    const from = tenantRow.whatsapp_number
-      ? (tenantRow.whatsapp_number.startsWith('whatsapp:')
-          ? tenantRow.whatsapp_number
-          : `whatsapp:${tenantRow.whatsapp_number}`)
-      : (process.env.TWILIO_WHATSAPP_FROM ?? 'whatsapp:+14155238886');
-
-    const to = phone.startsWith('whatsapp:') ? phone : `whatsapp:${phone}`;
-
-    // Send via Twilio
-    const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-    await twilioClient.messages.create({ from, to, body: message.trim() });
+    // Pass full tenant object — sendWhatsAppMessage uses tenant.twilio_account_sid /
+    // twilio_auth_token when set, falls back to global env vars if not
+    await sendWhatsAppMessage(phone, message.trim(), tenantRow);
 
     // Append to conversation in memory + DB
     await appendStaffMessage(tenantId, phone, message.trim());
