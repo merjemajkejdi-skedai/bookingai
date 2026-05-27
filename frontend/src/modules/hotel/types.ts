@@ -87,4 +87,7 @@ export interface HotelConfig {
   reception_phone: string | null;
   emergency_phone: string | null;
   timezone: string;
+  location_url: string | null;
+  menu_url: string | null;
+  ask_guest_identity: number; // 1 = ask, 0 = skip
 }

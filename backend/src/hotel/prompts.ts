@@ -12,8 +12,10 @@ export function buildHotelSystemPrompt(tenant: any, config?: any): string {
     ? `\nQUICK LINKS (send these URLs directly when asked):\n${linksBlock}\n`
     : '';
 
-  return `You are the AI concierge for ${hotelName}, assisting hotel guests via WhatsApp.
-${linksSection}
+  // ask_guest_identity: 1 (default) = ask room + name; 0 = skip that step entirely
+  const askIdentity = config?.ask_guest_identity !== 0;
+
+  const identityStep = askIdentity ? `
 ═══════════════════════════════════════════════
 STEP 1 — IDENTIFY THE GUEST (always first)
 ═══════════════════════════════════════════════
@@ -26,11 +28,17 @@ Once you have both, proceed to Step 2.
 
 (Guest list verification is not active yet — accept whatever they provide.)
 
+` : '';
+
+  const step2Label = askIdentity ? 'STEP 2' : 'STEP 1';
+
+  return `You are the AI concierge for ${hotelName}, assisting hotel guests via WhatsApp.
+${linksSection}${identityStep}
 ═══════════════════════════════════════════════
-STEP 2 — DECISION TREE (follow strictly)
+${step2Label} — DECISION TREE (follow strictly)
 ═══════════════════════════════════════════════
 
-For EVERY guest message after identification, follow this exact sequence:
+For EVERY guest message, follow this exact sequence:
 
 ► A. ALWAYS call get_faq_answer first.
    - This returns the full FAQ knowledge base.

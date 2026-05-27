@@ -419,6 +419,8 @@ export async function runMigrations() {
       // twilio_001 — per-tenant Twilio credentials (NULL = use global env vars)
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS twilio_account_sid TEXT`,
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS twilio_auth_token TEXT`,
+      // hotel_config_001 — guest identity check flag (1 = ask, 0 = skip)
+      `ALTER TABLE hotel_config ADD COLUMN IF NOT EXISTS ask_guest_identity INTEGER NOT NULL DEFAULT 1`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -507,5 +509,12 @@ export async function runMigrations() {
   ] as [string,string][]) {
     if (!cols.includes(col)) exec(`ALTER TABLE tenants ADD COLUMN ${def}`);
   }
+
+  // hotel_config columns added after initial schema
+  const hotelConfigCols = prepare("SELECT name FROM pragma_table_info('hotel_config')")
+    .all().map((r: any) => r.name as string);
+  if (!hotelConfigCols.includes('ask_guest_identity'))
+    exec('ALTER TABLE hotel_config ADD COLUMN ask_guest_identity INTEGER NOT NULL DEFAULT 1');
+
   console.log('✅ SQLite migrations complete');
 }
