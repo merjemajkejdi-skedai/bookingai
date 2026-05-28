@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BellRing, Users, BookOpen, Settings, Shield, LogOut, Building2, MessageSquare, ShieldOff, Star } from 'lucide-react';
 import clsx from 'clsx';
 import { isAdmin, getStoredUser, clearAuth } from '../../shared/lib/auth';
@@ -11,6 +11,7 @@ import { DepartmentsPage }     from './components/DepartmentsPage';
 import { ConversationsPage }   from './components/ConversationsPage';
 import { BlockedPage }         from './components/BlockedPage';
 import { ReviewsPage }         from './components/ReviewsPage';
+import { api }                from './api';
 
 type Page = 'requests' | 'guests' | 'faq' | 'config' | 'departments' | 'conversations' | 'blocked' | 'reviews' | 'admin';
 
@@ -19,6 +20,13 @@ interface Props { onLogout: () => void; }
 export function HotelModule({ onLogout }: Props) {
   const currentUser = getStoredUser();
   const [page, setPage] = useState<Page>('conversations');
+  const [reviewsEnabled, setReviewsEnabled] = useState(false);
+
+  useEffect(() => {
+    api.getConfig()
+      .then((c: any) => setReviewsEnabled(!!c?.reviews_enabled))
+      .catch(() => {});
+  }, []);
 
   function handleLogout() { clearAuth(); onLogout(); }
 
@@ -29,7 +37,7 @@ export function HotelModule({ onLogout }: Props) {
     { id: 'faq',           label: 'FAQ',             icon: <BookOpen size={16} /> },
     { id: 'config',        label: 'Hotel Config',    icon: <Settings size={16} /> },
     { id: 'departments',   label: 'Departments',     icon: <Building2 size={16} /> },
-    { id: 'reviews',       label: 'Reviews',         icon: <Star size={16} /> },
+    ...(reviewsEnabled ? [{ id: 'reviews' as Page, label: 'Reviews', icon: <Star size={16} /> }] : []),
     { id: 'blocked',       label: 'Blocked Numbers', icon: <ShieldOff size={16} /> },
     ...(isAdmin() ? [{ id: 'admin' as Page, label: 'Admin', icon: <Shield size={16} /> }] : []),
   ];

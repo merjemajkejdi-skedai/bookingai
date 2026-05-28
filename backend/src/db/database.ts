@@ -454,6 +454,7 @@ export async function runMigrations() {
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS review_email_slug TEXT`,
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_tenants_review_slug ON tenants(review_email_slug) WHERE review_email_slug IS NOT NULL`,
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS owner_phone TEXT`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS reviews_enabled INTEGER NOT NULL DEFAULT 0`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -554,6 +555,8 @@ export async function runMigrations() {
     exec('ALTER TABLE tenants ADD COLUMN review_email_slug TEXT');
   if (!cols.includes('owner_phone'))
     exec('ALTER TABLE tenants ADD COLUMN owner_phone TEXT');
+  if (!cols.includes('reviews_enabled'))
+    exec('ALTER TABLE tenants ADD COLUMN reviews_enabled INTEGER NOT NULL DEFAULT 0');
 
   console.log('✅ SQLite migrations complete');
 }

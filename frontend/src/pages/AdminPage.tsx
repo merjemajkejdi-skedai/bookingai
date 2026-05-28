@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Pencil, RefreshCw, Power, Phone, ExternalLink, BarChart2, Copy, Check } from 'lucide-react';
+import { Plus, Pencil, RefreshCw, Power, Phone, ExternalLink, BarChart2, Copy, Check, Star } from 'lucide-react';
 import { adminApi } from '../shared/lib/auth';
 import type { AdminTenant } from '../shared/lib/auth';
 import { Button, Modal, Input, Select, Spinner } from '../components/ui';
@@ -125,6 +125,13 @@ export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) 
                   onClick={() => adminApi.updateTenant(t.id, { hasAnalytics: !t.has_analytics }).then(load)}
                   title={t.has_analytics ? 'Disable analytics' : 'Enable analytics'}>
                   <BarChart2 size={13} className={t.has_analytics ? 'text-brand-500' : 'text-slate-300'} />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => adminApi.updateTenant(t.id, { reviewsEnabled: !t.reviews_enabled }).then(load)}
+                  title={t.reviews_enabled ? 'Disable Reviews tab' : 'Enable Reviews tab'}>
+                  <Star size={13} className={t.reviews_enabled ? 'text-amber-500' : 'text-slate-300'} />
                 </Button>
               </div>
             </div>
@@ -287,6 +294,7 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
   const [metaWabaId, setMetaWabaId]           = useState(tenant.meta_waba_id || '');
   const [twilioAccountSid, setTwilioSid]      = useState(tenant.twilio_account_sid || '');
   const [twilioAuthToken, setTwilioToken]     = useState(tenant.twilio_auth_token || '');
+  const [reviewsEnabled, setReviewsEnabled]   = useState(!!tenant.reviews_enabled);
   const [saving, setSaving]                   = useState(false);
   const [error, setError]                     = useState('');
 
@@ -295,7 +303,7 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
     try {
       await adminApi.updateTenant(tenant.id, {
         name, whatsappNumber: whatsapp, plan, billingEmail, type,
-        provider,
+        provider, reviewsEnabled,
         metaPhoneNumberId: metaPhoneNumberId || null,
         metaAccessToken:   metaAccessToken   || null,
         metaWabaId:        metaWabaId        || null,
@@ -355,6 +363,24 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
             <Input label="Twilio Auth Token (optional)" type="password" value={twilioAuthToken} onChange={(e: any) => setTwilioToken(e.target.value)} placeholder="Your Twilio auth token" />
           </div>
         )}
+
+        {/* Feature flags */}
+        <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
+          <p className="text-xs font-semibold text-slate-600">Feature flags</p>
+          <label className="flex items-center gap-3 cursor-pointer select-none">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={reviewsEnabled}
+              onClick={() => setReviewsEnabled(v => !v)}
+              className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors ${reviewsEnabled ? 'bg-amber-500' : 'bg-slate-200'}`}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ${reviewsEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
+            </button>
+            <span className="text-sm text-slate-700">Reviews tab</span>
+            <span className="text-xs text-slate-400">{reviewsEnabled ? 'Enabled' : 'Disabled'}</span>
+          </label>
+        </div>
 
         {error && <p className="text-sm text-red-500">{error}</p>}
         <div className="flex justify-end gap-2 pt-2 border-t">

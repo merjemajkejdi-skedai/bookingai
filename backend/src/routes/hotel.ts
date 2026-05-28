@@ -168,8 +168,11 @@ hotelRouter.post('/guests/import', requireAuth, async (req: Request, res: Respon
 hotelRouter.get('/config', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
   try {
-    const row = await dbGet('SELECT * FROM hotel_config WHERE tenant_id = ?', tenantId);
-    ok(res, row || {});
+    const [row, tenantRow] = await Promise.all([
+      dbGet('SELECT * FROM hotel_config WHERE tenant_id = ?', tenantId),
+      dbGet('SELECT reviews_enabled FROM tenants WHERE id = ?', tenantId),
+    ]);
+    ok(res, { ...(row || {}), reviews_enabled: (tenantRow as any)?.reviews_enabled ?? 0 });
   } catch (e: any) { err(res, e.message, 500); }
 });
 
