@@ -496,3 +496,242 @@ hotelRouter.post('/conversations/:phone/reply', requireAuth, async (req: Request
     ok(res, { sent: true });
   } catch (e: any) { err(res, e.message, 500); }
 });
+
+// ─────────────────────────────────────────
+// HOTEL REVIEWS
+// ─────────────────────────────────────────
+
+// GET /hotel/reviews?status=pending&flagged=true
+hotelRouter.get('/reviews', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const { status, flagged } = req.query as { status?: string; flagged?: string };
+
+  const conditions: string[] = ['tenant_id = ?'];
+  const params: unknown[] = [tenantId];
+
+  if (status) {
+    conditions.push('status = ?');
+    params.push(status);
+  }
+  if (flagged === 'true') {
+    conditions.push('is_flagged = 1');
+  }
+
+  const sql = `SELECT * FROM hotel_reviews WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC LIMIT 100`;
+
+  try {
+    const rows = await dbAll(sql, ...params);
+    ok(res, rows);
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// GET /hotel/reviews/stats
+hotelRouter.get('/reviews/stats', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    const row = await dbGet(
+      `SELECT
+         COUNT(*) AS total,
+         SUM(CASE WHEN is_flagged = 1 THEN 1 ELSE 0 END) AS flagged,
+         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
+         SUM(CASE WHEN status = 'replied' THEN 1 ELSE 0 END) AS replied,
+         AVG(score) AS avg_score,
+         AVG(sentiment_score) AS avg_sentiment
+       FROM hotel_reviews
+       WHERE tenant_id = ?`,
+      tenantId,
+    ) as any;
+
+    ok(res, {
+      total: row ? parseInt(String(row.total ?? 0), 10) : 0,
+      flagged: row?.flagged ?? 0,
+      pending: row?.pending ?? 0,
+      replied: row?.replied ?? 0,
+      avg_score: row?.avg_score != null ? Number(row.avg_score) : null,
+      avg_sentiment: row?.avg_sentiment != null ? Number(row.avg_sentiment) : null,
+    });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// PATCH /hotel/reviews/:id
+hotelRouter.patch('/reviews/:id', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const { status, final_response } = req.body as {
+    status?: string;
+    final_response?: string;
+  };
+
+  if (!status && final_response === undefined) {
+    return err(res, 'At least one of status or final_response is required');
+  }
+
+  const setClauses: string[] = [];
+  const params: unknown[] = [];
+
+  if (status !== undefined) {
+    setClauses.push('status = ?');
+    params.push(status);
+    if (status === 'replied') {
+      setClauses.push('replied_at = CURRENT_TIMESTAMP');
+    }
+  }
+  if (final_response !== undefined) {
+    setClauses.push('final_response = ?');
+    params.push(final_response);
+  }
+
+  params.push(req.params.id, tenantId);
+
+  try {
+    await dbRun(
+      `UPDATE hotel_reviews SET ${setClauses.join(', ')} WHERE id = ? AND tenant_id = ?`,
+      ...params,
+    );
+    ok(res, { updated: true });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// POST /hotel/reviews/manual
+hotelRouter.post('/reviews/manual', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const {
+    source,
+    reviewer_name,
+    score,
+    positive_text,
+    negative_text,
+    full_review_text,
+  } = req.body as {
+    source: string;
+    reviewer_name?: string;
+    score?: number;
+    positive_text?: string;
+    negative_text?: string;
+    full_review_text?: string;
+  };
+
+  if (!source) return err(res, 'source is required');
+
+  try {
+    const { analyseReview } = await import('../reviews/reviewAnalyser.js');
+
+    const reviewText = full_review_text
+      || [positive_text, negative_text].filter(Boolean).join('\n\n')
+      || '';
+
+    const analysis = await analyseReview({
+      source,
+      reviewer_name: reviewer_name ?? null,
+      score: score ?? null,
+      score_max: 10,
+      positive_text: positive_text ?? null,
+      negative_text: negative_text ?? null,
+      full_text: reviewText,
+      review_date: new Date(),
+      language: 'en',
+    }, tenantId);
+
+    const id = (await import('node:crypto')).randomUUID();
+
+    await dbRun(
+      `INSERT INTO hotel_reviews
+         (id, tenant_id, source, reviewer_name, score, score_max, positive_text, negative_text,
+          full_review_text, language, sentiment_score, is_flagged, flag_reason,
+          suggested_response, status)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'pending')`,
+      id,
+      tenantId,
+      source,
+      reviewer_name ?? null,
+      score ?? null,
+      10,
+      positive_text ?? null,
+      negative_text ?? null,
+      reviewText || null,
+      analysis.language,
+      analysis.sentiment_score ?? null,
+      analysis.is_flagged ? 1 : 0,
+      analysis.flag_reason ?? null,
+      analysis.suggested_response ?? null,
+    );
+
+    const saved = await dbGet('SELECT * FROM hotel_reviews WHERE id = ?', id);
+    ok(res, saved);
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// POST /hotel/reviews/:id/regenerate
+hotelRouter.post('/reviews/:id/regenerate', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    const review = await dbGet(
+      'SELECT * FROM hotel_reviews WHERE id = ? AND tenant_id = ?',
+      req.params.id, tenantId,
+    ) as any;
+
+    if (!review) return err(res, 'Review not found', 404);
+
+    const { analyseReview } = await import('../reviews/reviewAnalyser.js');
+
+    const analysis = await analyseReview({
+      source: review.source,
+      reviewer_name: review.reviewer_name ?? null,
+      score: review.score ?? null,
+      score_max: review.score_max ?? 10,
+      positive_text: review.positive_text ?? null,
+      negative_text: review.negative_text ?? null,
+      full_text: review.full_review_text ?? null,
+      review_date: null,
+      language: review.language ?? 'en',
+    }, tenantId);
+
+    await dbRun(
+      'UPDATE hotel_reviews SET suggested_response = ? WHERE id = ? AND tenant_id = ?',
+      analysis.suggested_response ?? null, req.params.id, tenantId,
+    );
+
+    ok(res, { suggested_response: analysis.suggested_response ?? null });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// GET /hotel/reviews/config
+hotelRouter.get('/reviews/config', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    const row = await dbGet(
+      'SELECT review_email_slug, owner_phone FROM tenants WHERE id = ?',
+      tenantId,
+    ) as any;
+
+    const slug: string | null = row?.review_email_slug ?? null;
+    ok(res, {
+      slug,
+      email: slug ? `${slug}@reviews.skedai.net` : null,
+      owner_phone: row?.owner_phone ?? null,
+    });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// PUT /hotel/reviews/config
+hotelRouter.put('/reviews/config', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const { slug: rawSlug, owner_phone } = req.body as {
+    slug?: string;
+    owner_phone?: string;
+  };
+
+  const slug = rawSlug?.toLowerCase().replace(/[^a-z0-9-]/g, '') ?? null;
+
+  try {
+    await dbRun(
+      'UPDATE tenants SET review_email_slug = ?, owner_phone = ? WHERE id = ?',
+      slug ?? null, owner_phone ?? null, tenantId,
+    );
+
+    ok(res, {
+      slug: slug ?? null,
+      email: slug ? `${slug}@reviews.skedai.net` : null,
+      owner_phone: owner_phone ?? null,
+    });
+  } catch (e: any) { err(res, e.message, 500); }
+});

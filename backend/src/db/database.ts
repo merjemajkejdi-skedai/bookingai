@@ -368,6 +368,31 @@ const SCHEMA = `
     created_at   TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
   );
   CREATE INDEX IF NOT EXISTS idx_hotel_depts_tenant ON hotel_departments(tenant_id);
+  CREATE TABLE IF NOT EXISTS hotel_reviews (
+    id                 TEXT PRIMARY KEY,
+    tenant_id          TEXT NOT NULL,
+    source             TEXT NOT NULL DEFAULT 'booking',
+    reviewer_name      TEXT,
+    score              REAL,
+    score_max          REAL NOT NULL DEFAULT 10,
+    review_date        TEXT,
+    positive_text      TEXT,
+    negative_text      TEXT,
+    full_review_text   TEXT,
+    language           TEXT NOT NULL DEFAULT 'en',
+    suggested_response TEXT,
+    final_response     TEXT,
+    status             TEXT NOT NULL DEFAULT 'pending',
+    is_flagged         INTEGER NOT NULL DEFAULT 0,
+    sentiment_score    REAL,
+    flag_reason        TEXT,
+    raw_email          TEXT,
+    created_at         TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    replied_at         TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_hotel_reviews_tenant  ON hotel_reviews(tenant_id, created_at);
+  CREATE INDEX IF NOT EXISTS idx_hotel_reviews_status  ON hotel_reviews(tenant_id, status);
+  CREATE INDEX IF NOT EXISTS idx_hotel_reviews_flagged ON hotel_reviews(tenant_id, is_flagged);
 `;
 
 export async function runMigrations() {
@@ -421,6 +446,14 @@ export async function runMigrations() {
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS twilio_auth_token TEXT`,
       // hotel_config_001 — guest identity check flag (1 = ask, 0 = skip)
       `ALTER TABLE hotel_config ADD COLUMN IF NOT EXISTS ask_guest_identity INTEGER NOT NULL DEFAULT 1`,
+      // reviews_001 — hotel reviews table + tenant columns
+      `CREATE TABLE IF NOT EXISTS hotel_reviews (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'booking', reviewer_name TEXT, score REAL, score_max REAL NOT NULL DEFAULT 10, review_date TEXT, positive_text TEXT, negative_text TEXT, full_review_text TEXT, language TEXT NOT NULL DEFAULT 'en', suggested_response TEXT, final_response TEXT, status TEXT NOT NULL DEFAULT 'pending', is_flagged INTEGER NOT NULL DEFAULT 0, sentiment_score REAL, flag_reason TEXT, raw_email TEXT, created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP), replied_at TEXT)`,
+      `CREATE INDEX IF NOT EXISTS idx_hotel_reviews_tenant  ON hotel_reviews(tenant_id, created_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_hotel_reviews_status  ON hotel_reviews(tenant_id, status)`,
+      `CREATE INDEX IF NOT EXISTS idx_hotel_reviews_flagged ON hotel_reviews(tenant_id, is_flagged)`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS review_email_slug TEXT`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_tenants_review_slug ON tenants(review_email_slug) WHERE review_email_slug IS NOT NULL`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS owner_phone TEXT`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -515,6 +548,12 @@ export async function runMigrations() {
     .all().map((r: any) => r.name as string);
   if (!hotelConfigCols.includes('ask_guest_identity'))
     exec('ALTER TABLE hotel_config ADD COLUMN ask_guest_identity INTEGER NOT NULL DEFAULT 1');
+
+  // tenant columns for review routing
+  if (!cols.includes('review_email_slug'))
+    exec('ALTER TABLE tenants ADD COLUMN review_email_slug TEXT');
+  if (!cols.includes('owner_phone'))
+    exec('ALTER TABLE tenants ADD COLUMN owner_phone TEXT');
 
   console.log('✅ SQLite migrations complete');
 }

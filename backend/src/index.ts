@@ -10,6 +10,7 @@ import { artEventRouter } from './modules/art_event/routes.js';
 import { artClassRouter } from './modules/art_class/routes.js';
 import { restaurantRouter } from './modules/restaurant/routes.js';
 import { hotelRouter } from './routes/hotel.js';
+import { emailWebhookRouter } from './routes/emailWebhook.js';
 import { skedaiRouter } from './skedai/routes.js';
 
 const app = express();
@@ -42,6 +43,7 @@ app.use('/admin', adminRouter);
 app.use('/hotel', hotelRouter);
 app.use('/api', skedaiRouter);
 app.use('/whatsapp', whatsappRouter);
+app.use('/', emailWebhookRouter);
 
 async function start() {
   await runMigrations();

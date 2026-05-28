@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BellRing, Users, BookOpen, Settings, Shield, LogOut, Building2, MessageSquare, ShieldOff } from 'lucide-react';
+import { BellRing, Users, BookOpen, Settings, Shield, LogOut, Building2, MessageSquare, ShieldOff, Star } from 'lucide-react';
 import clsx from 'clsx';
 import { isAdmin, getStoredUser, clearAuth } from '../../shared/lib/auth';
 import { AdminPage }           from '../../pages/AdminPage';
@@ -10,8 +10,9 @@ import { ConfigPage }          from './components/ConfigPage';
 import { DepartmentsPage }     from './components/DepartmentsPage';
 import { ConversationsPage }   from './components/ConversationsPage';
 import { BlockedPage }         from './components/BlockedPage';
+import { ReviewsPage }         from './components/ReviewsPage';
 
-type Page = 'requests' | 'guests' | 'faq' | 'config' | 'departments' | 'conversations' | 'blocked' | 'admin';
+type Page = 'requests' | 'guests' | 'faq' | 'config' | 'departments' | 'conversations' | 'blocked' | 'reviews' | 'admin';
 
 interface Props { onLogout: () => void; }
 
@@ -28,6 +29,7 @@ export function HotelModule({ onLogout }: Props) {
     { id: 'faq',           label: 'FAQ',             icon: <BookOpen size={16} /> },
     { id: 'config',        label: 'Hotel Config',    icon: <Settings size={16} /> },
     { id: 'departments',   label: 'Departments',     icon: <Building2 size={16} /> },
+    { id: 'reviews',       label: 'Reviews',         icon: <Star size={16} /> },
     { id: 'blocked',       label: 'Blocked Numbers', icon: <ShieldOff size={16} /> },
     ...(isAdmin() ? [{ id: 'admin' as Page, label: 'Admin', icon: <Shield size={16} /> }] : []),
   ];
@@ -97,6 +99,7 @@ export function HotelModule({ onLogout }: Props) {
         {page === 'config'        && <ConfigPage />}
         {page === 'departments'   && <DepartmentsPage />}
         {page === 'blocked'       && <BlockedPage />}
+        {page === 'reviews'       && <ReviewsPage />}
         {page === 'admin'         && <AdminPage />}
       </main>
 

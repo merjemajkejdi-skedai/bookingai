@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import type { GuestStay, HotelRequest, FaqEntry, HotelConfig, Department, Conversation, BlockedNumber } from './types';
+import type { GuestStay, HotelRequest, FaqEntry, HotelConfig, Department, Conversation, BlockedNumber, HotelReview, ReviewStats, ReviewConfig } from './types';
 
 const BASE = `${import.meta.env.VITE_API_URL || ''}`;
 
@@ -101,4 +101,29 @@ export const api = {
     req('/hotel/blocked', { method: 'POST', body: JSON.stringify(data) }),
   removeBlocked: (phone: string) =>
     req(`/hotel/blocked/${encodeURIComponent(phone)}`, { method: 'DELETE' }),
+
+  // Reviews
+  getReviews: (params?: { status?: string; flagged?: boolean }) => {
+    const qs = new URLSearchParams();
+    if (params?.status)  qs.set('status', params.status);
+    if (params?.flagged) qs.set('flagged', 'true');
+    const q = qs.toString();
+    return req<HotelReview[]>(`/hotel/reviews${q ? `?${q}` : ''}`);
+  },
+  getReviewStats: () => req<ReviewStats>('/hotel/reviews/stats'),
+  updateReview: (id: string, data: { status?: string; final_response?: string }) =>
+    req(`/hotel/reviews/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  createManualReview: (data: {
+    source: string;
+    reviewer_name?: string;
+    score?: number;
+    positive_text?: string;
+    negative_text?: string;
+    full_review_text?: string;
+  }) => req<HotelReview>('/hotel/reviews/manual', { method: 'POST', body: JSON.stringify(data) }),
+  regenerateResponse: (id: string) =>
+    req<{ suggested_response: string }>(`/hotel/reviews/${id}/regenerate`, { method: 'POST' }),
+  getReviewConfig: () => req<ReviewConfig>('/hotel/reviews/config'),
+  updateReviewConfig: (data: { slug: string; owner_phone: string }) =>
+    req<ReviewConfig>('/hotel/reviews/config', { method: 'PUT', body: JSON.stringify(data) }),
 };

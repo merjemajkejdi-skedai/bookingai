@@ -75,6 +75,43 @@ export interface BlockedNumber {
   created_at: string;
 }
 
+export interface HotelReview {
+  id: string;
+  tenant_id: string;
+  source: 'booking' | 'tripadvisor' | 'google' | 'manual' | 'unknown';
+  reviewer_name: string | null;
+  score: number | null;
+  score_max: number;
+  review_date: string | null;
+  positive_text: string | null;
+  negative_text: string | null;
+  full_review_text: string | null;
+  language: string;
+  suggested_response: string | null;
+  final_response: string | null;
+  status: 'pending' | 'approved' | 'replied' | 'ignored';
+  is_flagged: number; // 0 | 1
+  sentiment_score: number | null;
+  flag_reason: string | null;
+  created_at: string;
+  replied_at: string | null;
+}
+
+export interface ReviewStats {
+  total: number;
+  flagged: number;
+  pending: number;
+  replied: number;
+  avg_score: number | null;
+  avg_sentiment: number | null;
+}
+
+export interface ReviewConfig {
+  slug: string | null;
+  email: string | null;
+  owner_phone: string | null;
+}
+
 export interface HotelConfig {
   tenant_id: string;
   hotel_name: string;
