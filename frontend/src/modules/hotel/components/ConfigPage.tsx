@@ -1,7 +1,113 @@
 import { useState, useEffect } from 'react';
-import { Save, Wifi, Coffee, Waves, UtensilsCrossed, Clock, Phone, MapPin, BookOpen, UserCheck } from 'lucide-react';
+import { Save, Wifi, Coffee, Waves, UtensilsCrossed, Clock, Phone, MapPin, BookOpen, UserCheck, Star } from 'lucide-react';
 import { api } from '../api';
 import { Button, Input, Spinner } from '../ui';
+
+// ── Review Management section ─────────────────────────────────────────────────
+
+function ReviewSettings() {
+  const [slug, setSlug]             = useState('');
+  const [ownerPhone, setOwnerPhone] = useState('');
+  const [email, setEmail]           = useState<string | null>(null);
+  const [loading, setLoading]       = useState(true);
+  const [saving, setSaving]         = useState(false);
+  const [saved, setSaved]           = useState(false);
+
+  useEffect(() => {
+    api.getReviewConfig()
+      .then(d => {
+        setSlug(d.slug ?? '');
+        setOwnerPhone(d.owner_phone ?? '');
+        setEmail(d.email ?? null);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const d = await api.updateReviewConfig({ slug, owner_phone: ownerPhone });
+      setEmail(d.email ?? null);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) return <Spinner />;
+
+  return (
+    <section className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+      <div className="flex items-center gap-2">
+        <Star size={15} className="text-slate-400" />
+        <h2 className="text-sm font-semibold text-slate-700">Review Management</h2>
+      </div>
+      <p className="text-xs text-slate-400 -mt-1">
+        Forward Booking.com and TripAdvisor review emails to your SkedAI address — the AI
+        will analyse them and suggest responses automatically.
+      </p>
+
+      <form onSubmit={handleSave} className="space-y-4">
+        {/* Email slug */}
+        <div className="space-y-1">
+          <label className="block text-xs font-medium text-slate-600">Your review inbox address</label>
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              value={slug}
+              onChange={e => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, ''))}
+              placeholder="lafavorita"
+              maxLength={40}
+              className="w-36 rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400/40"
+            />
+            <span className="text-sm text-slate-400 select-all">@reviews.skedai.net</span>
+          </div>
+          {email ? (
+            <p className="text-xs text-green-700 bg-green-50 border border-green-100 rounded px-2 py-1 inline-block mt-1 font-mono">
+              ✓ {email}
+            </p>
+          ) : (
+            <p className="text-xs text-slate-400">Letters and numbers only. E.g. <em>grandhotel</em></p>
+          )}
+        </div>
+
+        {/* Owner WhatsApp */}
+        <div className="space-y-1">
+          <label className="block text-xs font-medium text-slate-600">
+            WhatsApp number for instant review alerts
+          </label>
+          <input
+            value={ownerPhone}
+            onChange={e => setOwnerPhone(e.target.value)}
+            placeholder="+355 69 123 4567"
+            className="w-56 rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400/40"
+          />
+          <p className="text-xs text-slate-400">You'll get a WhatsApp message when a negative review arrives.</p>
+        </div>
+
+        {/* Setup instructions — shown once email is set */}
+        {email && (
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-1.5">
+            <p className="text-xs font-semibold text-slate-700">How to forward reviews automatically:</p>
+            <ol className="text-xs text-slate-500 space-y-1 list-decimal list-inside">
+              <li>Log in to your Booking.com Extranet</li>
+              <li>Go to <strong>Account → Notifications → Email settings</strong></li>
+              <li>Add <strong className="font-mono">{email}</strong> as a CC for review notifications</li>
+              <li>Repeat in TripAdvisor Management Center if applicable</li>
+              <li>New reviews appear in your <strong>Reviews</strong> tab automatically</li>
+            </ol>
+          </div>
+        )}
+
+        <Button type="submit" size="sm" disabled={saving || !slug}>
+          {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save review settings'}
+        </Button>
+      </form>
+    </section>
+  );
+}
 
 interface Config {
   hotel_name: string;
@@ -187,6 +293,11 @@ export function ConfigPage() {
             {saving ? 'Saving…' : saved ? '✓ Saved!' : 'Save Configuration'}
           </Button>
         </form>
+
+        {/* Review Management — own form/state, outside main form */}
+        <div className="mt-5">
+          <ReviewSettings />
+        </div>
       </div>
     </div>
   );
