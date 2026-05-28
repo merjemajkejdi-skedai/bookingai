@@ -12,6 +12,7 @@ import { restaurantRouter } from './modules/restaurant/routes.js';
 import { hotelRouter } from './routes/hotel.js';
 import { emailWebhookRouter } from './routes/emailWebhook.js';
 import { skedaiRouter } from './skedai/routes.js';
+import { startDigestCron } from './reviews/digestCron.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -47,6 +48,7 @@ app.use('/', emailWebhookRouter);
 
 async function start() {
   await runMigrations();
+  startDigestCron();
   app.listen(Number(PORT), '0.0.0.0', () => {
     console.log(`\n🚀 BookingAI backend running at http://localhost:${PORT}`);
     console.log(`   API:       http://localhost:${PORT}/api`);

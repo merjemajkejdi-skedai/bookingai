@@ -64,17 +64,35 @@ export async function processInboundReviewEmail(
 
     console.log(`[Reviews] Saved review ${id} for ${tenant.name}`);
 
-    if (tenant.owner_phone) {
+    // Only notify immediately for flagged/negative reviews — positive ones go in the daily digest
+    if (tenant.owner_phone && analysis.is_flagged) {
       const scoreDisplay = review.score != null
         ? `${review.score}/${review.score_max}`
         : 'No score';
-      const emoji = analysis.is_flagged ? '⚠️' : '⭐';
-      const preview = (review.negative_text || review.full_text || '').slice(0, 100);
-      const msg = analysis.is_flagged
-        ? `${emoji} New negative review on ${review.source} — ${scoreDisplay} from ${review.reviewer_name || 'Anonymous'}.\n\n"${preview}..."\n\nSuggested response ready in your dashboard.`
-        : `${emoji} New ${review.source} review — ${scoreDisplay} from ${review.reviewer_name || 'Anonymous'}. Suggested response ready in your dashboard.`;
 
-      await sendWhatsAppMessage(tenant.owner_phone, msg, tenant);
+      const preview = (review.negative_text || review.full_text || '')
+        .slice(0, 120).trim();
+
+      const source = review.source.charAt(0).toUpperCase() + review.source.slice(1);
+
+      const msg = [
+        `⚠️ *New negative ${source} review*`,
+        ``,
+        `Score: ${scoreDisplay}`,
+        `Guest: ${review.reviewer_name || 'Anonymous'}`,
+        ``,
+        preview ? `"${preview}${preview.length >= 120 ? '...' : ''}"` : '',
+        ``,
+        `AI response ready. Open your dashboard to review and respond:`,
+        `app.skedai.net`,
+      ].filter(line => line !== null && line !== undefined).join('\n');
+
+      try {
+        await sendWhatsAppMessage(tenant.owner_phone, msg, tenant);
+        console.log(`[Reviews] ⚠️ Flagged review notification sent to ${tenant.owner_phone}`);
+      } catch (err) {
+        console.error('[Reviews] Failed to send WhatsApp notification:', err);
+      }
     }
   } catch (e) {
     console.error('[Reviews] Error processing review email:', e);
