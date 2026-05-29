@@ -37,7 +37,7 @@ export const hotelTools: Anthropic.Tool[] = [
   },
   {
     name: 'create_request',
-    description: 'Log a guest service request once you have their room number and last name. Assigns to the correct department and notifies via WhatsApp.',
+    description: 'Log a guest service request or forward an unanswered question to the relevant department. The department is notified via WhatsApp with the guest\'s phone number. For housekeeping and maintenance, always collect the room number first. For concierge_question (unanswered questions), room_number and guest_name are optional.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -45,12 +45,12 @@ export const hotelTools: Anthropic.Tool[] = [
           type: 'string',
           enum: ['room_service', 'housekeeping', 'maintenance', 'concierge_question', 'complaint', 'other'],
         },
-        description:  { type: 'string', description: 'Details of the request' },
-        room_number:  { type: 'string', description: 'Guest room number' },
-        guest_name:   { type: 'string', description: 'Guest last name as provided' },
+        description:  { type: 'string', description: 'Details of the request or the guest\'s question verbatim' },
+        room_number:  { type: 'string', description: 'Guest room number — required for housekeeping and maintenance' },
+        guest_name:   { type: 'string', description: 'Guest name if known' },
         priority:     { type: 'string', enum: ['high', 'normal', 'low'] },
       },
-      required: ['request_type', 'description', 'room_number', 'guest_name'],
+      required: ['request_type', 'description'],
     },
   },
   {
@@ -148,17 +148,18 @@ export async function executeHotelTool(
 
     case 'create_request': {
       const { request_type, description, room_number, guest_name, priority } = input as {
-        request_type: string; description: string; room_number: string; guest_name: string; priority?: string;
+        request_type: string; description: string; room_number?: string; guest_name?: string; priority?: string;
       };
       const department    = DEPARTMENT_MAP[request_type] || 'reception';
       const finalPriority = priority || DEFAULT_PRIORITY_MAP[request_type] || 'normal';
+      const finalRoom     = room_number || null;
 
       const id = crypto.randomUUID();
       await dbRun(
         `INSERT INTO hotel_requests
            (id, tenant_id, stay_id, room_number, guest_name, guest_phone, request_type, description, department, priority)
          VALUES (?,?,?,?,?,?,?,?,?,?)`,
-        id, tenantId, null, room_number, guest_name ?? null, guestPhone,
+        id, tenantId, null, finalRoom, guest_name ?? null, guestPhone,
         request_type, description, department, finalPriority,
       );
 
@@ -189,12 +190,34 @@ export async function executeHotelTool(
             complaint:          '⚠️',
             other:              '📋',
           };
+          const TYPE_LABEL: Record<string, string> = {
+            room_service:       'Room Service',
+            housekeeping:       'Housekeeping',
+            maintenance:        'Maintenance',
+            concierge_question: 'Guest Question',
+            complaint:          'Complaint',
+            other:              'Request',
+          };
           const time = new Date().toLocaleTimeString('en-GB', {
             hour: '2-digit', minute: '2-digit',
             timeZone: 'Europe/Tirane',
           });
-          const guestLabel = guest_name ? ` · ${guest_name}` : '';
-          const msg = `${EMOJI[request_type] || '📋'} *Room ${room_number}${guestLabel}*\n${description}\n_${time}_`;
+
+          const emoji      = EMOJI[request_type] || '📋';
+          const typeLabel  = TYPE_LABEL[request_type] || request_type;
+          const roomLabel  = finalRoom ? `Room ${finalRoom}` : 'Room N/A';
+          const nameLabel  = guest_name ? ` · ${guest_name}` : '';
+          const cleanPhone = guestPhone.replace(/^whatsapp:/, '');
+
+          const msg = [
+            `${emoji} *${typeLabel} — ${roomLabel}${nameLabel}*`,
+            `📱 Guest: ${cleanPhone}`,
+            ``,
+            description,
+            ``,
+            `_${time}_`,
+          ].join('\n');
+
           console.log(`[Hotel notify] Sending to ${match.whatsapp} (dept: ${match.name})`);
           await sendWhatsAppMessage(match.whatsapp, msg);
           console.log(`[Hotel notify] ✅ Sent to ${match.name}`);
@@ -208,7 +231,7 @@ export async function executeHotelTool(
       return {
         success:    true,
         request_id: id,
-        room:       room_number,
+        room:       finalRoom,
         department,
         priority:   finalPriority,
         eta:        ETA_MAP[finalPriority],
