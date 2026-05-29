@@ -727,7 +727,7 @@ hotelRouter.put('/reviews/config', requireAuth, async (req: Request, res: Respon
     notification_frequency?: string;
   };
 
-  const VALID_FREQUENCIES = ['immediate', 'daily', 'twice_daily', 'weekly', 'mon_thu'];
+  const VALID_FREQUENCIES = ['immediate', 'daily', 'twice_daily', 'weekly', 'mon_thu', 'never'];
   const slug      = rawSlug?.toLowerCase().replace(/[^a-z0-9-]/g, '') ?? null;
   const frequency = notification_frequency && VALID_FREQUENCIES.includes(notification_frequency)
     ? notification_frequency : null;

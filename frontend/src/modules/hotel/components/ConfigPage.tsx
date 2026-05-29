@@ -11,6 +11,7 @@ const FREQUENCY_OPTIONS = [
   { value: 'twice_daily', label: 'Twice per day (09 & 18)', description: 'Morning batch + evening batch' },
   { value: 'weekly',      label: 'Once per week (Monday)',   description: 'Weekly summary every Monday at 09:00' },
   { value: 'mon_thu',     label: 'Mon & Thu',                description: 'Two batches a week — Monday and Thursday at 09:00' },
+  { value: 'never',       label: 'Never',                    description: 'No WhatsApp notifications — reviews are still saved to the dashboard' },
 ];
 
 function ReviewSettings() {

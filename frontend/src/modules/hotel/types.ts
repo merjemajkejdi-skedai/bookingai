@@ -106,7 +106,7 @@ export interface ReviewStats {
   avg_sentiment: number | null;
 }
 
-export type NotificationFrequency = 'immediate' | 'daily' | 'twice_daily' | 'weekly' | 'mon_thu';
+export type NotificationFrequency = 'immediate' | 'daily' | 'twice_daily' | 'weekly' | 'mon_thu' | 'never';
 
 export interface ReviewConfig {
   slug: string | null;
