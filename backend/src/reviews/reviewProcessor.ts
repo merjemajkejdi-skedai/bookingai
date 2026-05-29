@@ -12,6 +12,38 @@ async function dbRun(sql: string, ...p: unknown[]) {
   prepare(sql).run(...p);
 }
 
+/** Build the WhatsApp alert message for a single flagged review */
+export function buildFlaggedReviewMessage(review: {
+  source: string;
+  score?: number | null;
+  score_max?: number | null;
+  reviewer_name?: string | null;
+  negative_text?: string | null;
+  full_text?: string | null;
+  full_review_text?: string | null;
+}): string {
+  const scoreDisplay = review.score != null
+    ? `${review.score}/${review.score_max ?? 10}`
+    : 'No score';
+
+  const preview = (review.negative_text || review.full_text || review.full_review_text || '')
+    .slice(0, 120).trim();
+
+  const source = review.source.charAt(0).toUpperCase() + review.source.slice(1);
+
+  return [
+    `⚠️ *New negative ${source} review*`,
+    ``,
+    `Score: ${scoreDisplay}`,
+    `Guest: ${review.reviewer_name || 'Anonymous'}`,
+    ``,
+    preview ? `"${preview}${preview.length >= 120 ? '...' : ''}"` : '',
+    ``,
+    `AI response ready. Open your dashboard to review and respond:`,
+    `app.skedai.net`,
+  ].filter(line => line !== null && line !== undefined).join('\n');
+}
+
 export async function processInboundReviewEmail(
   from:      string,
   subject:   string,
@@ -42,8 +74,8 @@ export async function processInboundReviewEmail(
          (id, tenant_id, source, reviewer_name, score, score_max,
           review_date, positive_text, negative_text, full_review_text,
           language, suggested_response, status, is_flagged,
-          sentiment_score, flag_reason, raw_email)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,?)`,
+          sentiment_score, flag_reason, raw_email, owner_notified)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,?,0)`,
       id,
       tenant.id,
       review.source,
@@ -64,34 +96,18 @@ export async function processInboundReviewEmail(
 
     console.log(`[Reviews] Saved review ${id} for ${tenant.name}`);
 
-    // Only notify immediately for flagged/negative reviews — positive ones go in the daily digest
-    if (tenant.owner_phone && analysis.is_flagged) {
-      const scoreDisplay = review.score != null
-        ? `${review.score}/${review.score_max}`
-        : 'No score';
-
-      const preview = (review.negative_text || review.full_text || '')
-        .slice(0, 120).trim();
-
-      const source = review.source.charAt(0).toUpperCase() + review.source.slice(1);
-
-      const msg = [
-        `⚠️ *New negative ${source} review*`,
-        ``,
-        `Score: ${scoreDisplay}`,
-        `Guest: ${review.reviewer_name || 'Anonymous'}`,
-        ``,
-        preview ? `"${preview}${preview.length >= 120 ? '...' : ''}"` : '',
-        ``,
-        `AI response ready. Open your dashboard to review and respond:`,
-        `app.skedai.net`,
-      ].filter(line => line !== null && line !== undefined).join('\n');
-
+    // Send immediate WhatsApp only if the tenant chose 'immediate' frequency
+    // (or has no preference set — default is immediate).
+    // All other frequencies are handled by the batch cron in digestCron.ts.
+    const frequency = tenant.review_notification_frequency ?? 'immediate';
+    if (tenant.owner_phone && analysis.is_flagged && frequency === 'immediate') {
+      const msg = buildFlaggedReviewMessage(review);
       try {
         await sendWhatsAppMessage(tenant.owner_phone, msg, tenant);
-        console.log(`[Reviews] ⚠️ Flagged review notification sent to ${tenant.owner_phone}`);
+        await dbRun('UPDATE hotel_reviews SET owner_notified = 1 WHERE id = ?', id);
+        console.log(`[Reviews] ⚠️ Immediate notification sent to ${tenant.owner_phone}`);
       } catch (err) {
-        console.error('[Reviews] Failed to send WhatsApp notification:', err);
+        console.error('[Reviews] Failed to send immediate WhatsApp notification:', err);
       }
     }
   } catch (e) {

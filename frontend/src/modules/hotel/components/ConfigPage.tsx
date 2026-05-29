@@ -5,9 +5,18 @@ import { Button, Input, Spinner } from '../ui';
 
 // ── Review Management section ─────────────────────────────────────────────────
 
+const FREQUENCY_OPTIONS = [
+  { value: 'immediate',   label: 'Immediately',              description: 'WhatsApp sent as soon as a negative review arrives' },
+  { value: 'daily',       label: 'Once per day (09:00)',     description: 'All new negative reviews batched in one morning message' },
+  { value: 'twice_daily', label: 'Twice per day (09 & 18)', description: 'Morning batch + evening batch' },
+  { value: 'weekly',      label: 'Once per week (Monday)',   description: 'Weekly summary every Monday at 09:00' },
+  { value: 'mon_thu',     label: 'Mon & Thu',                description: 'Two batches a week — Monday and Thursday at 09:00' },
+];
+
 function ReviewSettings() {
   const [slug, setSlug]             = useState('');
   const [ownerPhone, setOwnerPhone] = useState('');
+  const [frequency, setFrequency]   = useState('immediate');
   const [email, setEmail]           = useState<string | null>(null);
   const [loading, setLoading]       = useState(true);
   const [saving, setSaving]         = useState(false);
@@ -18,6 +27,7 @@ function ReviewSettings() {
       .then(d => {
         setSlug(d.slug ?? '');
         setOwnerPhone(d.owner_phone ?? '');
+        setFrequency(d.notification_frequency ?? 'immediate');
         setEmail(d.email ?? null);
       })
       .catch(() => {})
@@ -28,7 +38,11 @@ function ReviewSettings() {
     e.preventDefault();
     setSaving(true);
     try {
-      const d = await api.updateReviewConfig({ slug, owner_phone: ownerPhone });
+      const d = await api.updateReviewConfig({
+        slug,
+        owner_phone: ownerPhone,
+        notification_frequency: frequency,
+      });
       setEmail(d.email ?? null);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -76,7 +90,7 @@ function ReviewSettings() {
         {/* Owner WhatsApp */}
         <div className="space-y-1">
           <label className="block text-xs font-medium text-slate-600">
-            WhatsApp number for instant review alerts
+            WhatsApp number for negative review alerts
           </label>
           <input
             value={ownerPhone}
@@ -84,7 +98,45 @@ function ReviewSettings() {
             placeholder="+355 69 123 4567"
             className="w-56 rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400/40"
           />
-          <p className="text-xs text-slate-400">You'll get a WhatsApp message when a negative review arrives.</p>
+        </div>
+
+        {/* Notification frequency */}
+        <div className="space-y-2">
+          <label className="block text-xs font-medium text-slate-600">
+            How often to notify you about negative reviews
+          </label>
+          <div className="grid gap-1.5">
+            {FREQUENCY_OPTIONS.map(opt => (
+              <label
+                key={opt.value}
+                className={`flex items-start gap-3 rounded-lg border px-3 py-2.5 cursor-pointer transition-colors ${
+                  frequency === opt.value
+                    ? 'border-brand-400 bg-brand-50'
+                    : 'border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="review_frequency"
+                  value={opt.value}
+                  checked={frequency === opt.value}
+                  onChange={() => setFrequency(opt.value)}
+                  className="mt-0.5 accent-brand-500 flex-shrink-0"
+                />
+                <div>
+                  <p className={`text-sm font-medium leading-tight ${frequency === opt.value ? 'text-brand-700' : 'text-slate-700'}`}>
+                    {opt.label}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-0.5">{opt.description}</p>
+                </div>
+              </label>
+            ))}
+          </div>
+          {frequency !== 'immediate' && (
+            <p className="text-xs text-slate-400">
+              Reviews are always saved to the dashboard in real time — you'll just get the WhatsApp alert {FREQUENCY_OPTIONS.find(o => o.value === frequency)?.label.toLowerCase()}.
+            </p>
+          )}
         </div>
 
         {/* Setup instructions — shown once email is set */}

@@ -124,6 +124,6 @@ export const api = {
   regenerateResponse: (id: string) =>
     req<{ suggested_response: string }>(`/hotel/reviews/${id}/regenerate`, { method: 'POST' }),
   getReviewConfig: () => req<ReviewConfig>('/hotel/reviews/config'),
-  updateReviewConfig: (data: { slug: string; owner_phone: string }) =>
+  updateReviewConfig: (data: { slug: string; owner_phone: string; notification_frequency?: string }) =>
     req<ReviewConfig>('/hotel/reviews/config', { method: 'PUT', body: JSON.stringify(data) }),
 };

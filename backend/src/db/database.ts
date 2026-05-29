@@ -387,6 +387,7 @@ const SCHEMA = `
     sentiment_score    REAL,
     flag_reason        TEXT,
     raw_email          TEXT,
+    owner_notified     INTEGER NOT NULL DEFAULT 0,
     created_at         TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     replied_at         TEXT
   );
@@ -455,6 +456,8 @@ export async function runMigrations() {
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_tenants_review_slug ON tenants(review_email_slug) WHERE review_email_slug IS NOT NULL`,
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS owner_phone TEXT`,
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS reviews_enabled INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS review_notification_frequency TEXT NOT NULL DEFAULT 'immediate'`,
+      `ALTER TABLE hotel_reviews ADD COLUMN IF NOT EXISTS owner_notified INTEGER NOT NULL DEFAULT 0`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -557,6 +560,13 @@ export async function runMigrations() {
     exec('ALTER TABLE tenants ADD COLUMN owner_phone TEXT');
   if (!cols.includes('reviews_enabled'))
     exec('ALTER TABLE tenants ADD COLUMN reviews_enabled INTEGER NOT NULL DEFAULT 0');
+  if (!cols.includes('review_notification_frequency'))
+    exec("ALTER TABLE tenants ADD COLUMN review_notification_frequency TEXT NOT NULL DEFAULT 'immediate'");
+
+  const hotelReviewCols = prepare("SELECT name FROM pragma_table_info('hotel_reviews')")
+    .all().map((r: any) => r.name as string);
+  if (!hotelReviewCols.includes('owner_notified'))
+    exec('ALTER TABLE hotel_reviews ADD COLUMN owner_notified INTEGER NOT NULL DEFAULT 0');
 
   console.log('✅ SQLite migrations complete');
 }

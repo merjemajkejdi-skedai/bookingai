@@ -106,10 +106,13 @@ export interface ReviewStats {
   avg_sentiment: number | null;
 }
 
+export type NotificationFrequency = 'immediate' | 'daily' | 'twice_daily' | 'weekly' | 'mon_thu';
+
 export interface ReviewConfig {
   slug: string | null;
   email: string | null;
   owner_phone: string | null;
+  notification_frequency: NotificationFrequency;
 }
 
 export interface HotelConfig {

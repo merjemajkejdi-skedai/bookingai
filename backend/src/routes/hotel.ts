@@ -702,7 +702,7 @@ hotelRouter.get('/reviews/config', requireAuth, async (req: Request, res: Respon
   const tenantId = resolveTenantId(req);
   try {
     const row = await dbGet(
-      'SELECT review_email_slug, owner_phone FROM tenants WHERE id = ?',
+      'SELECT review_email_slug, owner_phone, review_notification_frequency FROM tenants WHERE id = ?',
       tenantId,
     ) as any;
 
@@ -711,6 +711,7 @@ hotelRouter.get('/reviews/config', requireAuth, async (req: Request, res: Respon
       slug,
       email: slug ? `${slug}@reviews.skedai.net` : null,
       owner_phone: row?.owner_phone ?? null,
+      notification_frequency: (row?.review_notification_frequency ?? 'immediate') as string,
     });
   } catch (e: any) { err(res, e.message, 500); }
 });
@@ -718,23 +719,38 @@ hotelRouter.get('/reviews/config', requireAuth, async (req: Request, res: Respon
 // PUT /hotel/reviews/config
 hotelRouter.put('/reviews/config', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
-  const { slug: rawSlug, owner_phone } = req.body as {
+  const { slug: rawSlug, owner_phone, notification_frequency } = req.body as {
     slug?: string;
     owner_phone?: string;
+    notification_frequency?: string;
   };
 
-  const slug = rawSlug?.toLowerCase().replace(/[^a-z0-9-]/g, '') ?? null;
+  const VALID_FREQUENCIES = ['immediate', 'daily', 'twice_daily', 'weekly', 'mon_thu'];
+  const slug      = rawSlug?.toLowerCase().replace(/[^a-z0-9-]/g, '') ?? null;
+  const frequency = notification_frequency && VALID_FREQUENCIES.includes(notification_frequency)
+    ? notification_frequency : null;
 
   try {
     await dbRun(
-      'UPDATE tenants SET review_email_slug = ?, owner_phone = ? WHERE id = ?',
-      slug ?? null, owner_phone ?? null, tenantId,
+      `UPDATE tenants
+       SET review_email_slug             = ?,
+           owner_phone                   = ?,
+           review_notification_frequency = COALESCE(?, review_notification_frequency)
+       WHERE id = ?`,
+      slug ?? null, owner_phone ?? null, frequency, tenantId,
     );
 
+    const updated = await dbGet(
+      'SELECT review_email_slug, owner_phone, review_notification_frequency FROM tenants WHERE id = ?',
+      tenantId,
+    ) as any;
+
+    const updatedSlug = updated?.review_email_slug ?? null;
     ok(res, {
-      slug: slug ?? null,
-      email: slug ? `${slug}@reviews.skedai.net` : null,
-      owner_phone: owner_phone ?? null,
+      slug: updatedSlug,
+      email: updatedSlug ? `${updatedSlug}@reviews.skedai.net` : null,
+      owner_phone: updated?.owner_phone ?? null,
+      notification_frequency: (updated?.review_notification_frequency ?? 'immediate') as string,
     });
   } catch (e: any) { err(res, e.message, 500); }
 });
