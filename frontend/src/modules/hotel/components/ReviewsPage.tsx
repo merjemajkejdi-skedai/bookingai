@@ -41,7 +41,7 @@ function ScoreBadge({ score, max = 10 }: { score: number | null; max?: number })
 // ── Settings modal ────────────────────────────────────────────────────────────
 
 function SettingsModal({ onClose }: { onClose: () => void }) {
-  const [config, setConfig]   = useState<ReviewConfig>({ slug: '', email: null, owner_phone: '' });
+  const [config, setConfig]   = useState<ReviewConfig>({ slug: '', email: null, owner_phone: '', notification_frequency: 'immediate' });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(false);
   const [saved, setSaved]     = useState(false);
