@@ -96,13 +96,19 @@ export async function runHotelAgent(
 
   const systemPrompt = buildHotelSystemPrompt(tenantRow, hotelConfig);
 
+  // When message_forward is OFF, the agent only reads FAQ/config — never creates requests
+  const messageForward = (hotelConfig as any)?.message_forward !== 0;
+  const activeTools    = messageForward
+    ? hotelTools
+    : hotelTools.filter(t => t.name !== 'create_request');
+
   // ── Claude tool-use loop ──────────────────────────────────────────────────
   while (true) {
     const response = await client.messages.create({
       model: SONNET_MODEL,
       max_tokens: 1024,
       system: systemPrompt,
-      tools: hotelTools,
+      tools: activeTools,
       messages,
     });
 

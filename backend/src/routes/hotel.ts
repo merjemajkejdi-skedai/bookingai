@@ -185,6 +185,7 @@ hotelRouter.put('/config', requireAuth, async (req: Request, res: Response) => {
     restaurant_hours = null, reception_phone = null, emergency_phone = null,
     location_url = null, menu_url = null,
     ask_guest_identity = 1,
+    message_forward = 1,
   } = req.body;
 
   if (!hotel_name) return err(res, 'hotel_name is required');
@@ -194,8 +195,8 @@ hotelRouter.put('/config', requireAuth, async (req: Request, res: Response) => {
       `INSERT INTO hotel_config
          (tenant_id, hotel_name, check_in_time, check_out_time, wifi_password,
           breakfast_hours, pool_hours, restaurant_hours, reception_phone, emergency_phone,
-          location_url, menu_url, ask_guest_identity)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+          location_url, menu_url, ask_guest_identity, message_forward)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT (tenant_id) DO UPDATE SET
          hotel_name = excluded.hotel_name,
          check_in_time = excluded.check_in_time,
@@ -208,10 +209,11 @@ hotelRouter.put('/config', requireAuth, async (req: Request, res: Response) => {
          emergency_phone = excluded.emergency_phone,
          location_url = excluded.location_url,
          menu_url = excluded.menu_url,
-         ask_guest_identity = excluded.ask_guest_identity`,
+         ask_guest_identity = excluded.ask_guest_identity,
+         message_forward = excluded.message_forward`,
       tenantId, hotel_name, check_in_time, check_out_time, wifi_password,
       breakfast_hours, pool_hours, restaurant_hours, reception_phone, emergency_phone,
-      location_url, menu_url, ask_guest_identity ? 1 : 0,
+      location_url, menu_url, ask_guest_identity ? 1 : 0, message_forward ? 1 : 0,
     );
     ok(res, { updated: true });
   } catch (e: any) { err(res, e.message, 500); }

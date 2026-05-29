@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Save, Wifi, Coffee, Waves, UtensilsCrossed, Clock, Phone, MapPin, BookOpen, UserCheck, Star } from 'lucide-react';
+import { Save, Wifi, Coffee, Waves, UtensilsCrossed, Clock, Phone, MapPin, BookOpen, UserCheck, Star, MessageSquare } from 'lucide-react';
 import { api } from '../api';
 import { Button, Input, Spinner } from '../ui';
 
@@ -174,6 +174,7 @@ interface Config {
   location_url: string;
   menu_url: string;
   ask_guest_identity: boolean;
+  message_forward: boolean;
 }
 
 const EMPTY: Config = {
@@ -189,6 +190,7 @@ const EMPTY: Config = {
   location_url: '',
   menu_url: '',
   ask_guest_identity: true,
+  message_forward: true,
 };
 
 export function ConfigPage() {
@@ -207,6 +209,7 @@ export function ConfigPage() {
             // Backend stores as INTEGER (1/0); convert to boolean for local state.
             // Default to true when column is absent (null/undefined).
             ask_guest_identity: c.ask_guest_identity !== 0,
+            message_forward:    c.message_forward    !== 0,
           });
         }
       })
@@ -214,7 +217,7 @@ export function ConfigPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  function field(k: Exclude<keyof Config, 'ask_guest_identity'>) {
+  function field(k: Exclude<keyof Config, 'ask_guest_identity' | 'message_forward'>) {
     return {
       value: (config[k] as string) || '',
       onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -229,6 +232,7 @@ export function ConfigPage() {
       await api.updateConfig({
         ...config,
         ask_guest_identity: config.ask_guest_identity ? 1 : 0,
+        message_forward:    config.message_forward    ? 1 : 0,
       } as any);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -309,35 +313,55 @@ export function ConfigPage() {
           {/* Agent Behaviour */}
           <section className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
             <h2 className="text-sm font-semibold text-slate-700">Agent Behaviour</h2>
-            <div className="flex items-start gap-3">
-              <UserCheck size={15} className="text-slate-400 mt-0.5 flex-shrink-0" />
-              <div className="flex-1">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <p className="text-sm font-medium text-slate-700">Room number &amp; guest name check</p>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      When on, the AI asks every guest for their room number and name before helping.
-                      When off, it skips this step and assists immediately.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={config.ask_guest_identity}
-                    onClick={() => setConfig(c => ({ ...c, ask_guest_identity: !c.ask_guest_identity }))}
-                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 ${
-                      config.ask_guest_identity ? 'bg-brand-600' : 'bg-slate-200'
-                    }`}
-                  >
-                    <span
-                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                        config.ask_guest_identity ? 'translate-x-5' : 'translate-x-0'
+
+            {/* Toggle helper */}
+            {([
+              {
+                key:   'ask_guest_identity' as const,
+                icon:  <UserCheck size={15} className="text-slate-400 mt-0.5 flex-shrink-0" />,
+                label: 'Room number & guest name check',
+                desc:  'When on, the AI asks every guest for their room number and name before helping. When off, it skips this step and assists immediately.',
+              },
+              {
+                key:   'message_forward' as const,
+                icon:  <MessageSquare size={15} className="text-slate-400 mt-0.5 flex-shrink-0" />,
+                label: 'Message forwarding',
+                desc:  'When on, unresolved requests are forwarded to the relevant department via WhatsApp. When off, the AI only answers from FAQ and hotel info — if it can\'t help, it gives guests the front office WhatsApp number to contact directly.',
+              },
+            ] as const).map(({ key, icon, label, desc }) => (
+              <div key={key} className="flex items-start gap-3">
+                {icon}
+                <div className="flex-1">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-medium text-slate-700">{label}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">{desc}</p>
+                      {/* Extra hint when message_forward is off */}
+                      {key === 'message_forward' && !config.message_forward && config.reception_phone && (
+                        <p className="text-xs text-brand-600 mt-1 font-mono">
+                          Guests will be directed to: wa.me/{config.reception_phone.replace(/\D/g, '')}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={config[key]}
+                      onClick={() => setConfig(c => ({ ...c, [key]: !c[key] }))}
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 ${
+                        config[key] ? 'bg-brand-600' : 'bg-slate-200'
                       }`}
-                    />
-                  </button>
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                          config[key] ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
+            ))}
           </section>
 
           <Button type="submit" disabled={saving} className="w-full">

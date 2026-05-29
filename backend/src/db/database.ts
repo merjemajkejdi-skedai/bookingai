@@ -322,7 +322,9 @@ const SCHEMA = `
     emergency_phone TEXT,
     location_url TEXT,
     menu_url TEXT,
-    timezone TEXT NOT NULL DEFAULT 'Europe/Tirane'
+    timezone TEXT NOT NULL DEFAULT 'Europe/Tirane',
+    ask_guest_identity INTEGER NOT NULL DEFAULT 1,
+    message_forward    INTEGER NOT NULL DEFAULT 1
   );
   CREATE TABLE IF NOT EXISTS restaurant_config (
     tenant_id TEXT PRIMARY KEY,
@@ -447,6 +449,8 @@ export async function runMigrations() {
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS twilio_auth_token TEXT`,
       // hotel_config_001 — guest identity check flag (1 = ask, 0 = skip)
       `ALTER TABLE hotel_config ADD COLUMN IF NOT EXISTS ask_guest_identity INTEGER NOT NULL DEFAULT 1`,
+      // hotel_config_002 — message forward flag (1 = forward to depts, 0 = FAQ-only + reception link)
+      `ALTER TABLE hotel_config ADD COLUMN IF NOT EXISTS message_forward INTEGER NOT NULL DEFAULT 1`,
       // reviews_001 — hotel reviews table + tenant columns
       `CREATE TABLE IF NOT EXISTS hotel_reviews (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'booking', reviewer_name TEXT, score REAL, score_max REAL NOT NULL DEFAULT 10, review_date TEXT, positive_text TEXT, negative_text TEXT, full_review_text TEXT, language TEXT NOT NULL DEFAULT 'en', suggested_response TEXT, final_response TEXT, status TEXT NOT NULL DEFAULT 'pending', is_flagged INTEGER NOT NULL DEFAULT 0, sentiment_score REAL, flag_reason TEXT, raw_email TEXT, created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP), replied_at TEXT)`,
       `CREATE INDEX IF NOT EXISTS idx_hotel_reviews_tenant  ON hotel_reviews(tenant_id, created_at)`,
@@ -552,6 +556,8 @@ export async function runMigrations() {
     .all().map((r: any) => r.name as string);
   if (!hotelConfigCols.includes('ask_guest_identity'))
     exec('ALTER TABLE hotel_config ADD COLUMN ask_guest_identity INTEGER NOT NULL DEFAULT 1');
+  if (!hotelConfigCols.includes('message_forward'))
+    exec('ALTER TABLE hotel_config ADD COLUMN message_forward INTEGER NOT NULL DEFAULT 1');
 
   // tenant columns for review routing
   if (!cols.includes('review_email_slug'))

@@ -130,4 +130,5 @@ export interface HotelConfig {
   location_url: string | null;
   menu_url: string | null;
   ask_guest_identity: number; // 1 = ask, 0 = skip
+  message_forward: number;    // 1 = forward requests to depts, 0 = FAQ-only + reception link
 }

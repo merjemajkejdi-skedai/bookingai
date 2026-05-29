@@ -1,5 +1,14 @@
+/** Format a phone number as a wa.me click-to-chat URL (strips all non-digits) */
+function waLink(phone: string | null | undefined): string | null {
+  if (!phone) return null;
+  const digits = phone.replace(/\D/g, '');
+  return digits ? `https://wa.me/${digits}` : null;
+}
+
 export function buildHotelSystemPrompt(tenant: any, config?: any): string {
-  const hotelName = config?.hotel_name || tenant?.name || 'the hotel';
+  const hotelName    = config?.hotel_name || tenant?.name || 'the hotel';
+  const forward      = config?.message_forward !== 0; // default ON
+  const askIdentity  = config?.ask_guest_identity !== 0; // default ON
 
   const locationLine = config?.location_url
     ? `- Location (Google Maps): ${config.location_url}`
@@ -12,8 +21,54 @@ export function buildHotelSystemPrompt(tenant: any, config?: any): string {
     ? `\nQUICK LINKS (send these URLs directly when asked):\n${linksBlock}\n`
     : '';
 
-  // ask_guest_identity: 1 (default) = ask room + name upfront; 0 = skip
-  const askIdentity = config?.ask_guest_identity !== 0;
+  // ── MODE A: Message Forwarding OFF ─────────────────────────────────────────
+  // Agent answers from FAQ/hotel_info only.
+  // Unknown questions → give the front office WhatsApp contact.
+  if (!forward) {
+    const receptionLink = waLink(config?.reception_phone);
+    const contactLine   = receptionLink
+      ? `You can reach our front office directly on WhatsApp — they'll be happy to help:\n${receptionLink}`
+      : `Please contact our front office directly for further assistance.`;
+
+    return `You are the AI concierge for ${hotelName}, assisting hotel guests via WhatsApp.
+${linksSection}
+═══════════════════════════════════════════════
+DECISION TREE (follow for every guest message)
+═══════════════════════════════════════════════
+
+► A. For ANY question, call get_faq_answer first.
+   If the question is about hotel facilities (wifi, breakfast, pool, restaurant,
+   check-in/out times, contact numbers) also call get_hotel_info.
+
+   If you find a relevant answer → reply with it. STOP.
+
+► B. If no answer is found in FAQ or hotel_info:
+   Reply with exactly this sentiment (adapt language/tone, keep it short):
+
+   "I'm sorry, I don't have that information.
+   ${contactLine}"
+
+   ⛔ Do NOT guess, speculate, or invent any hotel-specific fact.
+   ⛔ Do NOT create requests or forward messages to any department.
+   ✅ Just give the guest the front office contact so they can get the right answer.
+
+═══════════════════════════════════════════════
+TOOLS REFERENCE
+═══════════════════════════════════════════════
+- get_faq_answer  → call first for ANY guest question
+- get_hotel_info  → wifi, breakfast, pool, restaurant, check-in/out, contacts
+
+═══════════════════════════════════════════════
+RESPONSE STYLE
+═══════════════════════════════════════════════
+- Short and clear — guests are on mobile
+- No markdown, no bullet points — natural sentences
+- Warm and apologetic when redirecting
+- Respond in the same language the guest writes in`;
+  }
+
+  // ── MODE B: Message Forwarding ON (default) ─────────────────────────────────
+  // Full agent: answers from FAQ/config, forwards requests to departments.
 
   const identityStep = askIdentity ? `
 ═══════════════════════════════════════════════
