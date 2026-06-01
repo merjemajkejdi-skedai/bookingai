@@ -26,12 +26,15 @@ async function dbGet(sql: string, params: unknown[] = []) {
 /**
  * Returns a WHERE-clause fragment (no leading WHERE) for message_log.created_at.
  * The table alias 'ml' is used to qualify the column.
+ *
+ * PG note: created_at is stored as TEXT so we cast it to timestamptz before
+ * comparing against NOW() which returns timestamptz.
  */
 function periodWhere(period: string, alias = 'ml'): string {
   if (isPg) {
-    if (period === '1d')  return `${alias}.created_at >= NOW() - INTERVAL '1 day'`;
-    if (period === '7d')  return `${alias}.created_at >= NOW() - INTERVAL '7 days'`;
-    if (period === '30d') return `${alias}.created_at >= NOW() - INTERVAL '30 days'`;
+    if (period === '1d')  return `(${alias}.created_at)::timestamptz >= NOW() - INTERVAL '1 day'`;
+    if (period === '7d')  return `(${alias}.created_at)::timestamptz >= NOW() - INTERVAL '7 days'`;
+    if (period === '30d') return `(${alias}.created_at)::timestamptz >= NOW() - INTERVAL '30 days'`;
     return '1=1'; // all time
   } else {
     if (period === '1d')  return `${alias}.created_at >= datetime('now', '-1 day')`;
@@ -127,13 +130,13 @@ adminAnalyticsRouter.get('/timeline', async (req: Request, res: Response) => {
 
     const sql = `
       SELECT
-        ${isPg ? 'DATE(ml.created_at)' : "DATE(ml.created_at)"} AS date,
+        ${isPg ? 'DATE((ml.created_at)::timestamptz)' : "DATE(ml.created_at)"} AS date,
         COALESCE(SUM(CASE WHEN ml.direction = 'inbound'  THEN 1 ELSE 0 END), 0) AS inbound,
         COALESCE(SUM(CASE WHEN ml.direction = 'outbound' THEN 1 ELSE 0 END), 0) AS outbound,
         COALESCE(COUNT(*), 0)                                                     AS total
       FROM message_log ml
       WHERE ${dateFilter}
-      GROUP BY DATE(ml.created_at)
+      GROUP BY ${isPg ? 'DATE((ml.created_at)::timestamptz)' : 'DATE(ml.created_at)'}
       ORDER BY date ASC
     `;
 
