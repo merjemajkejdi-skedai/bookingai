@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { ChevronDown, ArrowLeft, LogOut } from 'lucide-react';
+import { ChevronDown, ArrowLeft, LogOut, BarChart2 } from 'lucide-react';
 import { isAuthenticated, getStoredUser, clearAuth, getAdminTenant, setAdminTenant } from './shared/lib/auth';
 import type { AdminTenant } from './shared/lib/auth';
 import { LoginPage } from './pages/LoginPage';
 import { AdminPage } from './pages/AdminPage';
+import { CostAnalyticsPage } from './pages/CostAnalyticsPage';
 import { BookingModule } from './modules/booking';
 import { ArtEventModule } from './modules/art_event';
 import { ArtClassModule } from './modules/art_class';
@@ -82,6 +83,60 @@ function AdminBanner({
   );
 }
 
+// Admin shell — header nav + page switcher (Shops vs Cost Analytics)
+function AdminShell({
+  onLogout,
+  onViewShop,
+  onTenantsLoaded,
+}: {
+  onLogout: () => void;
+  onViewShop: (t: AdminTenant) => void;
+  onTenantsLoaded: (ts: AdminTenant[]) => void;
+}) {
+  const [adminTab, setAdminTab] = useState<'shops' | 'analytics'>('shops');
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <div className="h-14 bg-white border-b border-slate-200 flex items-center px-6 gap-4">
+        <img src="/logo.png" alt="SkedAI" className="h-8 w-auto" />
+        <span className="text-sm font-semibold text-slate-700">Admin Panel</span>
+
+        {/* Nav tabs */}
+        <div className="flex ml-4 gap-1">
+          <button
+            onClick={() => setAdminTab('shops')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              adminTab === 'shops'
+                ? 'bg-brand-50 text-brand-700'
+                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+            }`}>
+            Shops
+          </button>
+          <button
+            onClick={() => setAdminTab('analytics')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+              adminTab === 'analytics'
+                ? 'bg-brand-50 text-brand-700'
+                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+            }`}>
+            <BarChart2 size={13} /> Cost Analytics
+          </button>
+        </div>
+
+        <button
+          onClick={onLogout}
+          className="ml-auto flex items-center gap-1.5 text-sm text-slate-400 hover:text-slate-700 transition-colors">
+          <LogOut size={15} /> Sign out
+        </button>
+      </div>
+
+      {adminTab === 'shops' && (
+        <AdminPage onViewShop={onViewShop} onTenantsLoaded={onTenantsLoaded} />
+      )}
+      {adminTab === 'analytics' && <CostAnalyticsPage />}
+    </div>
+  );
+}
+
 export default function App() {
   const [authed, setAuthed] = useState(isAuthenticated());
   const [viewTenant, setViewTenant] = useState<AdminTenant | null>(getAdminTenant);
@@ -114,25 +169,11 @@ export default function App() {
     // No shop selected → show admin panel
     if (!viewTenant) {
       return (
-        <div className="min-h-screen bg-slate-50">
-          {/* Admin header */}
-          <div className="h-14 bg-white border-b border-slate-200 flex items-center px-6 gap-4">
-            <img src="/logo.png" alt="SkedAI" className="h-8 w-auto" />
-            <span className="text-sm font-semibold text-slate-700">Admin Panel</span>
-            <button
-              onClick={handleLogout}
-              className="ml-auto flex items-center gap-1.5 text-sm text-slate-400 hover:text-slate-700 transition-colors">
-              <LogOut size={15} /> Sign out
-            </button>
-          </div>
-          <AdminPage
-            onViewShop={(t) => {
-              // Collect all tenants from the page when user clicks View
-              handleViewShop(t);
-            }}
-            onTenantsLoaded={setAllTenants}
-          />
-        </div>
+        <AdminShell
+          onLogout={handleLogout}
+          onViewShop={handleViewShop}
+          onTenantsLoaded={setAllTenants}
+        />
       );
     }
 

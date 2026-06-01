@@ -1,4 +1,5 @@
 import twilio from 'twilio';
+import { logMessage } from './messageLog.js';
 
 // ── Send via Twilio ───────────────────────────────────────────────────────────
 // Client is created per-call so tenant-specific credentials can be used.
@@ -77,6 +78,7 @@ export async function sendWhatsAppMessage(
     const tenant = tenantOrFromNumber;
     if (tenant?.provider === 'meta') {
       await sendViaMeta(to, message, tenant);
+      if (tenant?.id) logMessage(tenant.id, 'outbound', 'meta');
     } else {
       // Twilio — use tenant's WhatsApp number; tenant credentials if set
       const fromNumber =
@@ -84,6 +86,7 @@ export async function sendWhatsAppMessage(
         process.env.TWILIO_WHATSAPP_FROM ||
         'whatsapp:+14155238886';
       await sendViaTwilio(to, message, fromNumber, tenant);
+      if (tenant?.id) logMessage(tenant.id, 'outbound', 'twilio');
     }
   } catch (err) {
     console.error('[sendWhatsAppMessage error]', err);

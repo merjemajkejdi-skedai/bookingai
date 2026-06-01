@@ -396,6 +396,15 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_hotel_reviews_tenant  ON hotel_reviews(tenant_id, created_at);
   CREATE INDEX IF NOT EXISTS idx_hotel_reviews_status  ON hotel_reviews(tenant_id, status);
   CREATE INDEX IF NOT EXISTS idx_hotel_reviews_flagged ON hotel_reviews(tenant_id, is_flagged);
+  CREATE TABLE IF NOT EXISTS message_log (
+    id           TEXT PRIMARY KEY,
+    tenant_id    TEXT NOT NULL,
+    direction    TEXT NOT NULL,
+    provider     TEXT NOT NULL,
+    created_at   TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE INDEX IF NOT EXISTS idx_message_log_tenant  ON message_log(tenant_id, created_at);
+  CREATE INDEX IF NOT EXISTS idx_message_log_created ON message_log(created_at);
 `;
 
 export async function runMigrations() {
@@ -462,6 +471,11 @@ export async function runMigrations() {
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS reviews_enabled INTEGER NOT NULL DEFAULT 0`,
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS review_notification_frequency TEXT NOT NULL DEFAULT 'immediate'`,
       `ALTER TABLE hotel_reviews ADD COLUMN IF NOT EXISTS owner_notified INTEGER NOT NULL DEFAULT 0`,
+      // analytics_001 — message log for cost tracking
+      `CREATE TABLE IF NOT EXISTS message_log (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, direction TEXT NOT NULL, provider TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP))`,
+      `CREATE INDEX IF NOT EXISTS idx_message_log_tenant  ON message_log(tenant_id, created_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_message_log_created ON message_log(created_at)`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -573,6 +587,12 @@ export async function runMigrations() {
     .all().map((r: any) => r.name as string);
   if (!hotelReviewCols.includes('owner_notified'))
     exec('ALTER TABLE hotel_reviews ADD COLUMN owner_notified INTEGER NOT NULL DEFAULT 0');
+
+  // users — is_admin flag
+  const userCols = prepare("SELECT name FROM pragma_table_info('users')")
+    .all().map((r: any) => r.name as string);
+  if (!userCols.includes('is_admin'))
+    exec('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0');
 
   console.log('✅ SQLite migrations complete');
 }

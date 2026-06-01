@@ -87,6 +87,28 @@ async function authFetch<T>(path: string, opts?: RequestInit): Promise<T> {
   return json.data as T;
 }
 
+/** Like authFetch but never appends tenantId — for platform-wide admin endpoints */
+async function adminFetch<T>(path: string, opts?: RequestInit): Promise<T> {
+  const token = getToken();
+  const { headers: extraHeaders, ...restOpts } = opts ?? {};
+  const url = `${API_BASE}${path}`;
+  const res = await fetch(url, {
+    ...restOpts,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(extraHeaders ?? {}),
+    },
+  });
+  const text = await res.text();
+  if (!text) throw new Error('Empty response from server');
+  let json: any;
+  try { json = JSON.parse(text); }
+  catch { throw new Error(`Server error: ${res.status}`); }
+  if (!json.success) throw new Error(json.error || 'Request failed');
+  return json.data as T;
+}
+
 export const authApi = {
   login: (email: string, password: string) =>
     authFetch<{ token: string; user: AuthUser }>('/auth/login', {
@@ -99,6 +121,15 @@ export const authApi = {
       method: 'POST',
       body: JSON.stringify({ currentPassword, newPassword }),
     }),
+};
+
+export const analyticsApi = {
+  getMessages: (period: string) =>
+    adminFetch<any[]>(`/admin/analytics/messages?period=${period}`),
+  getSummary: (period: string) =>
+    adminFetch<any>(`/admin/analytics/summary?period=${period}`),
+  getTimeline: (period: string) =>
+    adminFetch<any[]>(`/admin/analytics/timeline?period=${period}`),
 };
 
 export const adminApi = {

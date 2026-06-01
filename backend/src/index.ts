@@ -13,6 +13,7 @@ import { hotelRouter } from './routes/hotel.js';
 import { emailWebhookRouter } from './routes/emailWebhook.js';
 import { skedaiRouter } from './skedai/routes.js';
 import { startDigestCron } from './reviews/digestCron.js';
+import { adminAnalyticsRouter } from './routes/adminAnalytics.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -41,6 +42,7 @@ app.use('/api', artClassRouter);
 app.use('/api', restaurantRouter);
 app.use('/auth', authRouter);
 app.use('/admin', adminRouter);
+app.use('/admin/analytics', adminAnalyticsRouter);
 app.use('/hotel', hotelRouter);
 app.use('/api', skedaiRouter);
 app.use('/whatsapp', whatsappRouter);

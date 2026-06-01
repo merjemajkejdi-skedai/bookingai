@@ -9,6 +9,7 @@ import { runHotelAgent } from '../hotel/agent.js';
 import { runSkedAIAgent } from '../skedai/agent.js';
 import { isPg, prepare, query, queryOne } from '../db/database.js';
 import { sendWhatsAppMessage } from './twilio.js';
+import { logMessage } from './messageLog.js';
 
 export const whatsappRouter = Router();
 
@@ -102,6 +103,9 @@ async function handleMetaWebhook(req: Request, res: Response) {
       return;
     }
 
+    // Log inbound (fire-and-forget)
+    logMessage(tenant.id, 'inbound', 'meta');
+
     const customerPhone = `+${from}`;
     const tenantType    = (tenant.type || '').toLowerCase();
 
@@ -187,6 +191,9 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
       console.error('❌ No tenant found for WhatsApp number:', To);
       return;
     }
+
+    // Log inbound (fire-and-forget)
+    logMessage(tenant.id, 'inbound', (tenant.provider === 'meta' ? 'meta' : 'twilio'));
 
     const tenantType = (tenant.type || '').toLowerCase();
     console.log(`🏪 Tenant: ${tenant.id} (type: ${tenantType})`);
