@@ -293,7 +293,7 @@ function ThreadPanel({
 
         {/* Survey / checkout controls */}
         <div className="flex items-center gap-2 flex-shrink-0">
-          {stayInfo.guest_status === 'checked_in' && !stayInfo.survey_sent && (
+          {(stayInfo.guest_status === 'checked_in' || stayInfo.guest_status === 'checked_out') && !stayInfo.survey_sent && stayInfo.stay_id && (
             <button
               onClick={handleCheckout}
               disabled={checkingOut}
@@ -302,7 +302,7 @@ function ThreadPanel({
               {checkingOut
                 ? <RefreshCw size={12} className="animate-spin" />
                 : <LogOut size={12} />}
-              Check out &amp; survey
+              {stayInfo.guest_status === 'checked_in' ? 'Check out & survey' : 'Send survey'}
             </button>
           )}
           {stayInfo.survey_sent && (
@@ -597,8 +597,8 @@ export function ConversationsPage() {
                     <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
                       <span className="text-[10px] text-slate-400">{timeAgo(c.updated_at)}</span>
                       <span className="text-[10px] text-slate-400">{c.message_count} msg{c.message_count !== 1 ? 's' : ''}</span>
-                      {/* Checkout button — shown for checked-in guests who haven't been surveyed */}
-                      {c.guest_status === 'checked_in' && !c.survey_sent && c.stay_id && (
+                      {/* Checkout / survey button */}
+                      {(c.guest_status === 'checked_in' || c.guest_status === 'checked_out') && !c.survey_sent && c.stay_id && (
                         <button
                           onClick={e => handleCheckoutFromList(e, c)}
                           disabled={checkingOutId === c.stay_id}
@@ -607,7 +607,7 @@ export function ConversationsPage() {
                           {checkingOutId === c.stay_id
                             ? <RefreshCw size={9} className="animate-spin" />
                             : <LogOut size={9} />}
-                          Check out &amp; survey
+                          {c.guest_status === 'checked_in' ? 'Check out & survey' : 'Send survey'}
                         </button>
                       )}
                       {/* Survey status badge */}

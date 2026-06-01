@@ -106,16 +106,19 @@ hotelRouter.patch('/guests/:id/checkout', requireAuth, async (req: Request, res:
 hotelRouter.post('/guests/:id/checkout-survey', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
   try {
-    // Load guest + tenant in one query
+    // Load guest + tenant — works for both checked_in and checked_out guests
+    // (staff may check out via the Guests tab first, then send the survey separately)
     const guest = await dbGet(
       `SELECT gs.*, t.whatsapp_number, t.provider, t.twilio_account_sid, t.twilio_auth_token
        FROM hotel_guest_stays gs
        JOIN tenants t ON t.id = gs.tenant_id
-       WHERE gs.id = ? AND gs.tenant_id = ? AND gs.status = 'checked_in'`,
+       WHERE gs.id = ? AND gs.tenant_id = ?
+         AND gs.status IN ('checked_in', 'checked_out')
+         AND gs.survey_sent = 0`,
       req.params.id, tenantId,
     ) as any;
 
-    if (!guest) return err(res, 'Guest not found or already checked out', 404);
+    if (!guest) return err(res, 'Guest not found or survey already sent', 404);
 
     // Load hotel config for hotel name
     const config = await dbGet('SELECT * FROM hotel_config WHERE tenant_id = ?', tenantId) as any;
@@ -144,15 +147,6 @@ hotelRouter.post('/guests/:id/checkout-survey', requireAuth, async (req: Request
 
     if (!guestPhone) return err(res, 'Cannot determine guest phone number — ask the guest to message the hotel first', 400);
 
-    // Mark checked_out + survey_sent
-    const now = new Date().toISOString();
-    await dbRun(
-      `UPDATE hotel_guest_stays
-       SET status = 'checked_out', survey_sent = 1, survey_sent_at = ?
-       WHERE id = ? AND tenant_id = ?`,
-      now, req.params.id, tenantId,
-    );
-
     // Build survey message
     const surveyMessage = [
       `Thank you for staying with us at *${hotelName}*! 🏨`,
@@ -164,7 +158,8 @@ hotelRouter.post('/guests/:id/checkout-survey', requireAuth, async (req: Request
       `_(1 = very poor, 10 = exceptional)_`,
     ].join('\n');
 
-    // Send survey via WhatsApp
+    // ── Send WhatsApp FIRST — only update DB if the send succeeds ─────────────
+    // (Prevents guests getting stuck as checked_out+survey_sent=1 with no message)
     const tenantObj = {
       id:                  tenantId,
       whatsapp_number:     guest.whatsapp_number,
@@ -173,6 +168,25 @@ hotelRouter.post('/guests/:id/checkout-survey', requireAuth, async (req: Request
       twilio_auth_token:   guest.twilio_auth_token,
     };
     await sendWhatsAppMessage(guestPhone, surveyMessage, tenantObj);
+
+    // ── Now mark the stay as checked_out + survey_sent ────────────────────────
+    const now = new Date().toISOString();
+    if (guest.status === 'checked_in') {
+      await dbRun(
+        `UPDATE hotel_guest_stays
+         SET status = 'checked_out', survey_sent = 1, survey_sent_at = ?
+         WHERE id = ? AND tenant_id = ?`,
+        now, req.params.id, tenantId,
+      );
+    } else {
+      // Already checked_out (e.g. checked out via Guests tab) — just mark survey sent
+      await dbRun(
+        `UPDATE hotel_guest_stays
+         SET survey_sent = 1, survey_sent_at = ?
+         WHERE id = ? AND tenant_id = ?`,
+        now, req.params.id, tenantId,
+      );
+    }
 
     // Log the survey message in hotel_conversations
     const convRow = await dbGet(
@@ -189,7 +203,7 @@ hotelRouter.post('/guests/:id/checkout-survey', requireAuth, async (req: Request
       );
     }
 
-    ok(res, { checked_out: true, survey_sent: true });
+    ok(res, { checked_out: guest.status === 'checked_in', survey_sent: true });
   } catch (e: any) { err(res, e.message, 500); }
 });
 
