@@ -46,6 +46,8 @@ export const api = {
     req<GuestStay>('/hotel/guests/checkin', { method: 'POST', body: JSON.stringify(data) }),
   checkOut: (id: string) =>
     req(`/hotel/guests/${id}/checkout`, { method: 'PATCH' }),
+  checkoutAndSurvey: (guestId: string) =>
+    req(`/hotel/guests/${guestId}/checkout-survey`, { method: 'POST' }),
   importGuests: async (file: File): Promise<{ imported: number }> => {
     const fileBase64 = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();

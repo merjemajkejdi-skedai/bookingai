@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Save, Wifi, Coffee, Waves, UtensilsCrossed, Clock, Phone, MapPin, BookOpen, UserCheck, Star, MessageSquare } from 'lucide-react';
+import { Save, Wifi, Coffee, Waves, UtensilsCrossed, Clock, Phone, MapPin, BookOpen, UserCheck, Star, MessageSquare, SmilePlus } from 'lucide-react';
 import { api } from '../api';
 import { Button, Input, Spinner } from '../ui';
 
@@ -176,7 +176,18 @@ interface Config {
   menu_url: string;
   ask_guest_identity: boolean;
   message_forward: boolean;
+  // Survey config
+  review_platform_url: string;
+  review_platform_name: string;
+  survey_positive_threshold: number;
+  survey_positive_message: string;
+  survey_negative_message: string;
 }
+
+const DEFAULT_POSITIVE_MSG =
+  'We are so glad you enjoyed your stay! It would mean the world to us if you could share your experience online — it only takes a minute and helps us welcome more wonderful guests like you.';
+const DEFAULT_NEGATIVE_MSG =
+  'We are truly sorry your experience did not meet your expectations. Your feedback is very important to us and we will use it to improve. We hope to have the opportunity to welcome you back for a much better stay.';
 
 const EMPTY: Config = {
   hotel_name: '',
@@ -192,6 +203,11 @@ const EMPTY: Config = {
   menu_url: '',
   ask_guest_identity: true,
   message_forward: true,
+  review_platform_url: '',
+  review_platform_name: 'Booking.com',
+  survey_positive_threshold: 8,
+  survey_positive_message: DEFAULT_POSITIVE_MSG,
+  survey_negative_message: DEFAULT_NEGATIVE_MSG,
 };
 
 export function ConfigPage() {
@@ -211,6 +227,12 @@ export function ConfigPage() {
             // Default to true when column is absent (null/undefined).
             ask_guest_identity: c.ask_guest_identity !== 0,
             message_forward:    c.message_forward    !== 0,
+            // Survey fields — use defaults if not yet configured
+            review_platform_url:         c.review_platform_url         ?? '',
+            review_platform_name:        c.review_platform_name        ?? 'Booking.com',
+            survey_positive_threshold:   Number(c.survey_positive_threshold) || 8,
+            survey_positive_message:     c.survey_positive_message     ?? DEFAULT_POSITIVE_MSG,
+            survey_negative_message:     c.survey_negative_message     ?? DEFAULT_NEGATIVE_MSG,
           });
         }
       })
@@ -218,7 +240,7 @@ export function ConfigPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  function field(k: Exclude<keyof Config, 'ask_guest_identity' | 'message_forward'>) {
+  function field(k: Exclude<keyof Config, 'ask_guest_identity' | 'message_forward' | 'survey_positive_threshold'>) {
     return {
       value: (config[k] as string) || '',
       onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -232,8 +254,13 @@ export function ConfigPage() {
     try {
       await api.updateConfig({
         ...config,
-        ask_guest_identity: config.ask_guest_identity ? 1 : 0,
-        message_forward:    config.message_forward    ? 1 : 0,
+        ask_guest_identity:         config.ask_guest_identity ? 1 : 0,
+        message_forward:            config.message_forward    ? 1 : 0,
+        review_platform_url:        config.review_platform_url        || null,
+        review_platform_name:       config.review_platform_name       || 'Booking.com',
+        survey_positive_threshold:  config.survey_positive_threshold,
+        survey_positive_message:    config.survey_positive_message    || null,
+        survey_negative_message:    config.survey_negative_message    || null,
       } as any);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -363,6 +390,75 @@ export function ConfigPage() {
                 </div>
               </div>
             ))}
+          </section>
+
+          {/* Guest Satisfaction Survey */}
+          <section className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+            <div className="flex items-center gap-2">
+              <SmilePlus size={15} className="text-slate-400" />
+              <h2 className="text-sm font-semibold text-slate-700">Guest Satisfaction Survey</h2>
+            </div>
+            <p className="text-xs text-slate-400 -mt-1">
+              Sent automatically when a guest is checked out from the Conversations tab.
+              The guest rates their stay 1–10; high scores get a review link, low scores get a personal apology.
+            </p>
+
+            <Input
+              label="Review platform name"
+              placeholder="Booking.com"
+              {...field('review_platform_name')}
+            />
+            <Input
+              label="Review platform URL"
+              placeholder="https://www.booking.com/hotel/…#tab-reviews"
+              {...field('review_platform_url')}
+            />
+
+            <div className="space-y-1">
+              <label className="block text-sm font-medium text-slate-700">
+                Positive score threshold
+              </label>
+              <select
+                value={config.survey_positive_threshold}
+                onChange={e => setConfig(c => ({ ...c, survey_positive_threshold: Number(e.target.value) }))}
+                className="w-40 rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400/40"
+              >
+                {[6, 7, 8, 9].map(n => (
+                  <option key={n} value={n}>{n} or above = positive</option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-400">
+                Guests scoring at or above this receive the review link. Below this gets the apology.
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-sm font-medium text-slate-700">
+                Message for happy guests
+              </label>
+              <textarea
+                rows={3}
+                value={config.survey_positive_message}
+                onChange={e => setConfig(c => ({ ...c, survey_positive_message: e.target.value }))}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-brand-400/40"
+              />
+              <p className="text-xs text-slate-400">Sent before the review link.</p>
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-sm font-medium text-slate-700">
+                Message for unhappy guests
+              </label>
+              <textarea
+                rows={3}
+                value={config.survey_negative_message}
+                onChange={e => setConfig(c => ({ ...c, survey_negative_message: e.target.value }))}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-brand-400/40"
+              />
+              <p className="text-xs text-slate-400">
+                The manager also receives a WhatsApp alert with the guest score and phone number.
+              </p>
+            </div>
           </section>
 
           <Button type="submit" disabled={saving} className="w-full">

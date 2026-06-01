@@ -101,6 +101,75 @@ hotelRouter.patch('/guests/:id/checkout', requireAuth, async (req: Request, res:
   } catch (e: any) { err(res, e.message, 500); }
 });
 
+// POST /hotel/guests/:id/checkout-survey
+// Marks guest as checked_out and immediately sends a 1-10 satisfaction survey via WhatsApp
+hotelRouter.post('/guests/:id/checkout-survey', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    // Load guest + tenant in one query
+    const guest = await dbGet(
+      `SELECT gs.*, t.whatsapp_number, t.provider, t.twilio_account_sid, t.twilio_auth_token
+       FROM hotel_guest_stays gs
+       JOIN tenants t ON t.id = gs.tenant_id
+       WHERE gs.id = ? AND gs.tenant_id = ? AND gs.status = 'checked_in'`,
+      req.params.id, tenantId,
+    ) as any;
+
+    if (!guest) return err(res, 'Guest not found or already checked out', 404);
+
+    // Load hotel config for hotel name
+    const config = await dbGet('SELECT * FROM hotel_config WHERE tenant_id = ?', tenantId) as any;
+    const hotelName = config?.hotel_name || 'our hotel';
+
+    // Mark checked_out + survey_sent
+    const now = new Date().toISOString();
+    await dbRun(
+      `UPDATE hotel_guest_stays
+       SET status = 'checked_out', survey_sent = 1, survey_sent_at = ?
+       WHERE id = ? AND tenant_id = ?`,
+      now, req.params.id, tenantId,
+    );
+
+    // Build survey message
+    const surveyMessage = [
+      `Thank you for staying with us at *${hotelName}*! 🏨`,
+      ``,
+      `We hope you had a wonderful stay.`,
+      ``,
+      `On a scale of *1 to 10*, how would you rate your experience with us?`,
+      ``,
+      `_(1 = very poor, 10 = exceptional)_`,
+    ].join('\n');
+
+    // Send survey via WhatsApp
+    const tenantObj = {
+      id:                  tenantId,
+      whatsapp_number:     guest.whatsapp_number,
+      provider:            guest.provider,
+      twilio_account_sid:  guest.twilio_account_sid,
+      twilio_auth_token:   guest.twilio_auth_token,
+    };
+    await sendWhatsAppMessage(guest.guest_phone, surveyMessage, tenantObj);
+
+    // Log the survey message in hotel_conversations
+    const convRow = await dbGet(
+      'SELECT messages FROM hotel_conversations WHERE tenant_id = ? AND guest_phone = ?',
+      tenantId, guest.guest_phone,
+    ) as any;
+
+    if (convRow) {
+      const msgs = JSON.parse(convRow.messages || '[]');
+      msgs.push({ role: 'assistant', content: surveyMessage, ts: now });
+      await dbRun(
+        'UPDATE hotel_conversations SET messages = ?, updated_at = ? WHERE tenant_id = ? AND guest_phone = ?',
+        JSON.stringify(msgs), now, tenantId, guest.guest_phone,
+      );
+    }
+
+    ok(res, { checked_out: true, survey_sent: true });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
 // POST /hotel/guests/import  — upload arrivals XLS/XLSX as base64 JSON body
 hotelRouter.post('/guests/import', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
@@ -186,6 +255,11 @@ hotelRouter.put('/config', requireAuth, async (req: Request, res: Response) => {
     location_url = null, menu_url = null,
     ask_guest_identity = 1,
     message_forward = 1,
+    review_platform_url = null,
+    review_platform_name = 'Booking.com',
+    survey_positive_threshold = 8,
+    survey_negative_message = null,
+    survey_positive_message = null,
   } = req.body;
 
   if (!hotel_name) return err(res, 'hotel_name is required');
@@ -195,8 +269,10 @@ hotelRouter.put('/config', requireAuth, async (req: Request, res: Response) => {
       `INSERT INTO hotel_config
          (tenant_id, hotel_name, check_in_time, check_out_time, wifi_password,
           breakfast_hours, pool_hours, restaurant_hours, reception_phone, emergency_phone,
-          location_url, menu_url, ask_guest_identity, message_forward)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+          location_url, menu_url, ask_guest_identity, message_forward,
+          review_platform_url, review_platform_name, survey_positive_threshold,
+          survey_negative_message, survey_positive_message)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT (tenant_id) DO UPDATE SET
          hotel_name = excluded.hotel_name,
          check_in_time = excluded.check_in_time,
@@ -210,10 +286,19 @@ hotelRouter.put('/config', requireAuth, async (req: Request, res: Response) => {
          location_url = excluded.location_url,
          menu_url = excluded.menu_url,
          ask_guest_identity = excluded.ask_guest_identity,
-         message_forward = excluded.message_forward`,
+         message_forward = excluded.message_forward,
+         review_platform_url = excluded.review_platform_url,
+         review_platform_name = excluded.review_platform_name,
+         survey_positive_threshold = excluded.survey_positive_threshold,
+         survey_negative_message = COALESCE(excluded.survey_negative_message, survey_negative_message),
+         survey_positive_message = COALESCE(excluded.survey_positive_message, survey_positive_message)`,
       tenantId, hotel_name, check_in_time, check_out_time, wifi_password,
       breakfast_hours, pool_hours, restaurant_hours, reception_phone, emergency_phone,
       location_url, menu_url, ask_guest_identity ? 1 : 0, message_forward ? 1 : 0,
+      review_platform_url, review_platform_name,
+      Number(survey_positive_threshold) || 8,
+      survey_negative_message || null,
+      survey_positive_message || null,
     );
     ok(res, { updated: true });
   } catch (e: any) { err(res, e.message, 500); }
@@ -417,6 +502,8 @@ hotelRouter.delete('/blocked/:phone', requireAuth, async (req: Request, res: Res
 hotelRouter.get('/conversations', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
   try {
+    // Join on the most recent stay per guest (regardless of status) so we can
+    // show survey state for checked-out guests too
     const rows = await dbAll(
       `SELECT
          c.id,
@@ -425,14 +512,20 @@ hotelRouter.get('/conversations', requireAuth, async (req: Request, res: Respons
          c.messages,
          c.last_message,
          c.updated_at,
+         g.id           AS stay_id,
          g.guest_name,
          g.check_in,
-         g.check_out
+         g.check_out,
+         g.status       AS guest_status,
+         g.survey_sent,
+         g.survey_score
        FROM hotel_conversations c
        LEFT JOIN hotel_guest_stays g
-         ON  g.tenant_id   = c.tenant_id
-         AND g.guest_phone = c.guest_phone
-         AND g.status      = 'checked_in'
+         ON g.id = (
+           SELECT id FROM hotel_guest_stays
+           WHERE tenant_id = c.tenant_id AND guest_phone = c.guest_phone
+           ORDER BY created_at DESC LIMIT 1
+         )
        WHERE c.tenant_id = ?
        ORDER BY c.updated_at DESC
        LIMIT 100`,
@@ -443,7 +536,13 @@ hotelRouter.get('/conversations', requireAuth, async (req: Request, res: Respons
     const result = rows.map((r: any) => {
       const msgs: any[] = JSON.parse(r.messages || '[]');
       const lastMsg = msgs[msgs.length - 1] ?? null;
-      return { ...r, messages: undefined, last_message_preview: lastMsg, message_count: msgs.length };
+      return {
+        ...r,
+        messages: undefined,
+        last_message_preview: lastMsg,
+        message_count: msgs.length,
+        survey_sent: !!r.survey_sent,
+      };
     });
 
     ok(res, result);
@@ -458,20 +557,30 @@ hotelRouter.get('/conversations/:phone', requireAuth, async (req: Request, res: 
     const row = await dbGet(
       `SELECT
          c.*,
+         g.id           AS stay_id,
          g.guest_name,
          g.check_in,
-         g.check_out
+         g.check_out,
+         g.status       AS guest_status,
+         g.survey_sent,
+         g.survey_score
        FROM hotel_conversations c
        LEFT JOIN hotel_guest_stays g
-         ON  g.tenant_id   = c.tenant_id
-         AND g.guest_phone = c.guest_phone
-         AND g.status      = 'checked_in'
+         ON g.id = (
+           SELECT id FROM hotel_guest_stays
+           WHERE tenant_id = c.tenant_id AND guest_phone = c.guest_phone
+           ORDER BY created_at DESC LIMIT 1
+         )
        WHERE c.tenant_id = ? AND c.guest_phone = ?`,
       tenantId, phone,
     ) as any;
 
     if (!row) return ok(res, null);
-    ok(res, { ...row, messages: JSON.parse(row.messages || '[]') });
+    ok(res, {
+      ...row,
+      messages: JSON.parse(row.messages || '[]'),
+      survey_sent: !!row.survey_sent,
+    });
   } catch (e: any) { err(res, e.message, 500); }
 });
 

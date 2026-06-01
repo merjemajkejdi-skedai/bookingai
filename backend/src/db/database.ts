@@ -284,6 +284,10 @@ const SCHEMA = `
     check_in TEXT NOT NULL,
     check_out TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'checked_in',
+    survey_sent INTEGER NOT NULL DEFAULT 0,
+    survey_score INTEGER,
+    survey_sent_at TEXT,
+    survey_replied_at TEXT,
     created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
   );
   CREATE TABLE IF NOT EXISTS hotel_requests (
@@ -324,7 +328,12 @@ const SCHEMA = `
     menu_url TEXT,
     timezone TEXT NOT NULL DEFAULT 'Europe/Tirane',
     ask_guest_identity INTEGER NOT NULL DEFAULT 1,
-    message_forward    INTEGER NOT NULL DEFAULT 1
+    message_forward    INTEGER NOT NULL DEFAULT 1,
+    review_platform_url TEXT,
+    review_platform_name TEXT NOT NULL DEFAULT 'Booking.com',
+    survey_positive_threshold INTEGER NOT NULL DEFAULT 8,
+    survey_negative_message TEXT NOT NULL DEFAULT 'We are truly sorry your experience did not meet your expectations. Your feedback is very important to us and we will use it to improve. We hope to have the opportunity to welcome you back for a much better stay.',
+    survey_positive_message TEXT NOT NULL DEFAULT 'We are so glad you enjoyed your stay! It would mean the world to us if you could share your experience online — it only takes a minute and helps us welcome more wonderful guests like you.'
   );
   CREATE TABLE IF NOT EXISTS restaurant_config (
     tenant_id TEXT PRIMARY KEY,
@@ -471,6 +480,16 @@ export async function runMigrations() {
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS reviews_enabled INTEGER NOT NULL DEFAULT 0`,
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS review_notification_frequency TEXT NOT NULL DEFAULT 'immediate'`,
       `ALTER TABLE hotel_reviews ADD COLUMN IF NOT EXISTS owner_notified INTEGER NOT NULL DEFAULT 0`,
+      // survey_001 — post-checkout satisfaction survey
+      `ALTER TABLE hotel_guest_stays ADD COLUMN IF NOT EXISTS survey_sent INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE hotel_guest_stays ADD COLUMN IF NOT EXISTS survey_score INTEGER`,
+      `ALTER TABLE hotel_guest_stays ADD COLUMN IF NOT EXISTS survey_sent_at TEXT`,
+      `ALTER TABLE hotel_guest_stays ADD COLUMN IF NOT EXISTS survey_replied_at TEXT`,
+      `ALTER TABLE hotel_config ADD COLUMN IF NOT EXISTS review_platform_url TEXT`,
+      `ALTER TABLE hotel_config ADD COLUMN IF NOT EXISTS review_platform_name TEXT NOT NULL DEFAULT 'Booking.com'`,
+      `ALTER TABLE hotel_config ADD COLUMN IF NOT EXISTS survey_positive_threshold INTEGER NOT NULL DEFAULT 8`,
+      `ALTER TABLE hotel_config ADD COLUMN IF NOT EXISTS survey_negative_message TEXT NOT NULL DEFAULT 'We are truly sorry your experience did not meet your expectations. Your feedback is very important to us and we will use it to improve. We hope to have the opportunity to welcome you back for a much better stay.'`,
+      `ALTER TABLE hotel_config ADD COLUMN IF NOT EXISTS survey_positive_message TEXT NOT NULL DEFAULT 'We are so glad you enjoyed your stay! It would mean the world to us if you could share your experience online — it only takes a minute and helps us welcome more wonderful guests like you.'`,
       // analytics_001 — message log for cost tracking
       `CREATE TABLE IF NOT EXISTS message_log (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, direction TEXT NOT NULL, provider TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP))`,
       `CREATE INDEX IF NOT EXISTS idx_message_log_tenant  ON message_log(tenant_id, created_at)`,
@@ -565,6 +584,18 @@ export async function runMigrations() {
     if (!cols.includes(col)) exec(`ALTER TABLE tenants ADD COLUMN ${def}`);
   }
 
+  // hotel_guest_stays — survey fields
+  const staysCols = prepare("SELECT name FROM pragma_table_info('hotel_guest_stays')")
+    .all().map((r: any) => r.name as string);
+  if (!staysCols.includes('survey_sent'))
+    exec('ALTER TABLE hotel_guest_stays ADD COLUMN survey_sent INTEGER NOT NULL DEFAULT 0');
+  if (!staysCols.includes('survey_score'))
+    exec('ALTER TABLE hotel_guest_stays ADD COLUMN survey_score INTEGER');
+  if (!staysCols.includes('survey_sent_at'))
+    exec('ALTER TABLE hotel_guest_stays ADD COLUMN survey_sent_at TEXT');
+  if (!staysCols.includes('survey_replied_at'))
+    exec('ALTER TABLE hotel_guest_stays ADD COLUMN survey_replied_at TEXT');
+
   // hotel_config columns added after initial schema
   const hotelConfigCols = prepare("SELECT name FROM pragma_table_info('hotel_config')")
     .all().map((r: any) => r.name as string);
@@ -572,6 +603,16 @@ export async function runMigrations() {
     exec('ALTER TABLE hotel_config ADD COLUMN ask_guest_identity INTEGER NOT NULL DEFAULT 1');
   if (!hotelConfigCols.includes('message_forward'))
     exec('ALTER TABLE hotel_config ADD COLUMN message_forward INTEGER NOT NULL DEFAULT 1');
+  if (!hotelConfigCols.includes('review_platform_url'))
+    exec('ALTER TABLE hotel_config ADD COLUMN review_platform_url TEXT');
+  if (!hotelConfigCols.includes('review_platform_name'))
+    exec("ALTER TABLE hotel_config ADD COLUMN review_platform_name TEXT NOT NULL DEFAULT 'Booking.com'");
+  if (!hotelConfigCols.includes('survey_positive_threshold'))
+    exec('ALTER TABLE hotel_config ADD COLUMN survey_positive_threshold INTEGER NOT NULL DEFAULT 8');
+  if (!hotelConfigCols.includes('survey_negative_message'))
+    exec("ALTER TABLE hotel_config ADD COLUMN survey_negative_message TEXT NOT NULL DEFAULT 'We are truly sorry your experience did not meet your expectations. Your feedback is very important to us and we will use it to improve. We hope to have the opportunity to welcome you back for a much better stay.'");
+  if (!hotelConfigCols.includes('survey_positive_message'))
+    exec("ALTER TABLE hotel_config ADD COLUMN survey_positive_message TEXT NOT NULL DEFAULT 'We are so glad you enjoyed your stay! It would mean the world to us if you could share your experience online — it only takes a minute and helps us welcome more wonderful guests like you.'");
 
   // tenant columns for review routing
   if (!cols.includes('review_email_slug'))

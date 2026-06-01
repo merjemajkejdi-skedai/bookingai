@@ -9,6 +9,10 @@ export interface GuestStay {
   check_in: string;
   check_out: string;
   status: 'checked_in' | 'checked_out';
+  survey_sent: boolean;
+  survey_score: number | null;
+  survey_sent_at: string | null;
+  survey_replied_at: string | null;
   created_at: string;
 }
 
@@ -66,6 +70,11 @@ export interface Conversation {
   guest_name: string | null;
   check_in: string | null;
   check_out: string | null;
+  // Survey / stay fields (populated from most-recent guest stay JOIN)
+  stay_id: string | null;
+  guest_status: 'checked_in' | 'checked_out' | null;
+  survey_sent: boolean;
+  survey_score: number | null;
 }
 
 export interface BlockedNumber {
@@ -131,4 +140,10 @@ export interface HotelConfig {
   menu_url: string | null;
   ask_guest_identity: number; // 1 = ask, 0 = skip
   message_forward: number;    // 1 = forward requests to depts, 0 = FAQ-only + reception link
+  // Survey config
+  review_platform_url: string | null;
+  review_platform_name: string | null;
+  survey_positive_threshold: number;
+  survey_positive_message: string | null;
+  survey_negative_message: string | null;
 }

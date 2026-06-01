@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { MessageSquare, RefreshCw, Send, User, Bot, UserCheck, Search, Bell, BellOff } from 'lucide-react';
+import { MessageSquare, RefreshCw, Send, User, Bot, UserCheck, Search, Bell, BellOff, LogOut } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../api';
 import type { Conversation, HotelMessage } from '../types';
@@ -182,29 +182,53 @@ function MessageBubble({ msg, guestName, roomNumber }: {
 
 // ── Thread panel ──────────────────────────────────────────────────────────────
 
-function ThreadPanel({ conv, onClose }: { conv: Conversation; onClose: () => void }) {
-  const [messages, setMessages] = useState<HotelMessage[]>(conv.messages ?? []);
-  const [reply, setReply]       = useState('');
-  const [sending, setSending]   = useState(false);
-  const [loading, setLoading]   = useState(false);
+function ThreadPanel({
+  conv,
+  onClose,
+  onCheckout,
+}: {
+  conv: Conversation;
+  onClose: () => void;
+  onCheckout: () => void;
+}) {
+  const [messages,    setMessages]    = useState<HotelMessage[]>(conv.messages ?? []);
+  const [reply,       setReply]       = useState('');
+  const [sending,     setSending]     = useState(false);
+  const [loading,     setLoading]     = useState(false);
+  const [checkingOut, setCheckingOut] = useState(false);
+  // Live stay info — refreshed from the full conversation endpoint
+  const [stayInfo, setStayInfo] = useState({
+    stay_id:      conv.stay_id,
+    guest_status: conv.guest_status,
+    survey_sent:  conv.survey_sent,
+    survey_score: conv.survey_score,
+  });
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  function loadThread() {
+    return api.getConversation(conv.guest_phone)
+      .then(full => {
+        if (full?.messages) setMessages(full.messages);
+        // Refresh stay info from the full response
+        setStayInfo({
+          stay_id:      (full as any)?.stay_id      ?? null,
+          guest_status: (full as any)?.guest_status ?? null,
+          survey_sent:  !!(full as any)?.survey_sent,
+          survey_score: (full as any)?.survey_score ?? null,
+        });
+      })
+      .catch(() => {});
+  }
 
   // Load full thread on mount
   useEffect(() => {
     setLoading(true);
-    api.getConversation(conv.guest_phone)
-      .then(full => { if (full?.messages) setMessages(full.messages); })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    loadThread().finally(() => setLoading(false));
   }, [conv.guest_phone]);
 
   // Poll thread every 4s
   useEffect(() => {
-    const id = setInterval(() => {
-      api.getConversation(conv.guest_phone)
-        .then(full => { if (full?.messages) setMessages(full.messages); })
-        .catch(() => {});
-    }, THREAD_POLL_MS);
+    const id = setInterval(loadThread, THREAD_POLL_MS);
     return () => clearInterval(id);
   }, [conv.guest_phone]);
 
@@ -212,6 +236,21 @@ function ThreadPanel({ conv, onClose }: { conv: Conversation; onClose: () => voi
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  async function handleCheckout() {
+    if (!stayInfo.stay_id) return;
+    if (!window.confirm(`Check out ${conv.guest_name ?? 'this guest'} and send a satisfaction survey?`)) return;
+    setCheckingOut(true);
+    try {
+      await api.checkoutAndSurvey(stayInfo.stay_id);
+      await loadThread();
+      onCheckout(); // refresh parent inbox list
+    } catch (e: any) {
+      alert(`Checkout failed: ${e.message}`);
+    } finally {
+      setCheckingOut(false);
+    }
+  }
 
   async function handleSend() {
     const text = reply.trim();
@@ -236,24 +275,53 @@ function ThreadPanel({ conv, onClose }: { conv: Conversation; onClose: () => voi
   return (
     <div className="flex flex-col h-full bg-slate-50">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-slate-200 flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center">
+      <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-slate-200 flex-shrink-0 gap-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center flex-shrink-0">
             <User size={15} className="text-brand-600" />
           </div>
-          <div>
-            <p className="text-sm font-semibold text-slate-800">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-slate-800 truncate">
               {conv.guest_name ?? displayPhone(conv.guest_phone)}
             </p>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-400 truncate">
               {displayPhone(conv.guest_phone)}
               {conv.room_number && ` · Room ${conv.room_number}`}
             </p>
           </div>
         </div>
-        <button onClick={onClose} className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1 rounded hover:bg-slate-100">
-          ← Back
-        </button>
+
+        {/* Survey / checkout controls */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {stayInfo.guest_status === 'checked_in' && !stayInfo.survey_sent && (
+            <button
+              onClick={handleCheckout}
+              disabled={checkingOut}
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg transition-colors"
+            >
+              {checkingOut
+                ? <RefreshCw size={12} className="animate-spin" />
+                : <LogOut size={12} />}
+              Check out &amp; survey
+            </button>
+          )}
+          {stayInfo.survey_sent && (
+            <div className="flex items-center gap-1.5 text-xs text-slate-400">
+              <span>Survey sent</span>
+              {stayInfo.survey_score != null && (
+                <span className={`font-semibold ${stayInfo.survey_score >= 8 ? 'text-green-600' : 'text-red-500'}`}>
+                  · {stayInfo.survey_score}/10
+                </span>
+              )}
+              {stayInfo.survey_score == null && (
+                <span className="text-amber-500 font-medium">· Awaiting reply</span>
+              )}
+            </div>
+          )}
+          <button onClick={onClose} className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1 rounded hover:bg-slate-100">
+            ← Back
+          </button>
+        </div>
       </div>
 
       {/* Messages */}
@@ -396,7 +464,11 @@ export function ConversationsPage() {
   if (selected) {
     return (
       <div className="h-full flex flex-col">
-        <ThreadPanel conv={selected} onClose={() => setSelected(null)} />
+        <ThreadPanel
+          conv={selected}
+          onClose={() => setSelected(null)}
+          onCheckout={() => loadConvs(true)}
+        />
       </div>
     );
   }
@@ -508,6 +580,15 @@ export function ConversationsPage() {
                     <div className="flex flex-col items-end gap-1 flex-shrink-0">
                       <span className="text-[10px] text-slate-400">{timeAgo(c.updated_at)}</span>
                       <span className="text-[10px] text-slate-400">{c.message_count} msg{c.message_count !== 1 ? 's' : ''}</span>
+                      {c.guest_status === 'checked_out' && c.survey_sent && (
+                        <span className={`text-[10px] font-semibold ${
+                          c.survey_score != null
+                            ? c.survey_score >= 8 ? 'text-green-600' : 'text-red-500'
+                            : 'text-amber-500'
+                        }`}>
+                          {c.survey_score != null ? `★ ${c.survey_score}/10` : 'Survey pending'}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </button>
