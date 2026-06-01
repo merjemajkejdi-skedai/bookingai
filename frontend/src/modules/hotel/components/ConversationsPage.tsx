@@ -374,10 +374,11 @@ function ThreadPanel({
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export function ConversationsPage() {
-  const [convs, setConvs]       = useState<Conversation[]>([]);
-  const [loading, setLoading]   = useState(true);
-  const [selected, setSelected] = useState<Conversation | null>(null);
-  const [search, setSearch]     = useState('');
+  const [convs, setConvs]             = useState<Conversation[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [selected, setSelected]       = useState<Conversation | null>(null);
+  const [search, setSearch]           = useState('');
+  const [checkingOutId, setCheckingOutId] = useState<string | null>(null);
 
   const { permission, request: requestNotifPermission } = useNotificationPermission();
 
@@ -450,6 +451,22 @@ export function ConversationsPage() {
   function openConversation(c: Conversation) {
     lastOpenedRef.current.set(c.guest_phone, new Date().toISOString());
     setSelected(c);
+  }
+
+  // Check out a guest directly from the list
+  async function handleCheckoutFromList(e: React.MouseEvent, c: Conversation) {
+    e.stopPropagation();
+    if (!c.stay_id) return;
+    if (!window.confirm(`Check out ${c.guest_name ?? 'this guest'} and send a satisfaction survey?`)) return;
+    setCheckingOutId(c.stay_id);
+    try {
+      await api.checkoutAndSurvey(c.stay_id);
+      await loadConvs(true);
+    } catch (err: any) {
+      alert(`Checkout failed: ${err.message}`);
+    } finally {
+      setCheckingOutId(null);
+    }
   }
 
   const filtered = convs.filter(c => {
@@ -577,9 +594,23 @@ export function ConversationsPage() {
                     </div>
 
                     {/* Meta */}
-                    <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                    <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
                       <span className="text-[10px] text-slate-400">{timeAgo(c.updated_at)}</span>
                       <span className="text-[10px] text-slate-400">{c.message_count} msg{c.message_count !== 1 ? 's' : ''}</span>
+                      {/* Checkout button — shown for checked-in guests who haven't been surveyed */}
+                      {c.guest_status === 'checked_in' && !c.survey_sent && c.stay_id && (
+                        <button
+                          onClick={e => handleCheckoutFromList(e, c)}
+                          disabled={checkingOutId === c.stay_id}
+                          className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-md transition-colors"
+                        >
+                          {checkingOutId === c.stay_id
+                            ? <RefreshCw size={9} className="animate-spin" />
+                            : <LogOut size={9} />}
+                          Check out &amp; survey
+                        </button>
+                      )}
+                      {/* Survey status badge */}
                       {c.guest_status === 'checked_out' && c.survey_sent && (
                         <span className={`text-[10px] font-semibold ${
                           c.survey_score != null
