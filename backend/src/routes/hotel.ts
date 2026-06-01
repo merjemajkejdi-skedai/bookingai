@@ -121,6 +121,29 @@ hotelRouter.post('/guests/:id/checkout-survey', requireAuth, async (req: Request
     const config = await dbGet('SELECT * FROM hotel_config WHERE tenant_id = ?', tenantId) as any;
     const hotelName = config?.hotel_name || 'our hotel';
 
+    // Resolve the guest's actual phone number.
+    // XLS-imported guests have guest_phone = '' — fall back to the conversation phone
+    // matched by room_number, and also patch the stay so future lookups work.
+    let guestPhone: string = guest.guest_phone ?? '';
+    if (!guestPhone && guest.room_number) {
+      const convForRoom = await dbGet(
+        `SELECT guest_phone FROM hotel_conversations
+         WHERE tenant_id = ? AND room_number = ?
+         ORDER BY updated_at DESC LIMIT 1`,
+        tenantId, guest.room_number,
+      ) as any;
+      if (convForRoom?.guest_phone) {
+        guestPhone = convForRoom.guest_phone;
+        // Patch the stay with the real phone so phone-based lookups work going forward
+        await dbRun(
+          `UPDATE hotel_guest_stays SET guest_phone = ? WHERE id = ? AND tenant_id = ?`,
+          guestPhone, req.params.id, tenantId,
+        );
+      }
+    }
+
+    if (!guestPhone) return err(res, 'Cannot determine guest phone number — ask the guest to message the hotel first', 400);
+
     // Mark checked_out + survey_sent
     const now = new Date().toISOString();
     await dbRun(
@@ -149,12 +172,12 @@ hotelRouter.post('/guests/:id/checkout-survey', requireAuth, async (req: Request
       twilio_account_sid:  guest.twilio_account_sid,
       twilio_auth_token:   guest.twilio_auth_token,
     };
-    await sendWhatsAppMessage(guest.guest_phone, surveyMessage, tenantObj);
+    await sendWhatsAppMessage(guestPhone, surveyMessage, tenantObj);
 
     // Log the survey message in hotel_conversations
     const convRow = await dbGet(
       'SELECT messages FROM hotel_conversations WHERE tenant_id = ? AND guest_phone = ?',
-      tenantId, guest.guest_phone,
+      tenantId, guestPhone,
     ) as any;
 
     if (convRow) {
@@ -162,7 +185,7 @@ hotelRouter.post('/guests/:id/checkout-survey', requireAuth, async (req: Request
       msgs.push({ role: 'assistant', content: surveyMessage, ts: now });
       await dbRun(
         'UPDATE hotel_conversations SET messages = ?, updated_at = ? WHERE tenant_id = ? AND guest_phone = ?',
-        JSON.stringify(msgs), now, tenantId, guest.guest_phone,
+        JSON.stringify(msgs), now, tenantId, guestPhone,
       );
     }
 
@@ -523,8 +546,15 @@ hotelRouter.get('/conversations', requireAuth, async (req: Request, res: Respons
        LEFT JOIN hotel_guest_stays g
          ON g.id = (
            SELECT id FROM hotel_guest_stays
-           WHERE tenant_id = c.tenant_id AND guest_phone = c.guest_phone
-           ORDER BY created_at DESC LIMIT 1
+           WHERE tenant_id = c.tenant_id
+             AND (
+               (guest_phone != '' AND guest_phone = c.guest_phone)
+               OR (guest_phone = '' AND c.room_number IS NOT NULL AND c.room_number != '' AND room_number = c.room_number)
+             )
+           ORDER BY
+             CASE WHEN guest_phone != '' AND guest_phone = c.guest_phone THEN 0 ELSE 1 END,
+             created_at DESC
+           LIMIT 1
          )
        WHERE c.tenant_id = ?
        ORDER BY c.updated_at DESC
@@ -568,8 +598,15 @@ hotelRouter.get('/conversations/:phone', requireAuth, async (req: Request, res: 
        LEFT JOIN hotel_guest_stays g
          ON g.id = (
            SELECT id FROM hotel_guest_stays
-           WHERE tenant_id = c.tenant_id AND guest_phone = c.guest_phone
-           ORDER BY created_at DESC LIMIT 1
+           WHERE tenant_id = c.tenant_id
+             AND (
+               (guest_phone != '' AND guest_phone = c.guest_phone)
+               OR (guest_phone = '' AND c.room_number IS NOT NULL AND c.room_number != '' AND room_number = c.room_number)
+             )
+           ORDER BY
+             CASE WHEN guest_phone != '' AND guest_phone = c.guest_phone THEN 0 ELSE 1 END,
+             created_at DESC
+           LIMIT 1
          )
        WHERE c.tenant_id = ? AND c.guest_phone = ?`,
       tenantId, phone,
