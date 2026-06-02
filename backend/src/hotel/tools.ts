@@ -285,6 +285,20 @@ export async function executeHotelTool(
               }),
             });
             console.log(`[Hotel notify] ✅ Template sent to ${match.name} in ${deptLang}`);
+
+            // Send guest photo immediately after template — conversation is now open
+            if (finalPhoto) {
+              try {
+                await client.messages.create({
+                  from:     fromNumber,
+                  to:       toNumber,
+                  mediaUrl: [finalPhoto],
+                });
+                console.log(`[Hotel notify] ✅ Photo sent to ${match.name}`);
+              } catch (photoErr: any) {
+                console.warn(`[Hotel notify] Photo send failed:`, photoErr.message);
+              }
+            }
           } else {
             // Fallback to free-form if no template SID configured
             const EMOJI: Record<string, string> = {
