@@ -51,6 +51,7 @@ export interface Department {
   request_types: string[];
   is_active: boolean;
   response_time_minutes: number;
+  language: string;
   created_at: string;
 }
 

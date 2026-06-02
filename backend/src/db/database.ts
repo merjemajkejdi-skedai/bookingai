@@ -381,6 +381,7 @@ const SCHEMA = `
     request_types         TEXT NOT NULL DEFAULT '[]',
     is_active             INTEGER NOT NULL DEFAULT 1,
     response_time_minutes INTEGER NOT NULL DEFAULT 30,
+    language              TEXT NOT NULL DEFAULT 'en',
     created_at            TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
   );
   CREATE INDEX IF NOT EXISTS idx_hotel_depts_tenant ON hotel_departments(tenant_id);
@@ -546,6 +547,8 @@ export async function runMigrations() {
       `ALTER TABLE hotel_requests ADD COLUMN IF NOT EXISTS photo_mime_type TEXT`,
       // dept_response_001 — configurable response time per department
       `ALTER TABLE hotel_departments ADD COLUMN IF NOT EXISTS response_time_minutes INTEGER NOT NULL DEFAULT 30`,
+      // dept_lang_001 — notification language per department
+      `ALTER TABLE hotel_departments ADD COLUMN IF NOT EXISTS language TEXT NOT NULL DEFAULT 'en'`,
       // dept_template_001 — per-tenant dept notification template SID
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS twilio_dept_template_sid TEXT`,
     ];
@@ -698,6 +701,8 @@ export async function runMigrations() {
     .all().map((r: any) => r.name as string);
   if (!deptCols.includes('response_time_minutes'))
     exec('ALTER TABLE hotel_departments ADD COLUMN response_time_minutes INTEGER NOT NULL DEFAULT 30');
+  if (!deptCols.includes('language'))
+    exec("ALTER TABLE hotel_departments ADD COLUMN language TEXT NOT NULL DEFAULT 'en'");
 
   const hotelReviewCols = prepare("SELECT name FROM pragma_table_info('hotel_reviews')")
     .all().map((r: any) => r.name as string);

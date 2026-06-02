@@ -81,9 +81,9 @@ export const api = {
 
   // Departments
   getDepartments: () => req<Department[]>('/hotel/departments'),
-  createDepartment: (data: { name: string; whatsapp: string; request_types: string[]; response_time_minutes?: number }) =>
+  createDepartment: (data: { name: string; whatsapp: string; request_types: string[]; response_time_minutes?: number; language?: string }) =>
     req<Department>('/hotel/departments', { method: 'POST', body: JSON.stringify(data) }),
-  updateDepartment: (id: string, data: { name: string; whatsapp: string; request_types: string[]; is_active?: boolean; response_time_minutes?: number }) =>
+  updateDepartment: (id: string, data: { name: string; whatsapp: string; request_types: string[]; is_active?: boolean; response_time_minutes?: number; language?: string }) =>
     req(`/hotel/departments/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteDepartment: (id: string) =>
     req(`/hotel/departments/${id}`, { method: 'DELETE' }),

@@ -5,6 +5,17 @@ import { api } from '../api';
 import type { Department } from '../types';
 import { Button, Input, Modal, Spinner } from '../ui';
 
+const DEPT_LANGUAGES = [
+  { value: 'en', label: '🇬🇧 English' },
+  { value: 'sq', label: '🇦🇱 Albanian' },
+  { value: 'it', label: '🇮🇹 Italian' },
+  { value: 'de', label: '🇩🇪 German' },
+  { value: 'fr', label: '🇫🇷 French' },
+  { value: 'es', label: '🇪🇸 Spanish' },
+  { value: 'tr', label: '🇹🇷 Turkish' },
+  { value: 'ru', label: '🇷🇺 Russian' },
+];
+
 const ALL_REQUEST_TYPES = [
   { id: 'room_service',       label: 'Room Service',       emoji: '🍽️' },
   { id: 'housekeeping',       label: 'Housekeeping',       emoji: '🛏️' },
@@ -14,7 +25,7 @@ const ALL_REQUEST_TYPES = [
   { id: 'other',              label: 'Other',              emoji: '📋' },
 ];
 
-const EMPTY_FORM = { name: '', whatsapp: '', request_types: [] as string[], response_time_minutes: 30 };
+const EMPTY_FORM = { name: '', whatsapp: '', request_types: [] as string[], response_time_minutes: 30, language: 'en' };
 
 function DeptForm({
   initial,
@@ -75,6 +86,20 @@ function DeptForm({
           <span className="text-xs text-slate-400">minutes</span>
         </div>
         <p className="text-xs text-slate-400">Shown to guests when their request is logged</p>
+      </div>
+
+      <div className="space-y-1">
+        <label className="text-xs font-medium text-slate-600">Notification language</label>
+        <select
+          value={form.language || 'en'}
+          onChange={e => setForm(f => ({ ...f, language: e.target.value }))}
+          className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+        >
+          {DEPT_LANGUAGES.map(l => (
+            <option key={l.value} value={l.value}>{l.label}</option>
+          ))}
+        </select>
+        <p className="text-xs text-slate-400">Request details will be translated to this language before being sent to the department</p>
       </div>
 
       <div>
@@ -161,6 +186,7 @@ export function DepartmentsPage() {
       request_types: dept.request_types,
       is_active: !dept.is_active,
       response_time_minutes: dept.response_time_minutes || 30,
+      language: dept.language || 'en',
     });
     load();
   }
@@ -209,9 +235,10 @@ export function DepartmentsPage() {
                       <span className="text-xs bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full">Inactive</span>
                     )}
                   </div>
-                  <div className="flex items-center gap-3 text-xs text-slate-400 mb-2">
+                  <div className="flex items-center gap-3 text-xs text-slate-400 mb-2 flex-wrap">
                     <span className="flex items-center gap-1"><Phone size={11} /> {dept.whatsapp}</span>
-                    <span className="flex items-center gap-1"><Clock size={11} /> {dept.response_time_minutes || 30} min response</span>
+                    <span className="flex items-center gap-1"><Clock size={11} /> {dept.response_time_minutes || 30} min</span>
+                    <span>{DEPT_LANGUAGES.find(l => l.value === (dept.language || 'en'))?.label ?? '🇬🇧 English'}</span>
                   </div>
                   <div className="flex flex-wrap gap-1">
                     {dept.request_types.map(t => {
@@ -273,7 +300,7 @@ export function DepartmentsPage() {
       {editing && (
         <Modal title={`Edit — ${editing.name}`} onClose={() => setEditing(null)} wide>
           <DeptForm
-            initial={{ name: editing.name, whatsapp: editing.whatsapp, request_types: editing.request_types, response_time_minutes: editing.response_time_minutes || 30 }}
+            initial={{ name: editing.name, whatsapp: editing.whatsapp, request_types: editing.request_types, response_time_minutes: editing.response_time_minutes || 30, language: editing.language || 'en' }}
             onSave={handleUpdate}
             onCancel={() => setEditing(null)}
             saving={saving}

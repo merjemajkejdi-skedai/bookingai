@@ -1,6 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 
+const anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY });
+
 async function dbAll(sql: string, ...p: unknown[]) { return isPg ? query(sql, p) : prepare(sql).all(...p); }
 async function dbGet(sql: string, ...p: unknown[]) { return isPg ? queryOne(sql, p) : prepare(sql).get(...p); }
 async function dbRun(sql: string, ...p: unknown[]) { if (isPg) return queryRun(sql, p); prepare(sql).run(...p); }
@@ -187,7 +189,7 @@ export async function executeHotelTool(
       // Notify the matching department via WhatsApp
       try {
         const depts = await dbAll(
-          `SELECT name, whatsapp, request_types, response_time_minutes FROM hotel_departments
+          `SELECT name, whatsapp, request_types, response_time_minutes, language FROM hotel_departments
            WHERE tenant_id = ? AND is_active = 1`,
           tenantId,
         ) as any[];
@@ -240,6 +242,36 @@ export async function executeHotelTool(
 
           console.log(`[Hotel notify] Sending to ${match.whatsapp} (dept: ${match.name})`);
           if (templateSid) {
+            // Translate description to department language if not English
+            const deptLang = (match.language as string) || 'en';
+            let translatedDescription = description;
+
+            if (deptLang !== 'en') {
+              try {
+                const LANG_NAMES: Record<string, string> = {
+                  sq: 'Albanian', it: 'Italian', de: 'German',
+                  fr: 'French',   es: 'Spanish', tr: 'Turkish',
+                  ru: 'Russian',  ar: 'Arabic',
+                };
+                const langName = LANG_NAMES[deptLang] || deptLang;
+                const translation = await anthropicClient.messages.create({
+                  model:      process.env.CLAUDE_MODEL || 'claude-sonnet-4-6',
+                  max_tokens: 200,
+                  messages: [{
+                    role:    'user',
+                    content: `Translate this hotel request description to ${langName}. Reply with ONLY the translation, no explanation, no quotes: ${description}`,
+                  }],
+                });
+                const textBlock = translation.content.find((b: any) => b.type === 'text');
+                if (textBlock?.type === 'text' && (textBlock as any).text.trim()) {
+                  translatedDescription = (textBlock as any).text.trim();
+                }
+                console.log(`[Hotel notify] Translated to ${langName}: "${translatedDescription}"`);
+              } catch (err: any) {
+                console.warn('[Hotel notify] Translation failed, using original:', err.message);
+              }
+            }
+
             // Send via approved WhatsApp template
             await client.messages.create({
               from:             fromNumber,
@@ -248,11 +280,11 @@ export async function executeHotelTool(
               contentVariables: JSON.stringify({
                 '1': finalRoom || 'N/A',
                 '2': TYPE_LABELS[request_type] || request_type,
-                '3': description,
+                '3': translatedDescription,
                 '4': time,
               }),
             });
-            console.log(`[Hotel notify] ✅ Template sent to ${match.name}`);
+            console.log(`[Hotel notify] ✅ Template sent to ${match.name} in ${deptLang}`);
           } else {
             // Fallback to free-form if no template SID configured
             const EMOJI: Record<string, string> = {
