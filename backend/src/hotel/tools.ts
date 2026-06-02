@@ -208,6 +208,9 @@ export async function executeHotelTool(
         }
 
         if (match?.whatsapp) {
+          // Load full tenant row so per-tenant Twilio credentials are used
+          const tenantRow = await dbGet('SELECT * FROM tenants WHERE id = ?', tenantId) as any;
+
           const EMOJI: Record<string, string> = {
             room_service:       '🍽️',
             housekeeping:       '🛏️',
@@ -245,19 +248,14 @@ export async function executeHotelTool(
           ].join('\n');
 
           console.log(`[Hotel notify] Sending to ${match.whatsapp} (dept: ${match.name})`);
-          await sendWhatsAppMessage(match.whatsapp, msg);
+          await sendWhatsAppMessage(match.whatsapp, msg, tenantRow);
           console.log(`[Hotel notify] ✅ Sent to ${match.name}`);
 
           // Forward guest photo to department if present
           if (finalPhoto) {
-            try {
-              const tenantForPhoto = await dbGet('SELECT * FROM tenants WHERE id = ?', tenantId) as any;
-              const { sendWhatsAppMedia } = await import('../whatsapp/twilio.js');
-              await sendWhatsAppMedia(match.whatsapp, finalPhoto, '', tenantForPhoto)
-                .catch((e: any) => console.error('[Hotel notify] Failed to send photo:', e.message));
-            } catch (e: any) {
-              console.warn('[Hotel notify] photo forward failed:', e.message);
-            }
+            const { sendWhatsAppMedia } = await import('../whatsapp/twilio.js');
+            await sendWhatsAppMedia(match.whatsapp, finalPhoto, '', tenantRow)
+              .catch((e: any) => console.error('[Hotel notify] Failed to send photo:', e.message));
           }
         } else {
           console.warn(`[Hotel notify] ⚠️ No active department matched request_type="${request_type}"`);
