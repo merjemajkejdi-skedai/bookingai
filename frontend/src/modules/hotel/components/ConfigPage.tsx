@@ -262,8 +262,25 @@ export function ConfigPage() {
         survey_positive_message:    config.survey_positive_message    || null,
         survey_negative_message:    config.survey_negative_message    || null,
       } as any);
+      // Reload from server to confirm what was actually persisted
+      const fresh = await api.getConfig() as any;
+      if (fresh && Object.keys(fresh).length > 0) {
+        setConfig(prev => ({
+          ...prev,
+          ...fresh,
+          ask_guest_identity: fresh.ask_guest_identity !== 0,
+          message_forward:    fresh.message_forward    !== 0,
+          review_platform_url:        fresh.review_platform_url         ?? '',
+          review_platform_name:       fresh.review_platform_name        ?? 'Booking.com',
+          survey_positive_threshold:  Number(fresh.survey_positive_threshold) || 8,
+          survey_positive_message:    fresh.survey_positive_message     ?? DEFAULT_POSITIVE_MSG,
+          survey_negative_message:    fresh.survey_negative_message     ?? DEFAULT_NEGATIVE_MSG,
+        }));
+      }
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
+    } catch (e: any) {
+      alert(`Save failed: ${e.message}`);
     } finally {
       setSaving(false);
     }
