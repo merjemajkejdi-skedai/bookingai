@@ -92,7 +92,7 @@ adminRouter.post('/tenants', async (req: Request, res: Response) => {
 adminRouter.put('/tenants/:id', async (req: Request, res: Response) => {
   const {
     name, whatsappNumber, plan, isActive, billingEmail, type, timezone, hasAnalytics,
-    reviewsEnabled, surveyEnabled,
+    reviewsEnabled, surveyEnabled, menusEnabled,
     provider, metaPhoneNumberId, metaAccessToken, metaWabaId,
     twilioAccountSid, twilioAuthToken,
   } = req.body;
@@ -114,6 +114,7 @@ adminRouter.put('/tenants/:id', async (req: Request, res: Response) => {
        has_analytics        = COALESCE(?,has_analytics),
        reviews_enabled      = COALESCE(?,reviews_enabled),
        survey_enabled       = COALESCE(?,survey_enabled),
+       menus_enabled        = COALESCE(?,menus_enabled),
        provider             = COALESCE(?,provider),
        meta_phone_number_id = COALESCE(?,meta_phone_number_id),
        meta_access_token    = COALESCE(?,meta_access_token),
@@ -127,6 +128,7 @@ adminRouter.put('/tenants/:id', async (req: Request, res: Response) => {
     hasAnalytics    !== undefined ? (hasAnalytics    ? 1 : 0) : null,
     reviewsEnabled  !== undefined ? (reviewsEnabled  ? 1 : 0) : null,
     surveyEnabled   !== undefined ? (surveyEnabled   ? 1 : 0) : null,
+    menusEnabled    !== undefined ? (menusEnabled    ? 1 : 0) : null,
     provider??null, metaPhoneNumberId??null, metaAccessToken??null, metaWabaId??null,
     twilioAccountSid||null, twilioAuthToken||null,
     req.params.id,

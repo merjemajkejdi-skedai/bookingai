@@ -23,12 +23,14 @@ export function HotelModule({ onLogout }: Props) {
   const [page, setPage] = useState<Page>('conversations');
   const [reviewsEnabled, setReviewsEnabled] = useState(false);
   const [surveyEnabled,  setSurveyEnabled]  = useState(false);
+  const [menusEnabled,   setMenusEnabled]   = useState(false);
 
   useEffect(() => {
     api.getConfig()
       .then((c: any) => {
         setReviewsEnabled(!!c?.reviews_enabled);
         setSurveyEnabled(!!c?.survey_enabled);
+        setMenusEnabled(!!c?.menus_enabled);
       })
       .catch(() => {});
   }, []);
@@ -40,7 +42,7 @@ export function HotelModule({ onLogout }: Props) {
     { id: 'requests',      label: 'Requests',        icon: <BellRing size={16} /> },
     { id: 'guests',        label: 'Guests',          icon: <Users size={16} /> },
     { id: 'faq',           label: 'FAQ',             icon: <BookOpen size={16} /> },
-    { id: 'menus',         label: 'Menus',           icon: <UtensilsCrossed size={16} /> },
+    ...(menusEnabled ? [{ id: 'menus' as Page, label: 'Menus', icon: <UtensilsCrossed size={16} /> }] : []),
     { id: 'config',        label: 'Hotel Config',    icon: <Settings size={16} /> },
     { id: 'departments',   label: 'Departments',     icon: <Building2 size={16} /> },
     ...(reviewsEnabled ? [{ id: 'reviews' as Page, label: 'Reviews', icon: <Star size={16} /> }] : []),

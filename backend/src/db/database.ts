@@ -118,6 +118,7 @@ const SCHEMA = `
     is_active INTEGER NOT NULL DEFAULT 1,
     billing_email TEXT NOT NULL DEFAULT '',
     survey_enabled INTEGER NOT NULL DEFAULT 0,
+    menus_enabled INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
   );
   CREATE TABLE IF NOT EXISTS specialists (
@@ -531,6 +532,8 @@ export async function runMigrations() {
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS survey_enabled INTEGER NOT NULL DEFAULT 0`,
       // conv_001 — track when guest last sent a message (for survey button 24h window)
       `ALTER TABLE hotel_conversations ADD COLUMN IF NOT EXISTS last_guest_message_at TEXT`,
+      // menus_flag_001 — per-tenant menus feature flag (hotel only)
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS menus_enabled INTEGER NOT NULL DEFAULT 0`,
       // menus_001 — hotel menus and items
       `CREATE TABLE IF NOT EXISTS hotel_menus (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, name TEXT NOT NULL, menu_type TEXT NOT NULL DEFAULT 'other', description TEXT, is_active INTEGER NOT NULL DEFAULT 1, file_url TEXT, file_name TEXT, file_type TEXT, keywords TEXT NOT NULL DEFAULT '[]', display_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP), updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP))`,
       `CREATE TABLE IF NOT EXISTS hotel_menu_items (id TEXT PRIMARY KEY, menu_id TEXT NOT NULL, tenant_id TEXT NOT NULL, name TEXT NOT NULL, description TEXT, price REAL, currency TEXT NOT NULL DEFAULT 'ALL', category TEXT, is_available INTEGER NOT NULL DEFAULT 1, display_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP))`,
@@ -666,6 +669,8 @@ export async function runMigrations() {
     exec("ALTER TABLE tenants ADD COLUMN review_notification_frequency TEXT NOT NULL DEFAULT 'immediate'");
   if (!cols.includes('survey_enabled'))
     exec('ALTER TABLE tenants ADD COLUMN survey_enabled INTEGER NOT NULL DEFAULT 0');
+  if (!cols.includes('menus_enabled'))
+    exec('ALTER TABLE tenants ADD COLUMN menus_enabled INTEGER NOT NULL DEFAULT 0');
 
   const convCols = prepare("SELECT name FROM pragma_table_info('hotel_conversations')")
     .all().map((r: any) => r.name as string);

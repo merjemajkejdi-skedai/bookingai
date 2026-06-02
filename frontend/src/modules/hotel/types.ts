@@ -142,6 +142,10 @@ export interface HotelConfig {
   menu_url: string | null;
   ask_guest_identity: number; // 1 = ask, 0 = skip
   message_forward: number;    // 1 = forward requests to depts, 0 = FAQ-only + reception link
+  // Feature flags (from tenants row, merged into config response)
+  reviews_enabled: number;
+  survey_enabled:  number;
+  menus_enabled:   number;
   // Survey config
   review_platform_url: string | null;
   review_platform_name: string | null;
