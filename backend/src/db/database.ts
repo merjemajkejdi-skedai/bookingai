@@ -117,6 +117,7 @@ const SCHEMA = `
     plan TEXT NOT NULL DEFAULT 'starter',
     is_active INTEGER NOT NULL DEFAULT 1,
     billing_email TEXT NOT NULL DEFAULT '',
+    survey_enabled INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
   );
   CREATE TABLE IF NOT EXISTS specialists (
@@ -495,6 +496,8 @@ export async function runMigrations() {
       `CREATE INDEX IF NOT EXISTS idx_message_log_tenant  ON message_log(tenant_id, created_at)`,
       `CREATE INDEX IF NOT EXISTS idx_message_log_created ON message_log(created_at)`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE`,
+      // survey_flag_001 — per-tenant survey feature flag (hotel only)
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS survey_enabled INTEGER NOT NULL DEFAULT 0`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -623,6 +626,8 @@ export async function runMigrations() {
     exec('ALTER TABLE tenants ADD COLUMN reviews_enabled INTEGER NOT NULL DEFAULT 0');
   if (!cols.includes('review_notification_frequency'))
     exec("ALTER TABLE tenants ADD COLUMN review_notification_frequency TEXT NOT NULL DEFAULT 'immediate'");
+  if (!cols.includes('survey_enabled'))
+    exec('ALTER TABLE tenants ADD COLUMN survey_enabled INTEGER NOT NULL DEFAULT 0');
 
   const hotelReviewCols = prepare("SELECT name FROM pragma_table_info('hotel_reviews')")
     .all().map((r: any) => r.name as string);

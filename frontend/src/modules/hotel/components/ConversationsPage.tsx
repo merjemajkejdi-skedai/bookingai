@@ -186,10 +186,12 @@ function ThreadPanel({
   conv,
   onClose,
   onCheckout,
+  surveyEnabled,
 }: {
   conv: Conversation;
   onClose: () => void;
   onCheckout: () => void;
+  surveyEnabled: boolean;
 }) {
   const [messages,    setMessages]    = useState<HotelMessage[]>(conv.messages ?? []);
   const [reply,       setReply]       = useState('');
@@ -293,7 +295,7 @@ function ThreadPanel({
 
         {/* Survey / checkout controls */}
         <div className="flex items-center gap-2 flex-shrink-0">
-          {(stayInfo.guest_status === 'checked_in' || stayInfo.guest_status === 'checked_out') && !stayInfo.survey_sent && stayInfo.stay_id && (
+          {surveyEnabled && (stayInfo.guest_status === 'checked_in' || stayInfo.guest_status === 'checked_out') && !stayInfo.survey_sent && stayInfo.stay_id && (
             <button
               onClick={handleCheckout}
               disabled={checkingOut}
@@ -373,7 +375,7 @@ function ThreadPanel({
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-export function ConversationsPage() {
+export function ConversationsPage({ surveyEnabled = false }: { surveyEnabled?: boolean }) {
   const [convs, setConvs]             = useState<Conversation[]>([]);
   const [loading, setLoading]         = useState(true);
   const [selected, setSelected]       = useState<Conversation | null>(null);
@@ -485,6 +487,7 @@ export function ConversationsPage() {
           conv={selected}
           onClose={() => setSelected(null)}
           onCheckout={() => loadConvs(true)}
+          surveyEnabled={surveyEnabled}
         />
       </div>
     );
@@ -597,8 +600,8 @@ export function ConversationsPage() {
                     <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
                       <span className="text-[10px] text-slate-400">{timeAgo(c.updated_at)}</span>
                       <span className="text-[10px] text-slate-400">{c.message_count} msg{c.message_count !== 1 ? 's' : ''}</span>
-                      {/* Checkout / survey button */}
-                      {(c.guest_status === 'checked_in' || c.guest_status === 'checked_out') && !c.survey_sent && c.stay_id && (
+                      {/* Survey button — only when feature is enabled for this tenant */}
+                      {surveyEnabled && (c.guest_status === 'checked_in' || c.guest_status === 'checked_out') && !c.survey_sent && c.stay_id && (
                         <button
                           onClick={e => handleCheckoutFromList(e, c)}
                           disabled={checkingOutId === c.stay_id}

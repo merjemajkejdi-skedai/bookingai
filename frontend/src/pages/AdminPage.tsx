@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Pencil, RefreshCw, Power, Phone, ExternalLink, BarChart2, Copy, Check, Star } from 'lucide-react';
+import { Plus, Pencil, RefreshCw, Power, Phone, ExternalLink, BarChart2, Copy, Check, Star, SmilePlus } from 'lucide-react';
 import { adminApi } from '../shared/lib/auth';
 import type { AdminTenant } from '../shared/lib/auth';
 import { Button, Modal, Input, Select, Spinner } from '../components/ui';
@@ -133,6 +133,15 @@ export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) 
                   title={t.reviews_enabled ? 'Disable Reviews tab' : 'Enable Reviews tab'}>
                   <Star size={13} className={t.reviews_enabled ? 'text-amber-500' : 'text-slate-300'} />
                 </Button>
+                {t.type === 'hotel' && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => adminApi.updateTenant(t.id, { surveyEnabled: !t.survey_enabled }).then(load)}
+                    title={t.survey_enabled ? 'Disable Survey feature' : 'Enable Survey feature'}>
+                    <SmilePlus size={13} className={t.survey_enabled ? 'text-green-500' : 'text-slate-300'} />
+                  </Button>
+                )}
               </div>
             </div>
           ))}
@@ -295,6 +304,7 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
   const [twilioAccountSid, setTwilioSid]      = useState(tenant.twilio_account_sid || '');
   const [twilioAuthToken, setTwilioToken]     = useState(tenant.twilio_auth_token || '');
   const [reviewsEnabled, setReviewsEnabled]   = useState(!!tenant.reviews_enabled);
+  const [surveyEnabled,  setSurveyEnabled]    = useState(!!tenant.survey_enabled);
   const [saving, setSaving]                   = useState(false);
   const [error, setError]                     = useState('');
 
@@ -303,7 +313,7 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
     try {
       await adminApi.updateTenant(tenant.id, {
         name, whatsappNumber: whatsapp, plan, billingEmail, type,
-        provider, reviewsEnabled,
+        provider, reviewsEnabled, surveyEnabled,
         metaPhoneNumberId: metaPhoneNumberId || null,
         metaAccessToken:   metaAccessToken   || null,
         metaWabaId:        metaWabaId        || null,
@@ -380,6 +390,21 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
             <span className="text-sm text-slate-700">Reviews tab</span>
             <span className="text-xs text-slate-400">{reviewsEnabled ? 'Enabled' : 'Disabled'}</span>
           </label>
+          {type === 'hotel' && (
+            <label className="flex items-center gap-3 cursor-pointer select-none">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={surveyEnabled}
+                onClick={() => setSurveyEnabled(v => !v)}
+                className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors ${surveyEnabled ? 'bg-green-500' : 'bg-slate-200'}`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ${surveyEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
+              </button>
+              <span className="text-sm text-slate-700">Guest Satisfaction Survey</span>
+              <span className="text-xs text-slate-400">{surveyEnabled ? 'Enabled' : 'Disabled'}</span>
+            </label>
+          )}
         </div>
 
         {error && <p className="text-sm text-red-500">{error}</p>}

@@ -21,10 +21,14 @@ export function HotelModule({ onLogout }: Props) {
   const currentUser = getStoredUser();
   const [page, setPage] = useState<Page>('conversations');
   const [reviewsEnabled, setReviewsEnabled] = useState(false);
+  const [surveyEnabled,  setSurveyEnabled]  = useState(false);
 
   useEffect(() => {
     api.getConfig()
-      .then((c: any) => setReviewsEnabled(!!c?.reviews_enabled))
+      .then((c: any) => {
+        setReviewsEnabled(!!c?.reviews_enabled);
+        setSurveyEnabled(!!c?.survey_enabled);
+      })
       .catch(() => {});
   }, []);
 
@@ -103,7 +107,7 @@ export function HotelModule({ onLogout }: Props) {
         {page === 'requests' && <RequestsPage />}
         {page === 'guests'   && <GuestsPage />}
         {page === 'faq'      && <FaqPage />}
-        {page === 'conversations' && <ConversationsPage />}
+        {page === 'conversations' && <ConversationsPage surveyEnabled={surveyEnabled} />}
         {page === 'config'        && <ConfigPage />}
         {page === 'departments'   && <DepartmentsPage />}
         {page === 'blocked'       && <BlockedPage />}
