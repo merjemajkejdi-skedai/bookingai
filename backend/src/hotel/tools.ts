@@ -1,6 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
-import { sendWhatsAppMessage } from '../whatsapp/twilio.js';
 
 async function dbAll(sql: string, ...p: unknown[]) { return isPg ? query(sql, p) : prepare(sql).all(...p); }
 async function dbGet(sql: string, ...p: unknown[]) { return isPg ? queryOne(sql, p) : prepare(sql).get(...p); }
@@ -211,51 +210,80 @@ export async function executeHotelTool(
           // Load full tenant row so per-tenant Twilio credentials are used
           const tenantRow = await dbGet('SELECT * FROM tenants WHERE id = ?', tenantId) as any;
 
-          const EMOJI: Record<string, string> = {
-            room_service:       '🍽️',
-            housekeeping:       '🛏️',
-            maintenance:        '🔧',
-            concierge_question: '💬',
-            complaint:          '⚠️',
-            other:              '📋',
-          };
-          const TYPE_LABEL: Record<string, string> = {
+          const accountSid  = tenantRow?.twilio_account_sid || process.env.TWILIO_ACCOUNT_SID;
+          const authToken   = tenantRow?.twilio_auth_token  || process.env.TWILIO_AUTH_TOKEN;
+          const fromNumber  = tenantRow?.whatsapp_number?.startsWith('whatsapp:')
+            ? tenantRow.whatsapp_number
+            : `whatsapp:${tenantRow?.whatsapp_number}`;
+          const toNumber    = match.whatsapp.startsWith('whatsapp:')
+            ? match.whatsapp
+            : `whatsapp:${match.whatsapp}`;
+
+          const { default: twilio } = await import('twilio');
+          const client = twilio(accountSid, authToken);
+
+          const TYPE_LABELS: Record<string, string> = {
             room_service:       'Room Service',
             housekeeping:       'Housekeeping',
             maintenance:        'Maintenance',
             concierge_question: 'Guest Question',
             complaint:          'Complaint',
-            other:              'Request',
+            other:              'General',
           };
           const time = new Date().toLocaleTimeString('en-GB', {
             hour: '2-digit', minute: '2-digit',
             timeZone: 'Europe/Tirane',
           });
 
-          const emoji      = EMOJI[request_type] || '📋';
-          const typeLabel  = TYPE_LABEL[request_type] || request_type;
-          const roomLabel  = finalRoom ? `Room ${finalRoom}` : 'Room N/A';
-          const nameLabel  = guest_name ? ` · ${guest_name}` : '';
-          const cleanPhone = guestPhone.replace(/^whatsapp:/, '');
-
-          const msg = [
-            `${emoji} *${typeLabel} — ${roomLabel}${nameLabel}*`,
-            `📱 Guest: ${cleanPhone}`,
-            ``,
-            description,
-            ``,
-            `_${time}_`,
-          ].join('\n');
+          const templateSid = process.env.TWILIO_DEPT_TEMPLATE_SID;
 
           console.log(`[Hotel notify] Sending to ${match.whatsapp} (dept: ${match.name})`);
-          await sendWhatsAppMessage(match.whatsapp, msg, tenantRow);
-          console.log(`[Hotel notify] ✅ Sent to ${match.name}`);
+          if (templateSid) {
+            // Send via approved WhatsApp template
+            await client.messages.create({
+              from:             fromNumber,
+              to:               toNumber,
+              contentSid:       templateSid,
+              contentVariables: JSON.stringify({
+                '1': finalRoom || 'N/A',
+                '2': TYPE_LABELS[request_type] || request_type,
+                '3': description,
+                '4': time,
+              }),
+            });
+            console.log(`[Hotel notify] ✅ Template sent to ${match.name}`);
+          } else {
+            // Fallback to free-form if no template SID configured
+            const EMOJI: Record<string, string> = {
+              room_service:       '🍽️',
+              housekeeping:       '🛏️',
+              maintenance:        '🔧',
+              concierge_question: '💬',
+              complaint:          '⚠️',
+              other:              '📋',
+            };
+            const roomLabel  = finalRoom ? `Room ${finalRoom}` : 'Room N/A';
+            const nameLabel  = guest_name ? ` · ${guest_name}` : '';
+            const cleanPhone = guestPhone.replace(/^whatsapp:/, '');
+            const msg = [
+              `${EMOJI[request_type] || '📋'} *${TYPE_LABELS[request_type] || request_type} — ${roomLabel}${nameLabel}*`,
+              `📱 Guest: ${cleanPhone}`,
+              ``,
+              description,
+              ``,
+              `_${time}_`,
+            ].join('\n');
+            await client.messages.create({ from: fromNumber, to: toNumber, body: msg });
+            console.log(`[Hotel notify] ✅ Free-form sent to ${match.name}`);
+          }
 
-          // Forward guest photo to department if present
+          // Send guest photo as a separate message if present
           if (finalPhoto) {
-            const { sendWhatsAppMedia } = await import('../whatsapp/twilio.js');
-            await sendWhatsAppMedia(match.whatsapp, finalPhoto, '', tenantRow)
-              .catch((e: any) => console.error('[Hotel notify] Failed to send photo:', e.message));
+            await client.messages.create({
+              from:     fromNumber,
+              to:       toNumber,
+              mediaUrl: [finalPhoto],
+            }).catch((e: any) => console.error('[Hotel notify] Failed to send photo:', e.message));
           }
         } else {
           console.warn(`[Hotel notify] ⚠️ No active department matched request_type="${request_type}"`);
