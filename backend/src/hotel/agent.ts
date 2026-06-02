@@ -167,9 +167,17 @@ export async function runHotelAgent(
     console.warn('[Hotel] blocklist check failed:', e.message);
   }
 
+  // ── Load config + history (needed for both survey detection and main loop) ──
+  const [tenantRow, hotelConfig, hotelHistory] = await Promise.all([
+    dbGet('SELECT id, name FROM tenants WHERE id = ?', tenantId),
+    dbGet('SELECT * FROM hotel_config WHERE tenant_id = ?', tenantId),
+    getHotelHistory(tenantId, customerPhone),
+  ]);
+
   // ── SURVEY REPLY DETECTION ───────────────────────────────────────────────
-  // Runs BEFORE the main agent loop. If this guest has a pending survey
-  // (checked_out, survey_sent, no score yet), intercept and process the reply.
+  // If this guest has a pending survey (checked_out, survey_sent, no score yet),
+  // intercept numeric replies. Non-numeric replies get ONE nudge, then we fall
+  // through so Claude can answer their actual question normally.
   try {
     const surveyGuest = await dbGet(
       `SELECT * FROM hotel_guest_stays
@@ -185,8 +193,23 @@ export async function runHotelAgent(
         console.log(`[Hotel] 📋 Survey reply ${score}/10 from ${customerPhone}`);
         return await processSurveyReply(score, surveyGuest, tenantId, customerPhone);
       }
-      // Guest replied but not a number — nudge them
-      return 'Thank you! Could you please reply with a number between 1 and 10 to rate your stay? 😊';
+
+      // Non-numeric message — check if we've already nudged them
+      const NUDGE = 'Thank you! Could you please reply with a number between 1 and 10 to rate your stay? 😊';
+      const alreadyNudged = hotelHistory.some(
+        m => m.role === 'assistant' && m.content.includes('reply with a number between 1 and 10'),
+      );
+
+      if (!alreadyNudged) {
+        console.log(`[Hotel] 📋 Sending survey nudge to ${customerPhone}`);
+        // Save nudge to history so we don't repeat it next message
+        await saveHotelConversation(tenantId, customerPhone, customerMessage, NUDGE, null);
+        return NUDGE;
+      }
+
+      // Already nudged — fall through to the normal Claude agent so the
+      // guest's actual question gets answered
+      console.log(`[Hotel] 📋 Survey pending but already nudged — passing to agent`);
     }
   } catch (e: any) {
     console.warn('[Hotel] survey detection failed:', e.message);
@@ -222,13 +245,6 @@ export async function runHotelAgent(
     console.warn('[Hotel] guest guard check failed:', e.message);
   }
   */
-
-  // ── Load config + history ─────────────────────────────────────────────────
-  const [tenantRow, hotelConfig, hotelHistory] = await Promise.all([
-    dbGet('SELECT id, name FROM tenants WHERE id = ?', tenantId),
-    dbGet('SELECT * FROM hotel_config WHERE tenant_id = ?', tenantId),
-    getHotelHistory(tenantId, customerPhone),
-  ]);
 
   // Build Anthropic messages from hotel history (strip ts — not part of API format)
   const anthropicHistory: Anthropic.MessageParam[] = hotelHistory
