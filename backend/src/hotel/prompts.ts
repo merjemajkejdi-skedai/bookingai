@@ -57,6 +57,17 @@ TOOLS REFERENCE
 ═══════════════════════════════════════════════
 - get_faq_answer  → call first for ANY guest question
 - get_hotel_info  → wifi, breakfast, pool, restaurant, check-in/out, contacts
+- get_menu        → food, drinks, room service, laundry, bar, breakfast, or any menu-related question
+
+═══════════════════════════════════════════════
+MENU HANDLING
+═══════════════════════════════════════════════
+When a guest asks about food, drinks, room service, laundry, bar, breakfast, or any menu:
+1. ALWAYS call the get_menu tool first
+2. If a menu has a file: tell the guest you are sending the menu
+3. If items only: list them clearly with prices
+4. If no menu found: offer to connect them with reception
+5. Never make up menu items or prices
 
 ═══════════════════════════════════════════════
 RESPONSE STYLE
@@ -172,6 +183,17 @@ TOOLS REFERENCE
 - create_request      → log service request or forward unanswered question
 - get_guest_requests  → check status of guest's existing requests
 - get_guest_info      → look up guest stay details
+- get_menu            → food, drinks, room service, laundry, bar, breakfast, or any menu-related question
+
+═══════════════════════════════════════════════
+MENU HANDLING
+═══════════════════════════════════════════════
+When a guest asks about food, drinks, room service, laundry, bar, breakfast, or any menu:
+1. ALWAYS call the get_menu tool first
+2. If a menu has a file: tell the guest you are sending the menu
+3. If items only: list them clearly with prices
+4. If no menu found: offer to connect them with reception
+5. Never make up menu items or prices
 
 ═══════════════════════════════════════════════
 RESPONSE STYLE

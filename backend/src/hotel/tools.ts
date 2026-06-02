@@ -75,6 +75,21 @@ export const hotelTools: Anthropic.Tool[] = [
       required: ['guest_phone'],
     },
   },
+  {
+    name: 'get_menu',
+    description: 'Get hotel menu information when guest asks about food, drinks, room service, laundry, bar, breakfast, restaurant, or any menu. Returns menu details including file URL if available and list of items.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        menu_type: {
+          type: 'string',
+          enum: ['room_service', 'bar', 'restaurant', 'laundry', 'spa', 'breakfast', 'other', 'any'],
+          description: 'Type of menu requested. Use "any" if unclear or guest just says "menu".',
+        },
+      },
+      required: ['menu_type'],
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -261,6 +276,41 @@ export async function executeHotelTool(
       ) as any[];
 
       return { requests };
+    }
+
+    case 'get_menu': {
+      const { menu_type } = input as { menu_type: string };
+      const menus = await dbAll(
+        menu_type === 'any'
+          ? `SELECT * FROM hotel_menus WHERE tenant_id = ? AND is_active = 1 ORDER BY display_order ASC`
+          : `SELECT * FROM hotel_menus WHERE tenant_id = ? AND is_active = 1 AND menu_type = ? ORDER BY display_order ASC`,
+        ...(menu_type === 'any' ? [tenantId] : [tenantId, menu_type]),
+      ) as any[];
+
+      if (!menus.length) return { found: false, message: 'No menu available for this category.' };
+
+      const result = await Promise.all(menus.map(async (menu: any) => {
+        const items = await dbAll(
+          `SELECT name, description, price, currency, category
+           FROM hotel_menu_items
+           WHERE menu_id = ? AND is_available = 1
+           ORDER BY category, display_order`,
+          menu.id,
+        ) as any[];
+        return {
+          id:          menu.id,
+          name:        menu.name,
+          menu_type:   menu.menu_type,
+          description: menu.description,
+          has_file:    !!menu.file_url,
+          file_url:    menu.file_url  || null,
+          file_type:   menu.file_type || null,
+          has_items:   items.length > 0,
+          items,
+        };
+      }));
+
+      return { found: true, menus: result };
     }
 
     default:

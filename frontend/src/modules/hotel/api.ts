@@ -128,4 +128,44 @@ export const api = {
   getReviewConfig: () => req<ReviewConfig>('/hotel/reviews/config'),
   updateReviewConfig: (data: { slug: string; owner_phone: string; notification_frequency?: string }) =>
     req<ReviewConfig>('/hotel/reviews/config', { method: 'PUT', body: JSON.stringify(data) }),
+
+  // Menus
+  getMenus: () => req<any[]>('/hotel/menus'),
+  getMenu: (id: string) => req<any>(`/hotel/menus/${id}`),
+  createMenu: (data: { name: string; menu_type: string; description?: string; keywords?: string[]; display_order?: number }) =>
+    req<any>('/hotel/menus', { method: 'POST', body: JSON.stringify(data) }),
+  updateMenu: (id: string, data: any) =>
+    req<any>(`/hotel/menus/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteMenu: (id: string) =>
+    req(`/hotel/menus/${id}`, { method: 'DELETE' }),
+  uploadMenuFile: async (id: string, file: File): Promise<{ file_url: string; file_type: string }> => {
+    const token = localStorage.getItem('bookingai_token');
+    const raw = localStorage.getItem('bookingai_admin_tenant');
+    const user = JSON.parse(localStorage.getItem('bookingai_user') || 'null');
+    let url = `${import.meta.env.VITE_API_URL || ''}/hotel/menus/${id}/upload`;
+    if (user?.role === 'super_admin' && raw) {
+      const { id: tenantId } = JSON.parse(raw);
+      url += `?tenantId=${encodeURIComponent(tenantId)}`;
+    }
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    const text = await res.text();
+    const json = JSON.parse(text);
+    if (!json.success) throw new Error(json.error || 'Upload failed');
+    return json.data;
+  },
+  removeMenuFile: (id: string) =>
+    req(`/hotel/menus/${id}/upload`, { method: 'DELETE' }),
+  getMenuItems: (menuId: string) => req<any[]>(`/hotel/menus/${menuId}/items`),
+  addMenuItem: (menuId: string, data: { name: string; description?: string; price?: number; currency?: string; category?: string }) =>
+    req<any>(`/hotel/menus/${menuId}/items`, { method: 'POST', body: JSON.stringify(data) }),
+  updateMenuItem: (menuId: string, itemId: string, data: any) =>
+    req(`/hotel/menus/${menuId}/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteMenuItem: (menuId: string, itemId: string) =>
+    req(`/hotel/menus/${menuId}/items/${itemId}`, { method: 'DELETE' }),
 };

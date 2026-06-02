@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BellRing, Users, BookOpen, Settings, Shield, LogOut, Building2, MessageSquare, ShieldOff, Star } from 'lucide-react';
+import { BellRing, Users, BookOpen, Settings, Shield, LogOut, Building2, MessageSquare, ShieldOff, Star, UtensilsCrossed } from 'lucide-react';
 import clsx from 'clsx';
 import { isAdmin, getStoredUser, clearAuth } from '../../shared/lib/auth';
 import { AdminPage }           from '../../pages/AdminPage';
@@ -11,9 +11,10 @@ import { DepartmentsPage }     from './components/DepartmentsPage';
 import { ConversationsPage }   from './components/ConversationsPage';
 import { BlockedPage }         from './components/BlockedPage';
 import { ReviewsPage }         from './components/ReviewsPage';
+import { MenusPage }           from './components/MenusPage';
 import { api }                from './api';
 
-type Page = 'requests' | 'guests' | 'faq' | 'config' | 'departments' | 'conversations' | 'blocked' | 'reviews' | 'admin';
+type Page = 'requests' | 'guests' | 'faq' | 'config' | 'departments' | 'conversations' | 'blocked' | 'reviews' | 'menus' | 'admin';
 
 interface Props { onLogout: () => void; }
 
@@ -39,6 +40,7 @@ export function HotelModule({ onLogout }: Props) {
     { id: 'requests',      label: 'Requests',        icon: <BellRing size={16} /> },
     { id: 'guests',        label: 'Guests',          icon: <Users size={16} /> },
     { id: 'faq',           label: 'FAQ',             icon: <BookOpen size={16} /> },
+    { id: 'menus',         label: 'Menus',           icon: <UtensilsCrossed size={16} /> },
     { id: 'config',        label: 'Hotel Config',    icon: <Settings size={16} /> },
     { id: 'departments',   label: 'Departments',     icon: <Building2 size={16} /> },
     ...(reviewsEnabled ? [{ id: 'reviews' as Page, label: 'Reviews', icon: <Star size={16} /> }] : []),
@@ -112,6 +114,7 @@ export function HotelModule({ onLogout }: Props) {
         {page === 'departments'   && <DepartmentsPage />}
         {page === 'blocked'       && <BlockedPage />}
         {page === 'reviews'       && <ReviewsPage />}
+        {page === 'menus'         && <MenusPage />}
         {page === 'admin'         && <AdminPage />}
       </main>
 

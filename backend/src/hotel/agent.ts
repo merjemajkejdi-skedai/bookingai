@@ -169,7 +169,7 @@ export async function runHotelAgent(
 
   // ── Load config + history (needed for both survey detection and main loop) ──
   const [tenantRow, hotelConfig, hotelHistory] = await Promise.all([
-    dbGet('SELECT id, name FROM tenants WHERE id = ?', tenantId),
+    dbGet('SELECT id, name, whatsapp_number, provider, twilio_account_sid, twilio_auth_token FROM tenants WHERE id = ?', tenantId),
     dbGet('SELECT * FROM hotel_config WHERE tenant_id = ?', tenantId),
     getHotelHistory(tenantId, customerPhone),
   ]);
@@ -317,6 +317,36 @@ export async function runHotelAgent(
         roomNumber = roomMatch[1];
       }
     } catch { /* best-effort */ }
+
+    // Send any menu files that were returned by the get_menu tool
+    try {
+      const { sendWhatsAppMedia } = await import('../whatsapp/twilio.js');
+      for (const msg of messages) {
+        if (msg.role === 'user' && Array.isArray(msg.content)) {
+          for (const block of msg.content as any[]) {
+            if (block.type === 'tool_result') {
+              try {
+                const result = JSON.parse(block.content as string);
+                if (result.found && Array.isArray(result.menus)) {
+                  for (const menu of result.menus) {
+                    if (menu.has_file && menu.file_url) {
+                      await sendWhatsAppMedia(
+                        customerPhone,
+                        menu.file_url,
+                        menu.file_type === 'pdf' ? `Here is our ${menu.name} 📄` : '',
+                        tenantRow,
+                      );
+                    }
+                  }
+                }
+              } catch { /* ignore parse errors */ }
+            }
+          }
+        }
+      }
+    } catch (e: any) {
+      console.warn('[Hotel] menu file send failed:', e.message);
+    }
 
     await saveHotelConversation(tenantId, customerPhone, customerMessage, reply, roomNumber);
 

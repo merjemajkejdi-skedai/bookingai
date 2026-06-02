@@ -52,6 +52,63 @@ async function sendViaMeta(to: string, message: string, tenant: any): Promise<vo
   }
 }
 
+// ── Send media (PDF/image) via WhatsApp ──────────────────────────────────────
+
+export async function sendWhatsAppMedia(
+  to: string,
+  mediaUrl: string,
+  caption: string,
+  tenant: any,
+): Promise<void> {
+  try {
+    if (tenant?.provider === 'meta') {
+      // Meta Cloud API — document for PDF, image for others
+      const toPhone = to.replace('whatsapp:', '').replace('+', '').replace(/\s/g, '');
+      const ext = mediaUrl.split('.').pop()?.toLowerCase();
+      const isPdf = ext === 'pdf';
+      const res = await fetch(
+        `https://graph.facebook.com/v19.0/${tenant.meta_phone_number_id}/messages`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${tenant.meta_access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            recipient_type: 'individual',
+            to: toPhone,
+            type: isPdf ? 'document' : 'image',
+            [isPdf ? 'document' : 'image']: {
+              link: mediaUrl,
+              ...(caption ? { caption } : {}),
+            },
+          }),
+        },
+      );
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(`Meta media error: ${(errBody as any)?.error?.message ?? res.status}`);
+      }
+      return;
+    }
+    // Twilio
+    const accountSid  = tenant?.twilio_account_sid || process.env.TWILIO_ACCOUNT_SID;
+    const authToken   = tenant?.twilio_auth_token  || process.env.TWILIO_AUTH_TOKEN;
+    const fromNumber  = tenant?.whatsapp_number?.startsWith('whatsapp:')
+      ? tenant.whatsapp_number
+      : `whatsapp:${tenant?.whatsapp_number || process.env.TWILIO_WHATSAPP_FROM || '+14155238886'}`;
+    const toNum = to.startsWith('whatsapp:') ? to : `whatsapp:${to}`;
+    const client = twilio(accountSid, authToken);
+    const params: any = { from: fromNumber, to: toNum, mediaUrl: [mediaUrl] };
+    if (caption) params.body = caption;
+    await client.messages.create(params);
+  } catch (err) {
+    console.error('[sendWhatsAppMedia error]', err);
+    throw err;
+  }
+}
+
 // ── Unified send — routes to Twilio or Meta based on tenant.provider ──────────
 // tenantOrFromNumber can be:
 //   - undefined / omitted   → Twilio with global env vars + TWILIO_WHATSAPP_FROM
