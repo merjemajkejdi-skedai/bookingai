@@ -235,7 +235,8 @@ export async function executeHotelTool(
             timeZone: 'Europe/Tirane',
           });
 
-          const templateSid = process.env.TWILIO_DEPT_TEMPLATE_SID;
+          const templateSid = (tenantRow?.twilio_dept_template_sid as string | null)
+            || process.env.TWILIO_DEPT_TEMPLATE_SID;
 
           console.log(`[Hotel notify] Sending to ${match.whatsapp} (dept: ${match.name})`);
           if (templateSid) {

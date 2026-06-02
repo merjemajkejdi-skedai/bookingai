@@ -119,6 +119,7 @@ const SCHEMA = `
     billing_email TEXT NOT NULL DEFAULT '',
     survey_enabled INTEGER NOT NULL DEFAULT 0,
     menus_enabled INTEGER NOT NULL DEFAULT 0,
+    twilio_dept_template_sid TEXT,
     created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
   );
   CREATE TABLE IF NOT EXISTS specialists (
@@ -545,6 +546,8 @@ export async function runMigrations() {
       `ALTER TABLE hotel_requests ADD COLUMN IF NOT EXISTS photo_mime_type TEXT`,
       // dept_response_001 — configurable response time per department
       `ALTER TABLE hotel_departments ADD COLUMN IF NOT EXISTS response_time_minutes INTEGER NOT NULL DEFAULT 30`,
+      // dept_template_001 — per-tenant dept notification template SID
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS twilio_dept_template_sid TEXT`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -628,8 +631,9 @@ export async function runMigrations() {
     ['meta_phone_number_id',   'meta_phone_number_id TEXT'],
     ['meta_access_token',      'meta_access_token TEXT'],
     ['meta_waba_id',           'meta_waba_id TEXT'],
-    ['twilio_account_sid',     'twilio_account_sid TEXT'],
-    ['twilio_auth_token',      'twilio_auth_token TEXT'],
+    ['twilio_account_sid',          'twilio_account_sid TEXT'],
+    ['twilio_auth_token',           'twilio_auth_token TEXT'],
+    ['twilio_dept_template_sid',    'twilio_dept_template_sid TEXT'],
   ] as [string,string][]) {
     if (!cols.includes(col)) exec(`ALTER TABLE tenants ADD COLUMN ${def}`);
   }

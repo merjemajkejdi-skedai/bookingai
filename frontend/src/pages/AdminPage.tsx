@@ -310,9 +310,10 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
   const [metaPhoneNumberId, setMetaPhoneId]   = useState(tenant.meta_phone_number_id || '');
   const [metaAccessToken, setMetaToken]       = useState(tenant.meta_access_token || '');
   const [metaWabaId, setMetaWabaId]           = useState(tenant.meta_waba_id || '');
-  const [twilioAccountSid, setTwilioSid]      = useState(tenant.twilio_account_sid || '');
-  const [twilioAuthToken, setTwilioToken]     = useState(tenant.twilio_auth_token || '');
-  const [reviewsEnabled, setReviewsEnabled]   = useState(!!tenant.reviews_enabled);
+  const [twilioAccountSid, setTwilioSid]            = useState(tenant.twilio_account_sid || '');
+  const [twilioAuthToken, setTwilioToken]           = useState(tenant.twilio_auth_token || '');
+  const [twilioDeptTemplateSid, setDeptTemplateSid] = useState(tenant.twilio_dept_template_sid || '');
+  const [reviewsEnabled, setReviewsEnabled]         = useState(!!tenant.reviews_enabled);
   const [surveyEnabled,  setSurveyEnabled]    = useState(!!tenant.survey_enabled);
   const [menusEnabled,   setMenusEnabled]     = useState(!!tenant.menus_enabled);
   const [saving, setSaving]                   = useState(false);
@@ -327,8 +328,9 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
         metaPhoneNumberId: metaPhoneNumberId || null,
         metaAccessToken:   metaAccessToken   || null,
         metaWabaId:        metaWabaId        || null,
-        twilioAccountSid:  twilioAccountSid  || null,
-        twilioAuthToken:   twilioAuthToken   || null,
+        twilioAccountSid:       twilioAccountSid       || null,
+        twilioAuthToken:        twilioAuthToken        || null,
+        twilioDeptTemplateSid:  twilioDeptTemplateSid  || null,
       });
       onSaved();
     } catch (e: any) { setError(e.message); }
@@ -381,6 +383,14 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
             </p>
             <Input label="Twilio Account SID (optional)" value={twilioAccountSid} onChange={(e: any) => setTwilioSid(e.target.value)} placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
             <Input label="Twilio Auth Token (optional)" type="password" value={twilioAuthToken} onChange={(e: any) => setTwilioToken(e.target.value)} placeholder="Your Twilio auth token" />
+            {type === 'hotel' && (
+              <Input
+                label="Dept Notification Template SID (hotel only)"
+                value={twilioDeptTemplateSid}
+                onChange={(e: any) => setDeptTemplateSid(e.target.value)}
+                placeholder="HXxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              />
+            )}
           </div>
         )}
 
