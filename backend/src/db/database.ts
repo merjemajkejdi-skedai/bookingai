@@ -349,13 +349,14 @@ const SCHEMA = `
     PRIMARY KEY (tenant_id, phone)
   );
   CREATE TABLE IF NOT EXISTS hotel_conversations (
-    id           TEXT PRIMARY KEY,
-    tenant_id    TEXT NOT NULL,
-    guest_phone  TEXT NOT NULL,
-    room_number  TEXT,
-    messages     TEXT NOT NULL DEFAULT '[]',
-    last_message TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
-    updated_at   TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    id                    TEXT PRIMARY KEY,
+    tenant_id             TEXT NOT NULL,
+    guest_phone           TEXT NOT NULL,
+    room_number           TEXT,
+    messages              TEXT NOT NULL DEFAULT '[]',
+    last_message          TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at            TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    last_guest_message_at TEXT,
     UNIQUE (tenant_id, guest_phone)
   );
   CREATE INDEX IF NOT EXISTS idx_hotel_conv_tenant  ON hotel_conversations(tenant_id, updated_at);
@@ -498,6 +499,8 @@ export async function runMigrations() {
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE`,
       // survey_flag_001 — per-tenant survey feature flag (hotel only)
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS survey_enabled INTEGER NOT NULL DEFAULT 0`,
+      // conv_001 — track when guest last sent a message (for survey button 24h window)
+      `ALTER TABLE hotel_conversations ADD COLUMN IF NOT EXISTS last_guest_message_at TEXT`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -628,6 +631,11 @@ export async function runMigrations() {
     exec("ALTER TABLE tenants ADD COLUMN review_notification_frequency TEXT NOT NULL DEFAULT 'immediate'");
   if (!cols.includes('survey_enabled'))
     exec('ALTER TABLE tenants ADD COLUMN survey_enabled INTEGER NOT NULL DEFAULT 0');
+
+  const convCols = prepare("SELECT name FROM pragma_table_info('hotel_conversations')")
+    .all().map((r: any) => r.name as string);
+  if (!convCols.includes('last_guest_message_at'))
+    exec('ALTER TABLE hotel_conversations ADD COLUMN last_guest_message_at TEXT');
 
   const hotelReviewCols = prepare("SELECT name FROM pragma_table_info('hotel_reviews')")
     .all().map((r: any) => r.name as string);

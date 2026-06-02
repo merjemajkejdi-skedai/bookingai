@@ -295,7 +295,9 @@ function ThreadPanel({
 
         {/* Survey / checkout controls */}
         <div className="flex items-center gap-2 flex-shrink-0">
-          {surveyEnabled && (stayInfo.guest_status === 'checked_in' || stayInfo.guest_status === 'checked_out') && !stayInfo.survey_sent && stayInfo.stay_id && (
+          {surveyEnabled && !stayInfo.survey_sent &&
+           conv.last_guest_message_at != null &&
+           (Date.now() - new Date(conv.last_guest_message_at).getTime()) < 86_400_000 && (
             <button
               onClick={handleCheckout}
               disabled={checkingOut}
@@ -304,7 +306,7 @@ function ThreadPanel({
               {checkingOut
                 ? <RefreshCw size={12} className="animate-spin" />
                 : <LogOut size={12} />}
-              {stayInfo.guest_status === 'checked_in' ? 'Check out & survey' : 'Send survey'}
+              Send survey
             </button>
           )}
           {stayInfo.survey_sent && (
@@ -600,8 +602,10 @@ export function ConversationsPage({ surveyEnabled = false }: { surveyEnabled?: b
                     <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
                       <span className="text-[10px] text-slate-400">{timeAgo(c.updated_at)}</span>
                       <span className="text-[10px] text-slate-400">{c.message_count} msg{c.message_count !== 1 ? 's' : ''}</span>
-                      {/* Survey button — only when feature is enabled for this tenant */}
-                      {surveyEnabled && (c.guest_status === 'checked_in' || c.guest_status === 'checked_out') && !c.survey_sent && c.stay_id && (
+                      {/* Survey button — visible when survey is enabled AND guest messaged in last 24h */}
+                      {surveyEnabled && !c.survey_sent &&
+                       c.last_guest_message_at != null &&
+                       (Date.now() - new Date(c.last_guest_message_at).getTime()) < 86_400_000 && (
                         <button
                           onClick={e => handleCheckoutFromList(e, c)}
                           disabled={checkingOutId === c.stay_id}
@@ -610,7 +614,7 @@ export function ConversationsPage({ surveyEnabled = false }: { surveyEnabled?: b
                           {checkingOutId === c.stay_id
                             ? <RefreshCw size={9} className="animate-spin" />
                             : <LogOut size={9} />}
-                          {c.guest_status === 'checked_in' ? 'Check out & survey' : 'Send survey'}
+                          Send survey
                         </button>
                       )}
                       {/* Survey status badge */}

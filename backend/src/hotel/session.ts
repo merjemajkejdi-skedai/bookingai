@@ -96,13 +96,14 @@ export async function saveHotelConversation(
     const id = crypto.randomUUID();
     await dbRun(
       `INSERT INTO hotel_conversations
-         (id, tenant_id, guest_phone, room_number, messages, last_message, updated_at)
-       VALUES (?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+         (id, tenant_id, guest_phone, room_number, messages, last_message, updated_at, last_guest_message_at)
+       VALUES (?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
        ON CONFLICT (tenant_id, guest_phone) DO UPDATE SET
-         messages     = excluded.messages,
-         room_number  = COALESCE(excluded.room_number, hotel_conversations.room_number),
-         last_message = CURRENT_TIMESTAMP,
-         updated_at   = CURRENT_TIMESTAMP`,
+         messages              = excluded.messages,
+         room_number           = COALESCE(excluded.room_number, hotel_conversations.room_number),
+         last_message          = CURRENT_TIMESTAMP,
+         updated_at            = CURRENT_TIMESTAMP,
+         last_guest_message_at = CURRENT_TIMESTAMP`,
       id, tenantId, phone, roomNumber ?? null, JSON.stringify(updated),
     );
   } catch (e: any) {

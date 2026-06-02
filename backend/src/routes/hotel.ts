@@ -553,6 +553,7 @@ hotelRouter.get('/conversations', requireAuth, async (req: Request, res: Respons
          c.messages,
          c.last_message,
          c.updated_at,
+         c.last_guest_message_at,
          g.id           AS stay_id,
          g.guest_name,
          g.check_in,

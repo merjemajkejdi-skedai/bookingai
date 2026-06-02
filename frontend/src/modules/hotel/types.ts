@@ -75,6 +75,8 @@ export interface Conversation {
   guest_status: 'checked_in' | 'checked_out' | null;
   survey_sent: boolean;
   survey_score: number | null;
+  // Timestamp of the last inbound guest message (used for 24h survey window)
+  last_guest_message_at: string | null;
 }
 
 export interface BlockedNumber {
