@@ -169,6 +169,22 @@ export function RequestsPage() {
                           {/* Description */}
                           <p className="text-sm text-slate-700 leading-snug">{r.description}</p>
 
+                          {/* Guest photo */}
+                          {r.photo_url && (
+                            <div className="mt-2">
+                              <p className="text-xs text-slate-400 mb-1">📷 Guest photo</p>
+                              <a href={r.photo_url} target="_blank" rel="noreferrer" className="block">
+                                <img
+                                  src={r.photo_url}
+                                  alt="Guest photo"
+                                  className="rounded-lg max-h-40 object-cover border border-slate-200 hover:opacity-90 transition-opacity cursor-pointer"
+                                  onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                />
+                                <p className="text-xs text-brand-600 mt-1 hover:underline">View full size ↗</p>
+                              </a>
+                            </div>
+                          )}
+
                           {/* Time */}
                           <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
                             <Clock size={11} /> {timeAgo(r.created_at)}

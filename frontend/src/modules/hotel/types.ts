@@ -30,6 +30,8 @@ export interface HotelRequest {
   priority: 'high' | 'normal' | 'low';
   created_at: string;
   resolved_at: string | null;
+  photo_url: string | null;
+  photo_mime_type: string | null;
 }
 
 export interface FaqEntry {

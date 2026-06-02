@@ -173,14 +173,20 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
   const phone       = From?.replace('whatsapp:', '') ?? 'unknown';
   const messageText = (Body ?? '').trim();
 
-  console.log(`\n📱 Incoming WhatsApp from ${phone} (${ProfileName}): "${messageText}"`);
+  // Extract media (hotel photo feature — Twilio includes NumMedia/MediaUrl0)
+  const numMedia  = parseInt(req.body.NumMedia || '0');
+  const mediaUrl  = numMedia > 0 ? (req.body.MediaUrl0          || null) : null;
+  const mediaMime = numMedia > 0 ? (req.body.MediaContentType0  || null) : null;
+
+  console.log(`\n📱 Incoming WhatsApp from ${phone} (${ProfileName}): "${messageText}"${mediaUrl ? ' [+photo]' : ''}`);
 
   // Acknowledge Twilio immediately
   const twiml = new MessagingResponse();
   res.setHeader('Content-Type', 'text/xml');
   res.send(twiml.toString());
 
-  if (!messageText) {
+  // Skip only if both text and media are absent
+  if (!messageText && !mediaUrl) {
     console.log('⚠️  Empty message body — skipping agent');
     return;
   }
@@ -209,7 +215,14 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
     }
 
     const history = getSession(phone);
-    const reply   = await runAgent(messageText, history, phone, tenant.id, tenantType);
+
+    // Hotel: pass media context directly so photos reach the agent
+    let reply: string;
+    if (tenantType === 'hotel') {
+      reply = await runHotelAgent(messageText, history, phone, tenant.id, mediaUrl, mediaMime);
+    } else {
+      reply = await runAgent(messageText, history, phone, tenant.id, tenantType);
+    }
     updateSession(phone, messageText, reply);
 
     console.log(`🤖 Agent reply: "${reply.slice(0, 120)}"`);

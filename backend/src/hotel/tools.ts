@@ -48,7 +48,9 @@ export const hotelTools: Anthropic.Tool[] = [
         description:  { type: 'string', description: 'Details of the request or the guest\'s question verbatim' },
         room_number:  { type: 'string', description: 'Guest room number — required for housekeeping and maintenance' },
         guest_name:   { type: 'string', description: 'Guest name if known' },
-        priority:     { type: 'string', enum: ['high', 'normal', 'low'] },
+        priority:       { type: 'string', enum: ['high', 'normal', 'low'] },
+        photo_url:      { type: 'string', description: 'URL of photo sent by guest, if any. Copy verbatim from the [Guest also sent a photo: ...] context in the message.' },
+        photo_mime_type: { type: 'string', description: 'MIME type of the photo e.g. image/jpeg' },
       },
       required: ['request_type', 'description'],
     },
@@ -162,20 +164,23 @@ export async function executeHotelTool(
     }
 
     case 'create_request': {
-      const { request_type, description, room_number, guest_name, priority } = input as {
+      const { request_type, description, room_number, guest_name, priority, photo_url, photo_mime_type } = input as {
         request_type: string; description: string; room_number?: string; guest_name?: string; priority?: string;
+        photo_url?: string; photo_mime_type?: string;
       };
       const department    = DEPARTMENT_MAP[request_type] || 'reception';
       const finalPriority = priority || DEFAULT_PRIORITY_MAP[request_type] || 'normal';
       const finalRoom     = room_number || null;
+      const finalPhoto    = photo_url    || null;
+      const finalMime     = photo_mime_type || null;
 
       const id = crypto.randomUUID();
       await dbRun(
         `INSERT INTO hotel_requests
-           (id, tenant_id, stay_id, room_number, guest_name, guest_phone, request_type, description, department, priority)
-         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+           (id, tenant_id, stay_id, room_number, guest_name, guest_phone, request_type, description, department, priority, photo_url, photo_mime_type)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
         id, tenantId, null, finalRoom, guest_name ?? null, guestPhone,
-        request_type, description, department, finalPriority,
+        request_type, description, department, finalPriority, finalPhoto, finalMime,
       );
 
       // Notify the matching department via WhatsApp
@@ -236,6 +241,18 @@ export async function executeHotelTool(
           console.log(`[Hotel notify] Sending to ${match.whatsapp} (dept: ${match.name})`);
           await sendWhatsAppMessage(match.whatsapp, msg);
           console.log(`[Hotel notify] ✅ Sent to ${match.name}`);
+
+          // Forward guest photo to department if present
+          if (finalPhoto) {
+            try {
+              const tenantForPhoto = await dbGet('SELECT * FROM tenants WHERE id = ?', tenantId) as any;
+              const { sendWhatsAppMedia } = await import('../whatsapp/twilio.js');
+              await sendWhatsAppMedia(match.whatsapp, finalPhoto, '', tenantForPhoto)
+                .catch((e: any) => console.error('[Hotel notify] Failed to send photo:', e.message));
+            } catch (e: any) {
+              console.warn('[Hotel notify] photo forward failed:', e.message);
+            }
+          }
         } else {
           console.warn(`[Hotel notify] ⚠️ No active department matched request_type="${request_type}"`);
         }
@@ -244,12 +261,13 @@ export async function executeHotelTool(
       }
 
       return {
-        success:    true,
-        request_id: id,
-        room:       finalRoom,
+        success:     true,
+        request_id:  id,
+        room:        finalRoom,
         department,
-        priority:   finalPriority,
-        eta:        ETA_MAP[finalPriority],
+        priority:    finalPriority,
+        eta:         ETA_MAP[finalPriority],
+        photo_saved: !!finalPhoto,
       };
     }
 

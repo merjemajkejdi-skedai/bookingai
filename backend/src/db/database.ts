@@ -539,6 +539,9 @@ export async function runMigrations() {
       `CREATE TABLE IF NOT EXISTS hotel_menu_items (id TEXT PRIMARY KEY, menu_id TEXT NOT NULL, tenant_id TEXT NOT NULL, name TEXT NOT NULL, description TEXT, price REAL, currency TEXT NOT NULL DEFAULT 'ALL', category TEXT, is_available INTEGER NOT NULL DEFAULT 1, display_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP))`,
       `CREATE INDEX IF NOT EXISTS idx_hotel_menus_tenant    ON hotel_menus(tenant_id, is_active)`,
       `CREATE INDEX IF NOT EXISTS idx_hotel_menu_items_menu ON hotel_menu_items(menu_id, display_order)`,
+      // photos_001 — guest photo attached to maintenance/complaint requests
+      `ALTER TABLE hotel_requests ADD COLUMN IF NOT EXISTS photo_url TEXT`,
+      `ALTER TABLE hotel_requests ADD COLUMN IF NOT EXISTS photo_mime_type TEXT`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -676,6 +679,13 @@ export async function runMigrations() {
     .all().map((r: any) => r.name as string);
   if (!convCols.includes('last_guest_message_at'))
     exec('ALTER TABLE hotel_conversations ADD COLUMN last_guest_message_at TEXT');
+
+  const reqCols = prepare("SELECT name FROM pragma_table_info('hotel_requests')")
+    .all().map((r: any) => r.name as string);
+  if (!reqCols.includes('photo_url'))
+    exec('ALTER TABLE hotel_requests ADD COLUMN photo_url TEXT');
+  if (!reqCols.includes('photo_mime_type'))
+    exec('ALTER TABLE hotel_requests ADD COLUMN photo_mime_type TEXT');
 
   const hotelReviewCols = prepare("SELECT name FROM pragma_table_info('hotel_reviews')")
     .all().map((r: any) => r.name as string);

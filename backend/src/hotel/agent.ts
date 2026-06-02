@@ -145,6 +145,8 @@ export async function runHotelAgent(
   _conversationHistory: Anthropic.MessageParam[], // ignored — we load from DB
   customerPhone: string,
   tenantId: string,
+  mediaUrl:  string | null = null,  // photo sent by guest (Twilio MediaUrl0)
+  mediaMime: string | null = null,  // MIME type e.g. "image/jpeg"
 ): Promise<string> {
 
   // ── GUARD 1: Blocked numbers ──────────────────────────────────────────────
@@ -251,9 +253,18 @@ export async function runHotelAgent(
     .filter(m => m.role === 'user' || m.role === 'assistant')
     .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
 
+  // If the guest sent a photo, append context so Claude knows the URL and can
+  // pass it directly to create_request without making up a value
+  let userMessageContent = customerMessage;
+  if (mediaUrl) {
+    userMessageContent = customerMessage
+      ? `${customerMessage}\n\n[Guest also sent a photo: ${mediaUrl} (${mediaMime || 'image'})]`
+      : `[Guest sent a photo: ${mediaUrl} (${mediaMime || 'image'})]`;
+  }
+
   const messages: Anthropic.MessageParam[] = [
     ...anthropicHistory,
-    { role: 'user', content: customerMessage },
+    { role: 'user', content: userMessageContent },
   ];
 
   const systemPrompt = buildHotelSystemPrompt(tenantRow, hotelConfig);
