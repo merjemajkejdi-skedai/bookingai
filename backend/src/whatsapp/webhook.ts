@@ -170,13 +170,17 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
     Body: string; From: string; To: string; ProfileName: string;
   };
 
-  const phone       = From?.replace('whatsapp:', '') ?? 'unknown';
-  const messageText = (Body ?? '').trim();
+  const phone = From?.replace('whatsapp:', '') ?? 'unknown';
 
-  // Extract media (hotel photo feature — Twilio includes NumMedia/MediaUrl0)
+  // Extract media first so it can inform the body fallback
   const numMedia  = parseInt(req.body.NumMedia || '0');
-  const mediaUrl  = numMedia > 0 ? (req.body.MediaUrl0          || null) : null;
-  const mediaMime = numMedia > 0 ? (req.body.MediaContentType0  || null) : null;
+  const mediaUrl  = numMedia > 0 ? (req.body.MediaUrl0         || null) : null;
+  const mediaMime = numMedia > 0 ? (req.body.MediaContentType0 || null) : null;
+
+  // If guest sent only a photo with no text, use a placeholder so Claude
+  // never receives an empty user message (Anthropic rejects empty content)
+  const rawBody     = (Body ?? '').trim();
+  const messageText = rawBody || (mediaUrl ? '[Guest sent a photo]' : '');
 
   console.log(`\n📱 Incoming WhatsApp from ${phone} (${ProfileName}): "${messageText}"${mediaUrl ? ' [+photo]' : ''}`);
 

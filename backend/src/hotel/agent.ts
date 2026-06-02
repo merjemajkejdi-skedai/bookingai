@@ -149,6 +149,11 @@ export async function runHotelAgent(
   mediaMime: string | null = null,  // MIME type e.g. "image/jpeg"
 ): Promise<string> {
 
+  // Safety guard — ensure the message is never empty so Claude never
+  // receives an empty user content block (Anthropic returns 400 if it does)
+  const safeMessage = customerMessage.trim()
+    || (mediaUrl ? '[Guest sent a photo]' : '[Empty message]');
+
   // ── GUARD 1: Blocked numbers ──────────────────────────────────────────────
   // Hotel admin can block staff/supplier numbers so the AI stays silent
   try {
@@ -190,7 +195,7 @@ export async function runHotelAgent(
     ) as any;
 
     if (surveyGuest) {
-      const score = extractRating(customerMessage);
+      const score = extractRating(safeMessage);
       if (score !== null) {
         console.log(`[Hotel] 📋 Survey reply ${score}/10 from ${customerPhone}`);
         return await processSurveyReply(score, surveyGuest, tenantId, customerPhone);
@@ -205,7 +210,7 @@ export async function runHotelAgent(
       if (!alreadyNudged) {
         console.log(`[Hotel] 📋 Sending survey nudge to ${customerPhone}`);
         // Save nudge to history so we don't repeat it next message
-        await saveHotelConversation(tenantId, customerPhone, customerMessage, NUDGE, null);
+        await saveHotelConversation(tenantId, customerPhone, safeMessage, NUDGE, null);
         return NUDGE;
       }
 
@@ -255,11 +260,9 @@ export async function runHotelAgent(
 
   // If the guest sent a photo, append context so Claude knows the URL and can
   // pass it directly to create_request without making up a value
-  let userMessageContent = customerMessage;
+  let userMessageContent = safeMessage;
   if (mediaUrl) {
-    userMessageContent = customerMessage
-      ? `${customerMessage}\n\n[Guest also sent a photo: ${mediaUrl} (${mediaMime || 'image'})]`
-      : `[Guest sent a photo: ${mediaUrl} (${mediaMime || 'image'})]`;
+    userMessageContent = `${safeMessage}\n\n[Guest also sent a photo: ${mediaUrl} (${mediaMime || 'image'})]`;
   }
 
   const messages: Anthropic.MessageParam[] = [
@@ -322,7 +325,7 @@ export async function runHotelAgent(
     try {
       const roomMatch = reply.match(/[Rr]oom\s+(\d+)/);
       if (!roomMatch) {
-        const msgMatch = customerMessage.match(/\b(\d{2,4})\b/);
+        const msgMatch = safeMessage.match(/\b(\d{2,4})\b/);
         if (msgMatch) roomNumber = msgMatch[1];
       } else {
         roomNumber = roomMatch[1];
@@ -359,7 +362,7 @@ export async function runHotelAgent(
       console.warn('[Hotel] menu file send failed:', e.message);
     }
 
-    await saveHotelConversation(tenantId, customerPhone, customerMessage, reply, roomNumber);
+    await saveHotelConversation(tenantId, customerPhone, safeMessage, reply, roomNumber);
 
     return reply;
   }
