@@ -373,13 +373,14 @@ const SCHEMA = `
     industries TEXT NOT NULL DEFAULT '[]'
   );
   CREATE TABLE IF NOT EXISTS hotel_departments (
-    id           TEXT PRIMARY KEY,
-    tenant_id    TEXT NOT NULL,
-    name         TEXT NOT NULL,
-    whatsapp     TEXT NOT NULL,
-    request_types TEXT NOT NULL DEFAULT '[]',
-    is_active    INTEGER NOT NULL DEFAULT 1,
-    created_at   TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+    id                    TEXT PRIMARY KEY,
+    tenant_id             TEXT NOT NULL,
+    name                  TEXT NOT NULL,
+    whatsapp              TEXT NOT NULL,
+    request_types         TEXT NOT NULL DEFAULT '[]',
+    is_active             INTEGER NOT NULL DEFAULT 1,
+    response_time_minutes INTEGER NOT NULL DEFAULT 30,
+    created_at            TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
   );
   CREATE INDEX IF NOT EXISTS idx_hotel_depts_tenant ON hotel_departments(tenant_id);
   CREATE TABLE IF NOT EXISTS hotel_reviews (
@@ -542,6 +543,8 @@ export async function runMigrations() {
       // photos_001 — guest photo attached to maintenance/complaint requests
       `ALTER TABLE hotel_requests ADD COLUMN IF NOT EXISTS photo_url TEXT`,
       `ALTER TABLE hotel_requests ADD COLUMN IF NOT EXISTS photo_mime_type TEXT`,
+      // dept_response_001 — configurable response time per department
+      `ALTER TABLE hotel_departments ADD COLUMN IF NOT EXISTS response_time_minutes INTEGER NOT NULL DEFAULT 30`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -686,6 +689,11 @@ export async function runMigrations() {
     exec('ALTER TABLE hotel_requests ADD COLUMN photo_url TEXT');
   if (!reqCols.includes('photo_mime_type'))
     exec('ALTER TABLE hotel_requests ADD COLUMN photo_mime_type TEXT');
+
+  const deptCols = prepare("SELECT name FROM pragma_table_info('hotel_departments')")
+    .all().map((r: any) => r.name as string);
+  if (!deptCols.includes('response_time_minutes'))
+    exec('ALTER TABLE hotel_departments ADD COLUMN response_time_minutes INTEGER NOT NULL DEFAULT 30');
 
   const hotelReviewCols = prepare("SELECT name FROM pragma_table_info('hotel_reviews')")
     .all().map((r: any) => r.name as string);

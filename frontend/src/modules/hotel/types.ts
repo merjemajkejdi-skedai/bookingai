@@ -50,6 +50,7 @@ export interface Department {
   whatsapp: string;
   request_types: string[];
   is_active: boolean;
+  response_time_minutes: number;
   created_at: string;
 }
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Pencil, Trash2, Building2, Phone, Check } from 'lucide-react';
+import { Plus, Pencil, Trash2, Building2, Phone, Check, Clock } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../api';
 import type { Department } from '../types';
@@ -14,7 +14,7 @@ const ALL_REQUEST_TYPES = [
   { id: 'other',              label: 'Other',              emoji: '📋' },
 ];
 
-const EMPTY_FORM = { name: '', whatsapp: '', request_types: [] as string[] };
+const EMPTY_FORM = { name: '', whatsapp: '', request_types: [] as string[], response_time_minutes: 30 };
 
 function DeptForm({
   initial,
@@ -60,6 +60,22 @@ function DeptForm({
         onChange={e => setForm(f => ({ ...f, whatsapp: e.target.value }))}
         required
       />
+
+      <div className="space-y-1">
+        <label className="text-xs font-medium text-slate-600">Response time</label>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={1}
+            max={480}
+            value={form.response_time_minutes}
+            onChange={e => setForm(f => ({ ...f, response_time_minutes: parseInt(e.target.value) || 30 }))}
+            className="w-20 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-brand-500"
+          />
+          <span className="text-xs text-slate-400">minutes</span>
+        </div>
+        <p className="text-xs text-slate-400">Shown to guests when their request is logged</p>
+      </div>
 
       <div>
         <p className="text-sm font-medium text-slate-700 mb-2">Handles these request types</p>
@@ -144,6 +160,7 @@ export function DepartmentsPage() {
       whatsapp: dept.whatsapp,
       request_types: dept.request_types,
       is_active: !dept.is_active,
+      response_time_minutes: dept.response_time_minutes || 30,
     });
     load();
   }
@@ -192,8 +209,9 @@ export function DepartmentsPage() {
                       <span className="text-xs bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full">Inactive</span>
                     )}
                   </div>
-                  <div className="flex items-center gap-1 text-xs text-slate-400 mb-2">
-                    <Phone size={11} /> {dept.whatsapp}
+                  <div className="flex items-center gap-3 text-xs text-slate-400 mb-2">
+                    <span className="flex items-center gap-1"><Phone size={11} /> {dept.whatsapp}</span>
+                    <span className="flex items-center gap-1"><Clock size={11} /> {dept.response_time_minutes || 30} min response</span>
                   </div>
                   <div className="flex flex-wrap gap-1">
                     {dept.request_types.map(t => {
@@ -255,7 +273,7 @@ export function DepartmentsPage() {
       {editing && (
         <Modal title={`Edit — ${editing.name}`} onClose={() => setEditing(null)} wide>
           <DeptForm
-            initial={{ name: editing.name, whatsapp: editing.whatsapp, request_types: editing.request_types }}
+            initial={{ name: editing.name, whatsapp: editing.whatsapp, request_types: editing.request_types, response_time_minutes: editing.response_time_minutes || 30 }}
             onSave={handleUpdate}
             onCancel={() => setEditing(null)}
             saving={saving}

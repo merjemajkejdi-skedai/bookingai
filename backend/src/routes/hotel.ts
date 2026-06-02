@@ -434,8 +434,8 @@ hotelRouter.get('/departments', requireAuth, async (req: Request, res: Response)
 // POST /hotel/departments
 hotelRouter.post('/departments', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
-  const { name, whatsapp, request_types } = req.body as {
-    name: string; whatsapp: string; request_types: string[];
+  const { name, whatsapp, request_types, response_time_minutes } = req.body as {
+    name: string; whatsapp: string; request_types: string[]; response_time_minutes?: number;
   };
   if (!name || !whatsapp || !Array.isArray(request_types) || !request_types.length) {
     return err(res, 'name, whatsapp, and request_types are required');
@@ -446,9 +446,10 @@ hotelRouter.post('/departments', requireAuth, async (req: Request, res: Response
   try {
     const id = crypto.randomUUID();
     await dbRun(
-      `INSERT INTO hotel_departments (id, tenant_id, name, whatsapp, request_types)
-       VALUES (?,?,?,?,?)`,
+      `INSERT INTO hotel_departments (id, tenant_id, name, whatsapp, request_types, response_time_minutes)
+       VALUES (?,?,?,?,?,?)`,
       id, tenantId, name, whatsapp, JSON.stringify(request_types),
+      Number(response_time_minutes) || 30,
     );
     const row = await dbGet('SELECT * FROM hotel_departments WHERE id = ?', id) as any;
     ok(res, { ...row, request_types: JSON.parse(row.request_types || '[]') });
@@ -458,18 +459,19 @@ hotelRouter.post('/departments', requireAuth, async (req: Request, res: Response
 // PUT /hotel/departments/:id
 hotelRouter.put('/departments/:id', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
-  const { name, whatsapp, request_types, is_active } = req.body as {
-    name: string; whatsapp: string; request_types: string[]; is_active?: boolean;
+  const { name, whatsapp, request_types, is_active, response_time_minutes } = req.body as {
+    name: string; whatsapp: string; request_types: string[]; is_active?: boolean; response_time_minutes?: number;
   };
   if (!name || !whatsapp || !Array.isArray(request_types) || !request_types.length) {
     return err(res, 'name, whatsapp, and request_types are required');
   }
   try {
     await dbRun(
-      `UPDATE hotel_departments SET name = ?, whatsapp = ?, request_types = ?, is_active = ?
+      `UPDATE hotel_departments SET name = ?, whatsapp = ?, request_types = ?, is_active = ?, response_time_minutes = ?
        WHERE id = ? AND tenant_id = ?`,
       name, whatsapp, JSON.stringify(request_types),
       is_active === false ? 0 : 1,
+      Number(response_time_minutes) || 30,
       req.params.id, tenantId,
     );
     ok(res, { updated: true });

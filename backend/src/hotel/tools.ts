@@ -115,11 +115,11 @@ const DEFAULT_PRIORITY_MAP: Record<string, string> = {
   other:              'low',
 };
 
-const ETA_MAP: Record<string, string> = {
-  high:   '10 minutes',
-  normal: '30 minutes',
-  low:    '1 hour',
-};
+function formatEta(minutes: number): string {
+  if (minutes < 60) return `${minutes} minutes`;
+  if (minutes === 60) return '1 hour';
+  return `${Math.round((minutes / 60) * 10) / 10} hours`;
+}
 
 // ---------------------------------------------------------------------------
 // Tool execution
@@ -183,10 +183,12 @@ export async function executeHotelTool(
         request_type, description, department, finalPriority, finalPhoto, finalMime,
       );
 
+      let etaMinutes = 30; // default, overwritten below if department found
+
       // Notify the matching department via WhatsApp
       try {
         const depts = await dbAll(
-          `SELECT name, whatsapp, request_types FROM hotel_departments
+          `SELECT name, whatsapp, request_types, response_time_minutes FROM hotel_departments
            WHERE tenant_id = ? AND is_active = 1`,
           tenantId,
         ) as any[];
@@ -200,6 +202,10 @@ export async function executeHotelTool(
           console.log(`[Hotel notify] dept "${d.name}" handles: ${JSON.stringify(types)}`);
           return types.includes(request_type);
         });
+
+        if (match?.response_time_minutes) {
+          etaMinutes = Number(match.response_time_minutes) || 30;
+        }
 
         if (match?.whatsapp) {
           const EMOJI: Record<string, string> = {
@@ -266,7 +272,7 @@ export async function executeHotelTool(
         room:        finalRoom,
         department,
         priority:    finalPriority,
-        eta:         ETA_MAP[finalPriority],
+        eta:         formatEta(etaMinutes),
         photo_saved: !!finalPhoto,
       };
     }
