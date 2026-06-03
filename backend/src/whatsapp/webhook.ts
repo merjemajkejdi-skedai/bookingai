@@ -231,17 +231,17 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
 
   const phone = From?.replace('whatsapp:', '') ?? 'unknown';
 
-  // Extract media first so it can inform the body fallback
-  const numMedia  = parseInt(req.body.NumMedia || '0');
-  const mediaUrl  = numMedia > 0 ? (req.body.MediaUrl0         || null) : null;
-  const mediaMime = numMedia > 0 ? (req.body.MediaContentType0 || null) : null;
+  // Extract media metadata first so it can inform the body fallback
+  const numMedia    = parseInt(req.body.NumMedia || '0');
+  const rawMediaUrl = numMedia > 0 ? (req.body.MediaUrl0         || null) : null;
+  const mediaMime   = numMedia > 0 ? (req.body.MediaContentType0 || null) : null;
 
   // If guest sent only a photo with no text, use a placeholder so Claude
   // never receives an empty user message (Anthropic rejects empty content)
   const rawBody     = (Body ?? '').trim();
-  const messageText = rawBody || (mediaUrl ? '[Guest sent a photo]' : '');
+  const messageText = rawBody || (rawMediaUrl ? '[Guest sent a photo]' : '');
 
-  console.log(`\n📱 Incoming WhatsApp from ${phone} (${ProfileName}): "${messageText}"${mediaUrl ? ' [+photo]' : ''}`);
+  console.log(`\n📱 Incoming WhatsApp from ${phone} (${ProfileName}): "${messageText}"${rawMediaUrl ? ' [+photo]' : ''}`);
 
   // Acknowledge Twilio immediately
   const twiml = new MessagingResponse();
@@ -249,7 +249,7 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
   res.send(twiml.toString());
 
   // Skip only if both text and media are absent
-  if (!messageText && !mediaUrl) {
+  if (!messageText && !rawMediaUrl) {
     console.log('⚠️  Empty message body — skipping agent');
     return;
   }
@@ -263,6 +263,15 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
 
     // Log inbound (fire-and-forget)
     logMessage(tenant.id, 'inbound', (tenant.provider === 'meta' ? 'meta' : 'twilio'));
+
+    // Download Twilio media immediately — protected Twilio URL → public Railway URL.
+    // Must happen before the agent so it stores and forwards a publicly accessible URL.
+    let mediaUrl: string | null = null;
+    if (rawMediaUrl) {
+      const { downloadTwilioMedia } = await import('./twilio.js');
+      mediaUrl = await downloadTwilioMedia(rawMediaUrl, mediaMime || 'image/jpeg', tenant);
+      if (!mediaUrl) console.warn('[Webhook] Media download failed — proceeding without photo');
+    }
 
     const tenantType = (tenant.type || '').toLowerCase();
     console.log(`🏪 Tenant: ${tenant.id} (type: ${tenantType})`);

@@ -34,9 +34,9 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: false, limit: '10mb' }));
 
-// Serve uploaded menu files (Railway filesystem — ephemeral across deploys)
-const uploadsDir = path.join(process.cwd(), 'uploads', 'menus');
-fs.mkdirSync(uploadsDir, { recursive: true });
+// Serve uploaded files (Railway filesystem — ephemeral across deploys)
+fs.mkdirSync(path.join(process.cwd(), 'uploads', 'menus'),        { recursive: true });
+fs.mkdirSync(path.join(process.cwd(), 'uploads', 'maintenance'),  { recursive: true });
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 app.get('/health', (_, res) => res.json({

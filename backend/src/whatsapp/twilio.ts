@@ -1,5 +1,66 @@
 import twilio from 'twilio';
+import fs from 'fs';
+import path from 'path';
 import { logMessage } from './messageLog.js';
+
+// ── Download Twilio media and re-host on Railway filesystem ──────────────────
+// Twilio media URLs require HTTP Basic Auth — browsers and external services
+// (including Twilio itself for department forwards) cannot access them directly.
+// This function downloads the file and returns a public Railway URL instead.
+
+export async function downloadTwilioMedia(
+  mediaUrl:  string,
+  mediaMime: string,
+  tenant:    any,
+): Promise<string | null> {
+  try {
+    const accountSid = tenant?.twilio_account_sid || process.env.TWILIO_ACCOUNT_SID;
+    const authToken  = tenant?.twilio_auth_token  || process.env.TWILIO_AUTH_TOKEN;
+
+    if (!accountSid || !authToken) {
+      console.warn('[Media] No Twilio credentials available for download');
+      return null;
+    }
+
+    const EXT_MAP: Record<string, string> = {
+      'image/jpeg': '.jpg',
+      'image/jpg':  '.jpg',
+      'image/png':  '.png',
+      'image/gif':  '.gif',
+      'image/webp': '.webp',
+      'video/mp4':  '.mp4',
+    };
+    const ext      = EXT_MAP[mediaMime] || '.jpg';
+    const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
+    const savePath = path.join(process.cwd(), 'uploads', 'maintenance', filename);
+
+    const response = await fetch(mediaUrl, {
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString('base64')}`,
+      },
+    });
+
+    if (!response.ok) {
+      console.error(`[Media] Download failed: ${response.status} ${response.statusText}`);
+      return null;
+    }
+
+    const buffer = await response.arrayBuffer();
+    fs.writeFileSync(savePath, Buffer.from(buffer));
+
+    const BASE_URL = process.env.RAILWAY_PUBLIC_DOMAIN
+      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+      : 'https://bookingai-production-8d5d.up.railway.app';
+
+    const publicUrl = `${BASE_URL}/uploads/maintenance/${filename}`;
+    console.log(`[Media] ✅ Saved: ${publicUrl}`);
+    return publicUrl;
+
+  } catch (err: any) {
+    console.error('[Media] Download error:', err.message);
+    return null;
+  }
+}
 
 // ── Send via Twilio ───────────────────────────────────────────────────────────
 // Client is created per-call so tenant-specific credentials can be used.
