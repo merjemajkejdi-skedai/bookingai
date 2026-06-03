@@ -304,6 +304,7 @@ hotelRouter.put('/config', requireAuth, async (req: Request, res: Response) => {
     survey_positive_message = null,
     front_office_phone = null,
     fallback_message = null,
+    ask_maintenance_photo = 1,
   } = req.body;
 
   if (!hotel_name) return err(res, 'hotel_name is required');
@@ -316,8 +317,8 @@ hotelRouter.put('/config', requireAuth, async (req: Request, res: Response) => {
           location_url, menu_url, ask_guest_identity, message_forward,
           review_platform_url, review_platform_name, survey_positive_threshold,
           survey_negative_message, survey_positive_message,
-          front_office_phone, fallback_message)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+          front_office_phone, fallback_message, ask_maintenance_photo)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT (tenant_id) DO UPDATE SET
          hotel_name = excluded.hotel_name,
          check_in_time = excluded.check_in_time,
@@ -338,7 +339,8 @@ hotelRouter.put('/config', requireAuth, async (req: Request, res: Response) => {
          survey_negative_message = COALESCE(excluded.survey_negative_message, hotel_config.survey_negative_message),
          survey_positive_message = COALESCE(excluded.survey_positive_message, hotel_config.survey_positive_message),
          front_office_phone = excluded.front_office_phone,
-         fallback_message = excluded.fallback_message`,
+         fallback_message = excluded.fallback_message,
+         ask_maintenance_photo = excluded.ask_maintenance_photo`,
       tenantId, hotel_name, check_in_time, check_out_time, wifi_password,
       breakfast_hours, pool_hours, restaurant_hours, reception_phone, emergency_phone,
       location_url, menu_url, ask_guest_identity ? 1 : 0, message_forward ? 1 : 0,
@@ -348,6 +350,7 @@ hotelRouter.put('/config', requireAuth, async (req: Request, res: Response) => {
       survey_positive_message || null,
       front_office_phone || null,
       fallback_message || null,
+      ask_maintenance_photo ? 1 : 0,
     );
     ok(res, { updated: true });
   } catch (e: any) { err(res, e.message, 500); }

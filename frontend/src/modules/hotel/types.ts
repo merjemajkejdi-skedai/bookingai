@@ -159,4 +159,6 @@ export interface HotelConfig {
   // Fallback — used when the agent times out or fails
   front_office_phone: string | null;
   fallback_message: string | null;
+  // Behaviour flags
+  ask_maintenance_photo: number; // 1 = ask for photo, 0 = never ask
 }

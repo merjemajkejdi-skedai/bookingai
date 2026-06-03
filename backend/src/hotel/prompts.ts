@@ -6,9 +6,10 @@ function waLink(phone: string | null | undefined): string | null {
 }
 
 export function buildHotelSystemPrompt(tenant: any, config?: any): string {
-  const hotelName    = config?.hotel_name || tenant?.name || 'the hotel';
-  const forward      = config?.message_forward !== 0; // default ON
-  const askIdentity  = config?.ask_guest_identity !== 0; // default ON
+  const hotelName           = config?.hotel_name || tenant?.name || 'the hotel';
+  const forward             = config?.message_forward !== 0;       // default ON
+  const askIdentity         = config?.ask_guest_identity !== 0;    // default ON
+  const askMaintenancePhoto = config?.ask_maintenance_photo !== 0; // default ON
 
   const locationLine = config?.location_url
     ? `- Location (Google Maps): ${config.location_url}`
@@ -66,9 +67,11 @@ When the guest message contains [Guest also sent a photo: <url> (<mime>)]:
 - That URL is the photo_url — copy it verbatim into the create_request tool call
 - Tell the guest their photo has been sent to the team
 - Example: "Thank you for the photo — I have sent it to our maintenance team along with your request."
-- If a guest reports something broken but has NOT sent a photo, you MAY ask ONCE:
+${askMaintenancePhoto
+  ? `- If a guest reports something broken but has NOT sent a photo, you MAY ask ONCE:
   "Could you send us a quick photo? It helps our team come prepared with the right tools."
-  Do NOT ask again if they decline or ignore the request.
+  Do NOT ask again if they decline or ignore the request.`
+  : `- Do NOT ask guests to send photos — accept and acknowledge them if offered, but never request them.`}
 
 ═══════════════════════════════════════════════
 MENU HANDLING
@@ -204,9 +207,11 @@ When the guest message contains [Guest also sent a photo: <url> (<mime>)]:
 - That URL is the photo_url — copy it verbatim into the create_request tool call
 - Tell the guest their photo has been sent to the team
 - Example: "Thank you for the photo — I have sent it to our maintenance team along with your request."
-- If a guest reports something broken but has NOT sent a photo, you MAY ask ONCE:
-  "Could you send us a quick photo? It helps our team come prepared with the right tools."
-  Do NOT ask again if they decline or ignore the request.
+${askMaintenancePhoto
+  ? `- If a guest reports a maintenance issue (broken AC, leak, broken furniture, etc.) but has NOT sent a photo, ask ONCE:
+  "Could you send us a quick photo? It helps our team arrive prepared with the right tools. 📸"
+  Do NOT ask again if they decline or ignore the request.`
+  : `- Do NOT ask guests to send photos — accept and acknowledge them if offered, but never request them.`}
 
 ═══════════════════════════════════════════════
 MENU HANDLING

@@ -338,7 +338,8 @@ const SCHEMA = `
     survey_negative_message TEXT NOT NULL DEFAULT 'We are truly sorry your experience did not meet your expectations. Your feedback is very important to us and we will use it to improve. We hope to have the opportunity to welcome you back for a much better stay.',
     survey_positive_message TEXT NOT NULL DEFAULT 'We are so glad you enjoyed your stay! It would mean the world to us if you could share your experience online — it only takes a minute and helps us welcome more wonderful guests like you.',
     front_office_phone TEXT,
-    fallback_message TEXT
+    fallback_message TEXT,
+    ask_maintenance_photo INTEGER NOT NULL DEFAULT 1
   );
   CREATE TABLE IF NOT EXISTS restaurant_config (
     tenant_id TEXT PRIMARY KEY,
@@ -556,6 +557,8 @@ export async function runMigrations() {
       // timeout_fallback_001 — per-hotel fallback message when agent times out
       `ALTER TABLE hotel_config ADD COLUMN IF NOT EXISTS front_office_phone TEXT`,
       `ALTER TABLE hotel_config ADD COLUMN IF NOT EXISTS fallback_message TEXT`,
+      // maintenance_photo_001 — flag to control whether agent asks for maintenance photos
+      `ALTER TABLE hotel_config ADD COLUMN IF NOT EXISTS ask_maintenance_photo INTEGER NOT NULL DEFAULT 1`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -679,6 +682,8 @@ export async function runMigrations() {
     exec('ALTER TABLE hotel_config ADD COLUMN front_office_phone TEXT');
   if (!hotelConfigCols.includes('fallback_message'))
     exec('ALTER TABLE hotel_config ADD COLUMN fallback_message TEXT');
+  if (!hotelConfigCols.includes('ask_maintenance_photo'))
+    exec('ALTER TABLE hotel_config ADD COLUMN ask_maintenance_photo INTEGER NOT NULL DEFAULT 1');
 
   // tenant columns for review routing
   if (!cols.includes('review_email_slug'))

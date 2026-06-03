@@ -185,6 +185,8 @@ interface Config {
   // Fallback
   front_office_phone: string;
   fallback_message: string;
+  // Behaviour flags
+  ask_maintenance_photo: boolean;
 }
 
 const DEFAULT_POSITIVE_MSG =
@@ -213,6 +215,7 @@ const EMPTY: Config = {
   survey_negative_message: DEFAULT_NEGATIVE_MSG,
   front_office_phone: '',
   fallback_message: '',
+  ask_maintenance_photo: true,
 };
 
 export function ConfigPage() {
@@ -240,6 +243,7 @@ export function ConfigPage() {
             survey_negative_message:     c.survey_negative_message     ?? DEFAULT_NEGATIVE_MSG,
             front_office_phone:          c.front_office_phone          ?? '',
             fallback_message:            c.fallback_message            ?? '',
+            ask_maintenance_photo:       c.ask_maintenance_photo       !== 0,
           });
         }
       })
@@ -270,6 +274,7 @@ export function ConfigPage() {
         survey_negative_message:    config.survey_negative_message    || null,
         front_office_phone:         config.front_office_phone         || null,
         fallback_message:           config.fallback_message           || null,
+        ask_maintenance_photo:      config.ask_maintenance_photo      ? 1 : 0,
       } as any);
       // Reload from server to confirm what was actually persisted
       const fresh = await api.getConfig() as any;
@@ -286,6 +291,7 @@ export function ConfigPage() {
           survey_negative_message:    fresh.survey_negative_message     ?? DEFAULT_NEGATIVE_MSG,
           front_office_phone:         fresh.front_office_phone          ?? '',
           fallback_message:           fresh.fallback_message            ?? '',
+          ask_maintenance_photo:      fresh.ask_maintenance_photo       !== 0,
         }));
       }
       setSaved(true);
@@ -417,6 +423,12 @@ export function ConfigPage() {
                 icon:  <MessageSquare size={15} className="text-slate-400 mt-0.5 flex-shrink-0" />,
                 label: 'Message forwarding',
                 desc:  'When on, unresolved requests are forwarded to the relevant department via WhatsApp. When off, the AI only answers from FAQ and hotel info — if it can\'t help, it gives guests the front office WhatsApp number to contact directly.',
+              },
+              {
+                key:   'ask_maintenance_photo' as const,
+                icon:  <AlertTriangle size={15} className="text-slate-400 mt-0.5 flex-shrink-0" />,
+                label: 'Ask guests for maintenance photos',
+                desc:  'When on, the AI gently asks once for a photo when a guest reports a maintenance issue. Helps staff arrive prepared with the right tools. When off, photos are accepted if sent but never requested.',
               },
             ] as const).map(({ key, icon, label, desc }) => (
               <div key={key} className="flex items-start gap-3">
