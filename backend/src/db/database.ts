@@ -336,7 +336,9 @@ const SCHEMA = `
     review_platform_name TEXT NOT NULL DEFAULT 'Booking.com',
     survey_positive_threshold INTEGER NOT NULL DEFAULT 8,
     survey_negative_message TEXT NOT NULL DEFAULT 'We are truly sorry your experience did not meet your expectations. Your feedback is very important to us and we will use it to improve. We hope to have the opportunity to welcome you back for a much better stay.',
-    survey_positive_message TEXT NOT NULL DEFAULT 'We are so glad you enjoyed your stay! It would mean the world to us if you could share your experience online — it only takes a minute and helps us welcome more wonderful guests like you.'
+    survey_positive_message TEXT NOT NULL DEFAULT 'We are so glad you enjoyed your stay! It would mean the world to us if you could share your experience online — it only takes a minute and helps us welcome more wonderful guests like you.',
+    front_office_phone TEXT,
+    fallback_message TEXT
   );
   CREATE TABLE IF NOT EXISTS restaurant_config (
     tenant_id TEXT PRIMARY KEY,
@@ -551,6 +553,9 @@ export async function runMigrations() {
       `ALTER TABLE hotel_departments ADD COLUMN IF NOT EXISTS language TEXT NOT NULL DEFAULT 'en'`,
       // dept_template_001 — per-tenant dept notification template SID
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS twilio_dept_template_sid TEXT`,
+      // timeout_fallback_001 — per-hotel fallback message when agent times out
+      `ALTER TABLE hotel_config ADD COLUMN IF NOT EXISTS front_office_phone TEXT`,
+      `ALTER TABLE hotel_config ADD COLUMN IF NOT EXISTS fallback_message TEXT`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -670,6 +675,10 @@ export async function runMigrations() {
     exec("ALTER TABLE hotel_config ADD COLUMN survey_negative_message TEXT NOT NULL DEFAULT 'We are truly sorry your experience did not meet your expectations. Your feedback is very important to us and we will use it to improve. We hope to have the opportunity to welcome you back for a much better stay.'");
   if (!hotelConfigCols.includes('survey_positive_message'))
     exec("ALTER TABLE hotel_config ADD COLUMN survey_positive_message TEXT NOT NULL DEFAULT 'We are so glad you enjoyed your stay! It would mean the world to us if you could share your experience online — it only takes a minute and helps us welcome more wonderful guests like you.'");
+  if (!hotelConfigCols.includes('front_office_phone'))
+    exec('ALTER TABLE hotel_config ADD COLUMN front_office_phone TEXT');
+  if (!hotelConfigCols.includes('fallback_message'))
+    exec('ALTER TABLE hotel_config ADD COLUMN fallback_message TEXT');
 
   // tenant columns for review routing
   if (!cols.includes('review_email_slug'))

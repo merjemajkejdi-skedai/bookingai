@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Save, Wifi, Coffee, Waves, UtensilsCrossed, Clock, Phone, MapPin, BookOpen, UserCheck, Star, MessageSquare, SmilePlus } from 'lucide-react';
+import { Save, Wifi, Coffee, Waves, UtensilsCrossed, Clock, Phone, MapPin, BookOpen, UserCheck, Star, MessageSquare, SmilePlus, AlertTriangle } from 'lucide-react';
 import { api } from '../api';
 import { Button, Input, Spinner } from '../ui';
 
@@ -182,6 +182,9 @@ interface Config {
   survey_positive_threshold: number;
   survey_positive_message: string;
   survey_negative_message: string;
+  // Fallback
+  front_office_phone: string;
+  fallback_message: string;
 }
 
 const DEFAULT_POSITIVE_MSG =
@@ -208,6 +211,8 @@ const EMPTY: Config = {
   survey_positive_threshold: 8,
   survey_positive_message: DEFAULT_POSITIVE_MSG,
   survey_negative_message: DEFAULT_NEGATIVE_MSG,
+  front_office_phone: '',
+  fallback_message: '',
 };
 
 export function ConfigPage() {
@@ -233,6 +238,8 @@ export function ConfigPage() {
             survey_positive_threshold:   Number(c.survey_positive_threshold) || 8,
             survey_positive_message:     c.survey_positive_message     ?? DEFAULT_POSITIVE_MSG,
             survey_negative_message:     c.survey_negative_message     ?? DEFAULT_NEGATIVE_MSG,
+            front_office_phone:          c.front_office_phone          ?? '',
+            fallback_message:            c.fallback_message            ?? '',
           });
         }
       })
@@ -261,6 +268,8 @@ export function ConfigPage() {
         survey_positive_threshold:  config.survey_positive_threshold,
         survey_positive_message:    config.survey_positive_message    || null,
         survey_negative_message:    config.survey_negative_message    || null,
+        front_office_phone:         config.front_office_phone         || null,
+        fallback_message:           config.fallback_message           || null,
       } as any);
       // Reload from server to confirm what was actually persisted
       const fresh = await api.getConfig() as any;
@@ -275,6 +284,8 @@ export function ConfigPage() {
           survey_positive_threshold:  Number(fresh.survey_positive_threshold) || 8,
           survey_positive_message:    fresh.survey_positive_message     ?? DEFAULT_POSITIVE_MSG,
           survey_negative_message:    fresh.survey_negative_message     ?? DEFAULT_NEGATIVE_MSG,
+          front_office_phone:         fresh.front_office_phone          ?? '',
+          fallback_message:           fresh.fallback_message            ?? '',
         }));
       }
       setSaved(true);
@@ -352,6 +363,40 @@ export function ConfigPage() {
             <div className="flex items-end gap-2">
               <Clock size={15} className="text-slate-400 mb-2.5 flex-shrink-0" />
               <Input label="Emergency Phone" placeholder="+355 4 123 4568" className="flex-1" {...field('emergency_phone')} />
+            </div>
+          </section>
+
+          {/* Offline Fallback */}
+          <section className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+            <div className="flex items-center gap-2">
+              <AlertTriangle size={15} className="text-slate-400" />
+              <h2 className="text-sm font-semibold text-slate-700">Offline Fallback</h2>
+            </div>
+            <p className="text-xs text-slate-400 -mt-1">
+              Sent to guests when the AI assistant is temporarily unavailable (timeout, outage, etc.).
+              If left blank, a generic error message is used instead.
+            </p>
+            <div className="flex items-end gap-2">
+              <Phone size={15} className="text-slate-400 mb-2.5 flex-shrink-0" />
+              <Input
+                label="Front Office WhatsApp (for fallback link)"
+                placeholder="+355691234567"
+                className="flex-1"
+                {...field('front_office_phone')}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="block text-sm font-medium text-slate-700">Fallback message</label>
+              <textarea
+                rows={3}
+                value={config.fallback_message}
+                onChange={e => setConfig(c => ({ ...c, fallback_message: e.target.value }))}
+                placeholder={`e.g. Our assistant is temporarily unavailable. For urgent requests please contact the front office directly.`}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-brand-400/40"
+              />
+              <p className="text-xs text-slate-400">
+                If blank, a generic "technical issue" message is sent. The front office WhatsApp link is appended automatically when a number is set.
+              </p>
             </div>
           </section>
 

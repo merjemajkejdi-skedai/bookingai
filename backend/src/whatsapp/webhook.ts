@@ -20,6 +20,46 @@ async function dbGet(sql: string, ...p: unknown[]) {
 }
 
 // ---------------------------------------------------------------------------
+// Timeout + fallback helpers
+// ---------------------------------------------------------------------------
+
+/** Rejects with an error if `promise` does not settle within `ms` milliseconds. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`Agent timed out after ${ms}ms`)),
+      ms,
+    );
+    promise.then(
+      v => { clearTimeout(timer); resolve(v); },
+      e => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
+
+/**
+ * Returns the best available fallback message for this tenant.
+ * For hotel tenants: reads hotel_config.fallback_message / front_office_phone.
+ * All other tenants: generic message.
+ */
+async function getFallbackMessage(tenant: Record<string, any>): Promise<string> {
+  if ((tenant.type || '').toLowerCase() === 'hotel') {
+    try {
+      const cfg = await dbGet(
+        'SELECT fallback_message, front_office_phone FROM hotel_config WHERE tenant_id = ?',
+        tenant.id,
+      ) as any;
+      if (cfg?.fallback_message) return cfg.fallback_message as string;
+      if (cfg?.front_office_phone) {
+        const clean = String(cfg.front_office_phone).replace(/\D/g, '');
+        return `Our assistant is temporarily unavailable. For urgent requests, please contact the front office directly: wa.me/${clean}`;
+      }
+    } catch { /* ignore — fall through to generic */ }
+  }
+  return "Sorry, I'm having a technical issue. Please try again in a moment.";
+}
+
+// ---------------------------------------------------------------------------
 // Resolve which tenant owns this WhatsApp business number.
 // Returns the full tenant row so provider / meta fields are available.
 // ---------------------------------------------------------------------------
@@ -114,10 +154,29 @@ async function handleMetaWebhook(req: Request, res: Response) {
     let reply = '';
 
     if (tenantType === 'skedai') {
-      reply = await runSkedAIAgent(body, customerPhone, tenant.id);
+      try {
+        reply = await withTimeout(runSkedAIAgent(body, customerPhone, tenant.id), 15_000);
+      } catch (agentErr: any) {
+        console.error('[Meta] ❌ SkedAI agent error/timeout:', agentErr?.message ?? agentErr);
+        const fallback = await getFallbackMessage(tenant);
+        await sendWhatsAppMessage(customerPhone, fallback, tenant)
+          .catch((e: any) => console.error('[Meta] fallback send failed:', e.message));
+        return;
+      }
     } else {
       const history = getSession(customerPhone);
-      reply = await runAgent(body, history, customerPhone, tenant.id, tenantType);
+      try {
+        reply = await withTimeout(
+          runAgent(body, history, customerPhone, tenant.id, tenantType),
+          15_000,
+        );
+      } catch (agentErr: any) {
+        console.error('[Meta] ❌ Agent error/timeout:', agentErr?.message ?? agentErr);
+        const fallback = await getFallbackMessage(tenant);
+        await sendWhatsAppMessage(customerPhone, fallback, tenant)
+          .catch((e: any) => console.error('[Meta] fallback send failed:', e.message));
+        return;
+      }
       if (reply) updateSession(customerPhone, body, reply);
     }
 
@@ -210,9 +269,18 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
 
     // ── SkedAI — dedicated sales & support agent ──────────────────────────
     if (tenantType === 'skedai') {
-      const reply = await runSkedAIAgent(messageText, phone, tenant.id);
-      if (reply) {
-        await sendWhatsAppMessage(phone, reply, tenant);
+      let skedReply: string;
+      try {
+        skedReply = await withTimeout(runSkedAIAgent(messageText, phone, tenant.id), 15_000);
+      } catch (agentErr: any) {
+        console.error('❌ SkedAI agent error/timeout:', agentErr?.message ?? agentErr);
+        const fallback = await getFallbackMessage(tenant);
+        await sendWhatsAppMessage(phone, fallback, tenant)
+          .catch((e: any) => console.error('❌ SkedAI fallback send failed:', e.message));
+        return;
+      }
+      if (skedReply) {
+        await sendWhatsAppMessage(phone, skedReply, tenant);
         console.log(`✅ SkedAI reply sent to ${phone}`);
       }
       return;
@@ -222,11 +290,26 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
 
     // Hotel: pass media context directly so photos reach the agent
     let reply: string;
-    if (tenantType === 'hotel') {
-      reply = await runHotelAgent(messageText, history, phone, tenant.id, mediaUrl, mediaMime);
-    } else {
-      reply = await runAgent(messageText, history, phone, tenant.id, tenantType);
+    try {
+      if (tenantType === 'hotel') {
+        reply = await withTimeout(
+          runHotelAgent(messageText, history, phone, tenant.id, mediaUrl, mediaMime),
+          15_000,
+        );
+      } else {
+        reply = await withTimeout(
+          runAgent(messageText, history, phone, tenant.id, tenantType),
+          15_000,
+        );
+      }
+    } catch (agentErr: any) {
+      console.error('❌ Agent error/timeout:', agentErr?.message ?? agentErr);
+      const fallback = await getFallbackMessage(tenant);
+      await sendWhatsAppMessage(phone, fallback, tenant)
+        .catch((e: any) => console.error('❌ Fallback send failed:', e.message));
+      return;
     }
+
     updateSession(phone, messageText, reply);
 
     console.log(`🤖 Agent reply: "${reply.slice(0, 120)}"`);
@@ -238,13 +321,7 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
     console.log(`✅ Reply sent to ${phone}`);
 
   } catch (err: any) {
-    console.error('❌ Agent error:', err?.message ?? err);
-    try {
-      // Best-effort error message back to user via Twilio env vars
-      await sendWhatsAppMessage(From?.replace('whatsapp:', '') ?? '', "Sorry, I'm having a technical issue. Please try again in a moment.");
-    } catch (sendErr: any) {
-      console.error('❌ Failed to send error message:', sendErr?.message);
-    }
+    console.error('❌ Webhook error:', err?.message ?? err);
   }
 });
 

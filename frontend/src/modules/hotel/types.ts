@@ -156,4 +156,7 @@ export interface HotelConfig {
   survey_positive_threshold: number;
   survey_positive_message: string | null;
   survey_negative_message: string | null;
+  // Fallback — used when the agent times out or fails
+  front_office_phone: string | null;
+  fallback_message: string | null;
 }
