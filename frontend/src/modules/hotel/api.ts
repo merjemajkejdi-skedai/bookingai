@@ -113,10 +113,12 @@ export const api = {
       method: 'POST', body: JSON.stringify({ message }),
     }),
 
-  // Blocked numbers
+  // Blocked numbers / staff
   getBlocked: () => req<BlockedNumber[]>('/hotel/blocked'),
-  addBlocked: (data: { phone: string; label?: string }) =>
-    req('/hotel/blocked', { method: 'POST', body: JSON.stringify(data) }),
+  addBlocked: (data: {
+    phone: string; label?: string;
+    staff_name?: string; staff_role?: string; is_staff?: boolean;
+  }) => req('/hotel/blocked', { method: 'POST', body: JSON.stringify(data) }),
   removeBlocked: (phone: string) =>
     req(`/hotel/blocked/${encodeURIComponent(phone)}`, { method: 'DELETE' }),
 

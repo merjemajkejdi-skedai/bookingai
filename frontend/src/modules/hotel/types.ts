@@ -32,6 +32,9 @@ export interface HotelRequest {
   resolved_at: string | null;
   photo_url: string | null;
   photo_mime_type: string | null;
+  in_progress_at: string | null;
+  resolved_by: string | null;
+  notes: string | null;
 }
 
 export interface FaqEntry {
@@ -101,6 +104,9 @@ export interface BlockedNumber {
   tenant_id: string;
   phone: string;
   label: string | null;
+  staff_name: string | null;
+  staff_role: string | null;
+  is_staff: number; // 0 | 1
   created_at: string;
 }
 

@@ -22,15 +22,24 @@ const err = (res: Response, msg: string, status = 400) =>
 // Requests
 // ---------------------------------------------------------------------------
 
-// GET /hotel/requests?status=pending
+// GET /hotel/requests?status=pending|in_progress|resolved|all
 hotelRouter.get('/requests', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
-  const status = (req.query.status as string) || 'pending';
+  const rawStatus = (req.query.status as string) || 'pending';
   try {
-    const rows = await dbAll(
-      `SELECT * FROM hotel_requests WHERE tenant_id = ? AND status = ? ORDER BY created_at ASC`,
-      tenantId, status,
-    );
+    let rows: unknown[];
+    if (rawStatus === 'all') {
+      rows = await dbAll(
+        `SELECT * FROM hotel_requests WHERE tenant_id = ?
+         ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'in_progress' THEN 1 ELSE 2 END, created_at DESC`,
+        tenantId,
+      );
+    } else {
+      rows = await dbAll(
+        `SELECT * FROM hotel_requests WHERE tenant_id = ? AND status = ? ORDER BY created_at ASC`,
+        tenantId, rawStatus,
+      );
+    }
     ok(res, rows);
   } catch (e: any) { err(res, e.message, 500); }
 });
@@ -38,13 +47,29 @@ hotelRouter.get('/requests', requireAuth, async (req: Request, res: Response) =>
 // PATCH /hotel/requests/:id
 hotelRouter.patch('/requests/:id', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
-  const { status } = req.body as { status: string };
+  const { status, note } = req.body as { status: string; note?: string };
   if (!status) return err(res, 'status is required');
   try {
-    const resolvedAt = status === 'resolved' ? new Date().toISOString() : null;
+    const now  = new Date().toISOString();
+    const resolvedAt    = status === 'resolved'    ? now : null;
+    const inProgressAt  = status === 'in_progress' ? now : null;
+
+    // Append note to notes column if provided
+    let updatedNotes: string | null = null;
+    if (note) {
+      const existing = await dbGet('SELECT notes FROM hotel_requests WHERE id = ? AND tenant_id = ?', req.params.id, tenantId) as any;
+      const entry = `[Dashboard] ${note}`;
+      updatedNotes = existing?.notes ? `${existing.notes}\n${entry}` : entry;
+    }
+
     await dbRun(
-      `UPDATE hotel_requests SET status = ?, resolved_at = ? WHERE id = ? AND tenant_id = ?`,
-      status, resolvedAt, req.params.id, tenantId,
+      `UPDATE hotel_requests
+       SET status = ?,
+           resolved_at   = COALESCE(?, resolved_at),
+           in_progress_at = COALESCE(?, in_progress_at),
+           notes = COALESCE(?, notes)
+       WHERE id = ? AND tenant_id = ?`,
+      status, resolvedAt, inProgressAt, updatedNotes, req.params.id, tenantId,
     );
     ok(res, { updated: true });
   } catch (e: any) { err(res, e.message, 500); }
@@ -600,16 +625,24 @@ hotelRouter.get('/blocked', requireAuth, async (req: Request, res: Response) => 
 // POST /hotel/blocked
 hotelRouter.post('/blocked', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
-  const { phone, label } = req.body as { phone: string; label?: string };
+  const { phone, label, staff_name, staff_role, is_staff } = req.body as {
+    phone: string; label?: string;
+    staff_name?: string; staff_role?: string; is_staff?: boolean;
+  };
   if (!phone) return err(res, 'phone is required');
   // Normalise — store with whatsapp: prefix for consistent lookup
   const normalised = phone.startsWith('whatsapp:') ? phone : `whatsapp:${phone}`;
   try {
     await dbRun(
-      `INSERT INTO hotel_blocked_numbers (tenant_id, phone, label)
-       VALUES (?,?,?)
-       ON CONFLICT (tenant_id, phone) DO UPDATE SET label = excluded.label`,
+      `INSERT INTO hotel_blocked_numbers (tenant_id, phone, label, staff_name, staff_role, is_staff)
+       VALUES (?,?,?,?,?,?)
+       ON CONFLICT (tenant_id, phone) DO UPDATE SET
+         label      = excluded.label,
+         staff_name = excluded.staff_name,
+         staff_role = excluded.staff_role,
+         is_staff   = excluded.is_staff`,
       tenantId, normalised, label ?? null,
+      staff_name ?? null, staff_role ?? null, is_staff === false ? 0 : 1,
     );
     ok(res, { blocked: true, phone: normalised });
   } catch (e: any) { err(res, e.message, 500); }

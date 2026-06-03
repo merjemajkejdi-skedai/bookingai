@@ -306,7 +306,10 @@ const SCHEMA = `
     department TEXT NOT NULL,
     priority TEXT NOT NULL DEFAULT 'normal',
     created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
-    resolved_at TEXT
+    resolved_at TEXT,
+    in_progress_at TEXT,
+    resolved_by TEXT,
+    notes TEXT
   );
   CREATE TABLE IF NOT EXISTS hotel_faq (
     id TEXT PRIMARY KEY,
@@ -350,6 +353,9 @@ const SCHEMA = `
     tenant_id  TEXT NOT NULL,
     phone      TEXT NOT NULL,
     label      TEXT,
+    staff_name TEXT,
+    staff_role TEXT,
+    is_staff   INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     PRIMARY KEY (tenant_id, phone)
   );
@@ -578,6 +584,14 @@ export async function runMigrations() {
       `CREATE INDEX IF NOT EXISTS idx_dept_schedules_dept ON hotel_department_schedules(department_id)`,
       `ALTER TABLE hotel_departments ADD COLUMN IF NOT EXISTS scheduling_enabled INTEGER NOT NULL DEFAULT 0`,
       `ALTER TABLE hotel_departments ADD COLUMN IF NOT EXISTS after_hours_message TEXT`,
+      // staff_workflow_001 — staff status updates via WhatsApp + staff fields on blocklist
+      `ALTER TABLE hotel_requests ADD COLUMN IF NOT EXISTS in_progress_at TEXT`,
+      `ALTER TABLE hotel_requests ADD COLUMN IF NOT EXISTS resolved_by TEXT`,
+      `ALTER TABLE hotel_requests ADD COLUMN IF NOT EXISTS notes TEXT`,
+      `ALTER TABLE hotel_blocked_numbers ADD COLUMN IF NOT EXISTS staff_name TEXT`,
+      `ALTER TABLE hotel_blocked_numbers ADD COLUMN IF NOT EXISTS staff_role TEXT`,
+      `ALTER TABLE hotel_blocked_numbers ADD COLUMN IF NOT EXISTS is_staff INTEGER NOT NULL DEFAULT 1`,
+      `CREATE INDEX IF NOT EXISTS idx_hotel_requests_room_status ON hotel_requests(tenant_id, room_number, status)`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -729,6 +743,21 @@ export async function runMigrations() {
     exec('ALTER TABLE hotel_requests ADD COLUMN photo_url TEXT');
   if (!reqCols.includes('photo_mime_type'))
     exec('ALTER TABLE hotel_requests ADD COLUMN photo_mime_type TEXT');
+  if (!reqCols.includes('in_progress_at'))
+    exec('ALTER TABLE hotel_requests ADD COLUMN in_progress_at TEXT');
+  if (!reqCols.includes('resolved_by'))
+    exec('ALTER TABLE hotel_requests ADD COLUMN resolved_by TEXT');
+  if (!reqCols.includes('notes'))
+    exec('ALTER TABLE hotel_requests ADD COLUMN notes TEXT');
+
+  const blockedCols = prepare("SELECT name FROM pragma_table_info('hotel_blocked_numbers')")
+    .all().map((r: any) => r.name as string);
+  if (!blockedCols.includes('staff_name'))
+    exec('ALTER TABLE hotel_blocked_numbers ADD COLUMN staff_name TEXT');
+  if (!blockedCols.includes('staff_role'))
+    exec('ALTER TABLE hotel_blocked_numbers ADD COLUMN staff_role TEXT');
+  if (!blockedCols.includes('is_staff'))
+    exec('ALTER TABLE hotel_blocked_numbers ADD COLUMN is_staff INTEGER NOT NULL DEFAULT 1');
 
   const deptCols = prepare("SELECT name FROM pragma_table_info('hotel_departments')")
     .all().map((r: any) => r.name as string);

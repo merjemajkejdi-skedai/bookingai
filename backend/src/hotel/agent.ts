@@ -154,21 +154,36 @@ export async function runHotelAgent(
   const safeMessage = customerMessage.trim()
     || (mediaUrl ? '[Guest sent a photo]' : '[Empty message]');
 
-  // ── GUARD 1: Blocked numbers ──────────────────────────────────────────────
-  // Hotel admin can block staff/supplier numbers so the AI stays silent
+  // ── GUARD 1: Staff / blocked numbers ─────────────────────────────────────
+  // Numbers on the hotel_blocked_numbers list are staff. Route their messages
+  // to the staff handler (status updates, notes) instead of the guest AI.
+  // Return '' so webhook sends nothing — staffHandler sends its own reply.
   try {
     const normalised = customerPhone.startsWith('whatsapp:')
       ? customerPhone : `whatsapp:${customerPhone}`;
 
     const blocked = await dbAll(
-      `SELECT 1 FROM hotel_blocked_numbers
+      `SELECT * FROM hotel_blocked_numbers
        WHERE tenant_id = ? AND (phone = ? OR phone = ?)`,
       tenantId, customerPhone, normalised,
     ) as any[];
 
     if (blocked.length > 0) {
-      console.log(`[Hotel] 🚫 Blocked number ${customerPhone} — staying silent`);
-      return '';
+      const staffMember = blocked[0] as any;
+      console.log(`[Hotel] 📱 Staff message from ${staffMember.staff_name || staffMember.phone} — routing to staff handler`);
+      try {
+        const { handleStaffMessage } = await import('./staffHandler.js');
+        await handleStaffMessage({
+          message:   safeMessage,
+          staffPhone: customerPhone,
+          staffName:  staffMember.staff_name ?? null,
+          staffRole:  staffMember.staff_role  ?? null,
+          tenantId,
+        });
+      } catch (e: any) {
+        console.error('[Hotel] Staff handler error:', e.message);
+      }
+      return ''; // staffHandler handles the WhatsApp reply
     }
   } catch (e: any) {
     console.warn('[Hotel] blocklist check failed:', e.message);
