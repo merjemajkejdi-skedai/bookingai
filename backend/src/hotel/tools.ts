@@ -274,12 +274,30 @@ export async function executeHotelTool(
                   max_tokens: 200,
                   messages: [{
                     role:    'user',
-                    content: `Translate this hotel request description to ${langName}. Reply with ONLY the translation, no explanation, no quotes: ${description}`,
+                    content: `You are a translator. Translate the following text to ${langName}.
+
+Rules:
+- Reply with ONLY the translated text
+- No explanations, no notes, no parentheses, no commentary
+- No quotation marks
+- If the text is already in ${langName}, return it exactly as is with no changes and no comments
+- Do not say "this is already in ${langName}" or anything similar
+- Just the translation, nothing else
+
+Text to translate: ${description}`,
                   }],
                 });
                 const textBlock = translation.content.find((b: any) => b.type === 'text');
                 if (textBlock?.type === 'text' && (textBlock as any).text.trim()) {
-                  translatedDescription = (textBlock as any).text.trim();
+                  let translated = (textBlock as any).text.trim();
+                  // Safety trim — strip any explanation text that slips through
+                  translated = translated
+                    .replace(/\s*---.*$/s, '')          // remove after ---
+                    .replace(/\s*\(This is.*$/s, '')    // remove explanation in parentheses
+                    .replace(/\s*\(Note:.*$/s, '')      // remove notes
+                    .replace(/\s*If you.*$/s, '')       // remove "If you meant..." explanations
+                    .trim();
+                  translatedDescription = translated || description; // fallback to original if empty
                 }
                 console.log(`[Hotel notify] Translated to ${langName}: "${translatedDescription}"`);
               } catch (err: any) {
