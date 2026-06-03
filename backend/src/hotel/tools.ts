@@ -122,6 +122,21 @@ function formatEta(minutes: number): string {
   return `${Math.round((minutes / 60) * 10) / 10} hours`;
 }
 
+/**
+ * Sanitizes a string for use as a Twilio template variable value.
+ * Removes characters that break JSON or exceed Twilio limits.
+ */
+function sanitizeTemplateVar(value: string | null | undefined): string {
+  return (value || '')
+    .replace(/"/g, "'")           // double quotes break JSON — replace with single
+    .replace(/\\/g, '')           // backslashes can break JSON
+    .replace(/\n/g, ' ')          // newlines — replace with space
+    .replace(/\r/g, '')           // carriage returns — remove
+    .replace(/[\x00-\x1F]/g, '')  // control characters — remove
+    .trim()
+    .slice(0, 1024);              // Twilio max variable value length
+}
+
 // ---------------------------------------------------------------------------
 // Tool execution
 // ---------------------------------------------------------------------------
@@ -272,32 +287,39 @@ export async function executeHotelTool(
               }
             }
 
-            // Send via approved WhatsApp template
-            await client.messages.create({
-              from:             fromNumber,
-              to:               toNumber,
-              contentSid:       templateSid,
-              contentVariables: JSON.stringify({
-                '1': finalRoom || 'N/A',
-                '2': TYPE_LABELS[request_type] || request_type,
-                '3': translatedDescription,
-                '4': time,
-              }),
-            });
-            console.log(`[Hotel notify] ✅ Template sent to ${match.name} in ${deptLang}`);
+            // Sanitize all variable values before building contentVariables
+            const templateVars = {
+              '1': sanitizeTemplateVar(room_number || 'N/A'),
+              '2': sanitizeTemplateVar(TYPE_LABELS[request_type] || request_type),
+              '3': sanitizeTemplateVar(translatedDescription),
+              '4': sanitizeTemplateVar(time),
+            };
+            console.log('[Hotel notify] contentVariables:', JSON.stringify(templateVars));
 
-            // Send guest photo immediately after template — conversation is now open
-            if (finalPhoto) {
-              try {
-                await client.messages.create({
-                  from:     fromNumber,
-                  to:       toNumber,
-                  mediaUrl: [finalPhoto],
-                });
-                console.log(`[Hotel notify] ✅ Photo sent to ${match.name}`);
-              } catch (photoErr: any) {
-                console.warn(`[Hotel notify] Photo send failed:`, photoErr.message);
+            try {
+              await client.messages.create({
+                from:             fromNumber,
+                to:               toNumber,
+                contentSid:       templateSid,
+                contentVariables: JSON.stringify(templateVars),
+              });
+              console.log(`[Hotel notify] ✅ Template sent to ${match.name} in ${deptLang}`);
+
+              // Send guest photo immediately after template — conversation is now open
+              if (finalPhoto) {
+                try {
+                  await client.messages.create({
+                    from:     fromNumber,
+                    to:       toNumber,
+                    mediaUrl: [finalPhoto],
+                  });
+                  console.log(`[Hotel notify] ✅ Photo sent to ${match.name}`);
+                } catch (photoErr: any) {
+                  console.warn(`[Hotel notify] Photo send failed:`, photoErr.message);
+                }
               }
+            } catch (err: any) {
+              console.error(`[Hotel notify] ❌ Template send failed:`, err.message);
             }
           } else {
             // Fallback to free-form if no template SID configured
@@ -320,17 +342,12 @@ export async function executeHotelTool(
               ``,
               `_${time}_`,
             ].join('\n');
-            await client.messages.create({ from: fromNumber, to: toNumber, body: msg });
-            console.log(`[Hotel notify] ✅ Free-form sent to ${match.name}`);
-          }
-
-          // Send guest photo as a separate message if present
-          if (finalPhoto) {
-            await client.messages.create({
-              from:     fromNumber,
-              to:       toNumber,
-              mediaUrl: [finalPhoto],
-            }).catch((e: any) => console.error('[Hotel notify] Failed to send photo:', e.message));
+            try {
+              await client.messages.create({ from: fromNumber, to: toNumber, body: msg });
+              console.log(`[Hotel notify] ✅ Free-form sent to ${match.name}`);
+            } catch (err: any) {
+              console.error(`[Hotel notify] ❌ Free-form send failed:`, err.message);
+            }
           }
         } else {
           console.warn(`[Hotel notify] ⚠️ No active department matched request_type="${request_type}"`);
