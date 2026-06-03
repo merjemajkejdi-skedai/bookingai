@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
+import { getDepartmentSchedule, type ScheduleWindow, type AfterHours } from './scheduleHelper.js';
 
 const anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY });
 
@@ -201,11 +202,15 @@ export async function executeHotelTool(
 
       let etaMinutes = 30; // default, overwritten below if department found
 
+      // ETA vars — declared here so the return statement can see them
+      let etaDisplay: string | null = null;
+      let afterHours = false;
+      let afterHoursMessage: string | null = null;
+
       // Notify the matching department via WhatsApp
       try {
         const depts = await dbAll(
-          `SELECT name, whatsapp, request_types, response_time_minutes, language FROM hotel_departments
-           WHERE tenant_id = ? AND is_active = 1`,
+          `SELECT * FROM hotel_departments WHERE tenant_id = ? AND is_active = 1`,
           tenantId,
         ) as any[];
 
@@ -219,8 +224,26 @@ export async function executeHotelTool(
           return types.includes(request_type);
         });
 
-        if (match?.response_time_minutes) {
-          etaMinutes = Number(match.response_time_minutes) || 30;
+        if (match) {
+          try {
+            const hotelCfg = await dbGet('SELECT timezone FROM hotel_config WHERE tenant_id = ?', tenantId) as any;
+            const timezone = hotelCfg?.timezone || 'Europe/Tirane';
+            const schedResult = await getDepartmentSchedule(match.id, timezone);
+
+            if (schedResult?.is_after_hours) {
+              const ah = schedResult as AfterHours;
+              etaDisplay = `tomorrow morning from ${ah.next_window_start}`;
+              afterHours = true;
+              afterHoursMessage = ah.after_hours_message;
+            } else if (schedResult) {
+              etaMinutes = (schedResult as ScheduleWindow).response_time_minutes;
+            } else if (match.response_time_minutes) {
+              etaMinutes = Number(match.response_time_minutes) || 30;
+            }
+          } catch (schedErr: any) {
+            console.warn('[Hotel notify] Schedule lookup failed, using flat ETA:', schedErr.message);
+            if (match.response_time_minutes) etaMinutes = Number(match.response_time_minutes) || 30;
+          }
         }
 
         if (match?.whatsapp) {
@@ -361,13 +384,15 @@ Text to translate: ${description}`,
       }
 
       return {
-        success:     true,
-        request_id:  id,
-        room:        finalRoom,
+        success:              true,
+        request_id:           id,
+        room:                 finalRoom,
         department,
-        priority:    finalPriority,
-        eta:         formatEta(etaMinutes),
-        photo_saved: !!finalPhoto,
+        priority:             finalPriority,
+        eta:                  etaDisplay || formatEta(etaMinutes),
+        after_hours:          afterHours,
+        after_hours_message:  afterHoursMessage,
+        photo_saved:          !!finalPhoto,
       };
     }
 

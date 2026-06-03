@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Plus, Pencil, Trash2, Building2, Phone, Check, Clock } from 'lucide-react';
+import { Plus, Pencil, Trash2, Building2, Phone, Check, Clock, Calendar, X, Moon } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../api';
-import type { Department } from '../types';
+import type { Department, DepartmentSchedule } from '../types';
 import { Button, Input, Modal, Spinner } from '../ui';
 
 const DEPT_LANGUAGES = [
@@ -17,28 +17,167 @@ const DEPT_LANGUAGES = [
 ];
 
 const ALL_REQUEST_TYPES = [
-  { id: 'room_service',       label: 'Room Service',       emoji: '🍽️' },
-  { id: 'housekeeping',       label: 'Housekeeping',       emoji: '🛏️' },
-  { id: 'maintenance',        label: 'Maintenance',        emoji: '🔧' },
-  { id: 'concierge_question', label: 'Concierge',          emoji: '💬' },
-  { id: 'complaint',          label: 'Complaint',          emoji: '⚠️' },
-  { id: 'other',              label: 'Other',              emoji: '📋' },
+  { id: 'room_service',       label: 'Room Service',  emoji: '🍽️' },
+  { id: 'housekeeping',       label: 'Housekeeping',  emoji: '🛏️' },
+  { id: 'maintenance',        label: 'Maintenance',   emoji: '🔧' },
+  { id: 'concierge_question', label: 'Concierge',     emoji: '💬' },
+  { id: 'complaint',          label: 'Complaint',     emoji: '⚠️' },
+  { id: 'other',              label: 'Other',         emoji: '📋' },
 ];
 
-const EMPTY_FORM = { name: '', whatsapp: '', request_types: [] as string[], response_time_minutes: 30, language: 'en' };
+const DAY_TYPES = [
+  { value: 'both',    label: 'Every day' },
+  { value: 'weekday', label: 'Weekdays' },
+  { value: 'weekend', label: 'Weekends' },
+];
 
+type FormData = {
+  name: string;
+  whatsapp: string;
+  request_types: string[];
+  response_time_minutes: number;
+  language: string;
+  scheduling_enabled: number;
+  after_hours_message: string;
+};
+
+type ScheduleRow = {
+  id?: string;
+  day_type: 'weekday' | 'weekend' | 'both';
+  start_time: string;
+  end_time: string;
+  response_time_minutes: number;
+};
+
+const EMPTY_FORM: FormData = {
+  name: '',
+  whatsapp: '',
+  request_types: [],
+  response_time_minutes: 30,
+  language: 'en',
+  scheduling_enabled: 0,
+  after_hours_message: '',
+};
+
+const EMPTY_SCHEDULE: ScheduleRow = {
+  day_type: 'both',
+  start_time: '08:00',
+  end_time: '22:00',
+  response_time_minutes: 30,
+};
+
+// ─── tiny helper to show a human ETA ─────────────────────────────────────────
+function fmtEta(mins: number): string {
+  if (mins < 60) return `${mins} min`;
+  if (mins === 60) return '1 hr';
+  return `${Math.round((mins / 60) * 10) / 10} hrs`;
+}
+
+// ─── ScheduleEditor ───────────────────────────────────────────────────────────
+function ScheduleEditor({
+  schedules,
+  onChange,
+}: {
+  schedules: ScheduleRow[];
+  onChange: (rows: ScheduleRow[]) => void;
+}) {
+  function add() {
+    onChange([...schedules, { ...EMPTY_SCHEDULE }]);
+  }
+
+  function remove(i: number) {
+    onChange(schedules.filter((_, idx) => idx !== i));
+  }
+
+  function update(i: number, patch: Partial<ScheduleRow>) {
+    onChange(schedules.map((r, idx) => idx === i ? { ...r, ...patch } : r));
+  }
+
+  return (
+    <div className="space-y-2">
+      {schedules.length === 0 && (
+        <p className="text-xs text-slate-400 text-center py-2">
+          No time windows yet — add at least one window so the schedule can activate
+        </p>
+      )}
+
+      {schedules.map((row, i) => (
+        <div key={i} className="flex flex-wrap items-center gap-2 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+          {/* Day type */}
+          <select
+            value={row.day_type}
+            onChange={e => update(i, { day_type: e.target.value as ScheduleRow['day_type'] })}
+            className="rounded border border-slate-200 text-xs px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-brand-400"
+          >
+            {DAY_TYPES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+          </select>
+
+          {/* Start → end */}
+          <input
+            type="time"
+            value={row.start_time}
+            onChange={e => update(i, { start_time: e.target.value })}
+            className="rounded border border-slate-200 text-xs px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-brand-400"
+          />
+          <span className="text-xs text-slate-400">→</span>
+          <input
+            type="time"
+            value={row.end_time}
+            onChange={e => update(i, { end_time: e.target.value })}
+            className="rounded border border-slate-200 text-xs px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-brand-400"
+          />
+
+          {/* Response time */}
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              min={1}
+              max={480}
+              value={row.response_time_minutes}
+              onChange={e => update(i, { response_time_minutes: parseInt(e.target.value) || 30 })}
+              className="w-14 rounded border border-slate-200 text-xs px-1.5 py-1 text-center focus:outline-none focus:ring-1 focus:ring-brand-400"
+            />
+            <span className="text-xs text-slate-400">min</span>
+          </div>
+
+          {/* Remove */}
+          <button
+            type="button"
+            onClick={() => remove(i)}
+            className="ml-auto p-1 rounded text-slate-300 hover:text-red-400 hover:bg-red-50 transition-colors"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      ))}
+
+      <button
+        type="button"
+        onClick={add}
+        className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 font-medium py-1"
+      >
+        <Plus size={13} /> Add time window
+      </button>
+    </div>
+  );
+}
+
+// ─── DeptForm ─────────────────────────────────────────────────────────────────
 function DeptForm({
   initial,
+  initialSchedules,
   onSave,
   onCancel,
   saving,
 }: {
-  initial: typeof EMPTY_FORM;
-  onSave: (data: typeof EMPTY_FORM) => void;
+  initial: FormData;
+  initialSchedules: ScheduleRow[];
+  onSave: (data: FormData, schedules: ScheduleRow[]) => void;
   onCancel: () => void;
   saving: boolean;
 }) {
-  const [form, setForm] = useState(initial);
+  const [form, setForm]           = useState<FormData>(initial);
+  const [schedules, setSchedules] = useState<ScheduleRow[]>(initialSchedules);
 
   function toggleType(t: string) {
     setForm(f => ({
@@ -52,7 +191,7 @@ function DeptForm({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.request_types.length) return;
-    onSave(form);
+    onSave(form, schedules);
   }
 
   return (
@@ -72,8 +211,11 @@ function DeptForm({
         required
       />
 
+      {/* Response time (shown only when scheduling is disabled — serves as the default) */}
       <div className="space-y-1">
-        <label className="text-xs font-medium text-slate-600">Response time</label>
+        <label className="text-xs font-medium text-slate-600">
+          {form.scheduling_enabled ? 'Default response time (outside active hours)' : 'Response time'}
+        </label>
         <div className="flex items-center gap-2">
           <input
             type="number"
@@ -88,6 +230,7 @@ function DeptForm({
         <p className="text-xs text-slate-400">Shown to guests when their request is logged</p>
       </div>
 
+      {/* Notification language */}
       <div className="space-y-1">
         <label className="text-xs font-medium text-slate-600">Notification language</label>
         <select
@@ -99,9 +242,10 @@ function DeptForm({
             <option key={l.value} value={l.value}>{l.label}</option>
           ))}
         </select>
-        <p className="text-xs text-slate-400">Request details will be translated to this language before being sent to the department</p>
+        <p className="text-xs text-slate-400">Request details will be translated to this language before being sent</p>
       </div>
 
+      {/* Request types */}
       <div>
         <p className="text-sm font-medium text-slate-700 mb-2">Handles these request types</p>
         <div className="grid grid-cols-2 gap-2">
@@ -131,6 +275,65 @@ function DeptForm({
         )}
       </div>
 
+      {/* ── Active Hours Scheduling ─────────────────────────────────────────── */}
+      <div className="border border-slate-200 rounded-xl p-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Calendar size={15} className="text-slate-500" />
+            <span className="text-sm font-medium text-slate-700">Active Hours Scheduling</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setForm(f => ({ ...f, scheduling_enabled: f.scheduling_enabled ? 0 : 1 }))}
+            className={clsx(
+              'relative inline-flex h-5 w-9 rounded-full transition-colors focus:outline-none',
+              form.scheduling_enabled ? 'bg-brand-500' : 'bg-slate-200'
+            )}
+          >
+            <span
+              className={clsx(
+                'inline-block h-4 w-4 rounded-full bg-white shadow transition-transform mt-0.5',
+                form.scheduling_enabled ? 'translate-x-4' : 'translate-x-0.5'
+              )}
+            />
+          </button>
+        </div>
+
+        {!form.scheduling_enabled && (
+          <p className="text-xs text-slate-400">
+            When enabled, requests are only routed to this department during configured hours. Outside those hours guests receive the after-hours message.
+          </p>
+        )}
+
+        {!!form.scheduling_enabled && (
+          <div className="space-y-4">
+            <p className="text-xs text-slate-500">
+              Define when this department is active. Overnight windows (e.g. 22:00 → 06:00) are supported.
+            </p>
+
+            <ScheduleEditor schedules={schedules} onChange={setSchedules} />
+
+            {/* After-hours message */}
+            <div className="space-y-1">
+              <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                <Moon size={12} /> After-hours message
+              </label>
+              <textarea
+                rows={3}
+                value={form.after_hours_message}
+                onChange={e => setForm(f => ({ ...f, after_hours_message: e.target.value }))}
+                placeholder="Your request has been logged and will be attended to first thing in the morning. For urgent matters please call reception."
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
+              />
+              <p className="text-xs text-slate-400">Shown to guests who send a request outside active hours</p>
+            </div>
+
+            {/* Preview chip */}
+            <SchedulePreview schedules={schedules} />
+          </div>
+        )}
+      </div>
+
       <div className="flex gap-2 pt-2">
         <Button type="submit" disabled={saving || !form.request_types.length} className="flex-1">
           {saving ? 'Saving…' : 'Save Department'}
@@ -141,11 +344,49 @@ function DeptForm({
   );
 }
 
+// ─── SchedulePreview ──────────────────────────────────────────────────────────
+function SchedulePreview({ schedules }: { schedules: ScheduleRow[] }) {
+  if (!schedules.length) return null;
+
+  const now    = new Date();
+  const cur    = now.getHours() * 60 + now.getMinutes();
+  const isWeekend = now.getDay() === 0 || now.getDay() === 6;
+  const dayType   = isWeekend ? 'weekend' : 'weekday';
+
+  const applicable = schedules.filter(s => s.day_type === 'both' || s.day_type === dayType);
+
+  let active: ScheduleRow | null = null;
+  for (const s of applicable) {
+    const [sh, sm] = s.start_time.split(':').map(Number);
+    const [eh, em] = s.end_time.split(':').map(Number);
+    const start = sh * 60 + sm;
+    const end   = eh * 60 + em;
+    const inWindow = start <= end
+      ? cur >= start && cur < end
+      : cur >= start || cur < end;
+    if (inWindow) { active = s; break; }
+  }
+
+  return (
+    <div className={clsx(
+      'rounded-lg px-3 py-2 text-xs flex items-center gap-2',
+      active ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'
+    )}>
+      <span className="text-base">{active ? '✅' : '🌙'}</span>
+      {active
+        ? `Currently active — ETA shown to guests: ${fmtEta(active.response_time_minutes)}`
+        : 'Currently after hours — guests will receive the after-hours message'}
+    </div>
+  );
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
 export function DepartmentsPage() {
   const [depts, setDepts]     = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState<Department | null>(null);
+  const [editSchedules, setEditSchedules] = useState<DepartmentSchedule[]>([]);
   const [saving, setSaving]   = useState(false);
 
   function load() {
@@ -155,21 +396,55 @@ export function DepartmentsPage() {
 
   useEffect(() => { load(); }, []);
 
-  async function handleCreate(form: typeof EMPTY_FORM) {
+  async function startEdit(dept: Department) {
+    setEditing(dept);
+    try {
+      const rows = await api.getDeptSchedules(dept.id);
+      setEditSchedules(rows);
+    } catch {
+      setEditSchedules([]);
+    }
+  }
+
+  async function handleCreate(form: FormData, schedules: ScheduleRow[]) {
     setSaving(true);
     try {
-      await api.createDepartment(form);
+      const created = await api.createDepartment({
+        name: form.name,
+        whatsapp: form.whatsapp,
+        request_types: form.request_types,
+        response_time_minutes: form.response_time_minutes,
+        language: form.language,
+        scheduling_enabled: form.scheduling_enabled,
+        after_hours_message: form.after_hours_message || null,
+      });
+      // Save schedules using the new dept's id
+      if (schedules.length > 0) {
+        await api.saveDeptSchedules(created.id, schedules);
+      }
       setShowAdd(false);
       load();
     } finally { setSaving(false); }
   }
 
-  async function handleUpdate(form: typeof EMPTY_FORM) {
+  async function handleUpdate(form: FormData, schedules: ScheduleRow[]) {
     if (!editing) return;
     setSaving(true);
     try {
-      await api.updateDepartment(editing.id, form);
+      await api.updateDepartment(editing.id, {
+        name: form.name,
+        whatsapp: form.whatsapp,
+        request_types: form.request_types,
+        is_active: editing.is_active,
+        response_time_minutes: form.response_time_minutes,
+        language: form.language,
+        scheduling_enabled: form.scheduling_enabled,
+        after_hours_message: form.after_hours_message || null,
+      });
+      // Always save schedules (empty array = delete all)
+      await api.saveDeptSchedules(editing.id, schedules);
       setEditing(null);
+      setEditSchedules([]);
       load();
     } finally { setSaving(false); }
   }
@@ -187,6 +462,8 @@ export function DepartmentsPage() {
       is_active: !dept.is_active,
       response_time_minutes: dept.response_time_minutes || 30,
       language: dept.language || 'en',
+      scheduling_enabled: dept.scheduling_enabled ?? 0,
+      after_hours_message: dept.after_hours_message ?? null,
     });
     load();
   }
@@ -234,6 +511,11 @@ export function DepartmentsPage() {
                     {!dept.is_active && (
                       <span className="text-xs bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full">Inactive</span>
                     )}
+                    {!!dept.scheduling_enabled && (
+                      <span className="text-xs bg-violet-50 text-violet-600 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <Calendar size={10} /> Scheduled
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-3 text-xs text-slate-400 mb-2 flex-wrap">
                     <span className="flex items-center gap-1"><Phone size={11} /> {dept.whatsapp}</span>
@@ -255,7 +537,7 @@ export function DepartmentsPage() {
                 {/* Actions */}
                 <div className="flex gap-1 flex-shrink-0">
                   <button
-                    onClick={() => setEditing(dept)}
+                    onClick={() => startEdit(dept)}
                     className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
                   >
                     <Pencil size={14} />
@@ -289,6 +571,7 @@ export function DepartmentsPage() {
         <Modal title="Add Department" onClose={() => setShowAdd(false)} wide>
           <DeptForm
             initial={EMPTY_FORM}
+            initialSchedules={[]}
             onSave={handleCreate}
             onCancel={() => setShowAdd(false)}
             saving={saving}
@@ -298,11 +581,26 @@ export function DepartmentsPage() {
 
       {/* Edit modal */}
       {editing && (
-        <Modal title={`Edit — ${editing.name}`} onClose={() => setEditing(null)} wide>
+        <Modal title={`Edit — ${editing.name}`} onClose={() => { setEditing(null); setEditSchedules([]); }} wide>
           <DeptForm
-            initial={{ name: editing.name, whatsapp: editing.whatsapp, request_types: editing.request_types, response_time_minutes: editing.response_time_minutes || 30, language: editing.language || 'en' }}
+            initial={{
+              name: editing.name,
+              whatsapp: editing.whatsapp,
+              request_types: editing.request_types,
+              response_time_minutes: editing.response_time_minutes || 30,
+              language: editing.language || 'en',
+              scheduling_enabled: editing.scheduling_enabled ?? 0,
+              after_hours_message: editing.after_hours_message ?? '',
+            }}
+            initialSchedules={editSchedules.map(s => ({
+              id: s.id,
+              day_type: s.day_type,
+              start_time: s.start_time,
+              end_time: s.end_time,
+              response_time_minutes: s.response_time_minutes,
+            }))}
             onSave={handleUpdate}
-            onCancel={() => setEditing(null)}
+            onCancel={() => { setEditing(null); setEditSchedules([]); }}
             saving={saving}
           />
         </Modal>

@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import type { GuestStay, HotelRequest, FaqEntry, HotelConfig, Department, Conversation, BlockedNumber, HotelReview, ReviewStats, ReviewConfig } from './types';
+import type { GuestStay, HotelRequest, FaqEntry, HotelConfig, Department, DepartmentSchedule, Conversation, BlockedNumber, HotelReview, ReviewStats, ReviewConfig } from './types';
 
 const BASE = `${import.meta.env.VITE_API_URL || ''}`;
 
@@ -81,12 +81,28 @@ export const api = {
 
   // Departments
   getDepartments: () => req<Department[]>('/hotel/departments'),
-  createDepartment: (data: { name: string; whatsapp: string; request_types: string[]; response_time_minutes?: number; language?: string }) =>
-    req<Department>('/hotel/departments', { method: 'POST', body: JSON.stringify(data) }),
-  updateDepartment: (id: string, data: { name: string; whatsapp: string; request_types: string[]; is_active?: boolean; response_time_minutes?: number; language?: string }) =>
-    req(`/hotel/departments/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  createDepartment: (data: {
+    name: string; whatsapp: string; request_types: string[];
+    response_time_minutes?: number; language?: string;
+    scheduling_enabled?: number; after_hours_message?: string | null;
+  }) => req<Department>('/hotel/departments', { method: 'POST', body: JSON.stringify(data) }),
+  updateDepartment: (id: string, data: {
+    name: string; whatsapp: string; request_types: string[];
+    is_active?: boolean; response_time_minutes?: number; language?: string;
+    scheduling_enabled?: number; after_hours_message?: string | null;
+  }) => req(`/hotel/departments/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteDepartment: (id: string) =>
     req(`/hotel/departments/${id}`, { method: 'DELETE' }),
+  getDeptSchedules: (deptId: string) =>
+    req<DepartmentSchedule[]>(`/hotel/departments/${deptId}/schedules`),
+  saveDeptSchedules: (deptId: string, schedules: Array<{
+    id?: string;
+    day_type: string;
+    start_time: string;
+    end_time: string;
+    response_time_minutes: number;
+    display_order?: number;
+  }>) => req(`/hotel/departments/${deptId}/schedules`, { method: 'PUT', body: JSON.stringify({ schedules }) }),
 
   // Conversations
   getConversations: () => req<Conversation[]>('/hotel/conversations'),

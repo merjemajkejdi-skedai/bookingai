@@ -385,9 +385,23 @@ const SCHEMA = `
     is_active             INTEGER NOT NULL DEFAULT 1,
     response_time_minutes INTEGER NOT NULL DEFAULT 30,
     language              TEXT NOT NULL DEFAULT 'en',
+    scheduling_enabled    INTEGER NOT NULL DEFAULT 0,
+    after_hours_message   TEXT,
     created_at            TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
   );
   CREATE INDEX IF NOT EXISTS idx_hotel_depts_tenant ON hotel_departments(tenant_id);
+  CREATE TABLE IF NOT EXISTS hotel_department_schedules (
+    id                    TEXT PRIMARY KEY,
+    department_id         TEXT NOT NULL,
+    tenant_id             TEXT NOT NULL,
+    day_type              TEXT NOT NULL DEFAULT 'both',
+    start_time            TEXT NOT NULL,
+    end_time              TEXT NOT NULL,
+    response_time_minutes INTEGER NOT NULL DEFAULT 30,
+    display_order         INTEGER DEFAULT 0,
+    created_at            TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE INDEX IF NOT EXISTS idx_dept_schedules_dept ON hotel_department_schedules(department_id);
   CREATE TABLE IF NOT EXISTS hotel_reviews (
     id                 TEXT PRIMARY KEY,
     tenant_id          TEXT NOT NULL,
@@ -559,6 +573,11 @@ export async function runMigrations() {
       `ALTER TABLE hotel_config ADD COLUMN IF NOT EXISTS fallback_message TEXT`,
       // maintenance_photo_001 — flag to control whether agent asks for maintenance photos
       `ALTER TABLE hotel_config ADD COLUMN IF NOT EXISTS ask_maintenance_photo INTEGER NOT NULL DEFAULT 1`,
+      // dept_schedules_001 — per-department operating hour windows
+      `CREATE TABLE IF NOT EXISTS hotel_department_schedules (id TEXT PRIMARY KEY, department_id TEXT NOT NULL, tenant_id TEXT NOT NULL, day_type TEXT NOT NULL DEFAULT 'both', start_time TEXT NOT NULL, end_time TEXT NOT NULL, response_time_minutes INTEGER NOT NULL DEFAULT 30, display_order INTEGER DEFAULT 0, created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP))`,
+      `CREATE INDEX IF NOT EXISTS idx_dept_schedules_dept ON hotel_department_schedules(department_id)`,
+      `ALTER TABLE hotel_departments ADD COLUMN IF NOT EXISTS scheduling_enabled INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE hotel_departments ADD COLUMN IF NOT EXISTS after_hours_message TEXT`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -717,6 +736,10 @@ export async function runMigrations() {
     exec('ALTER TABLE hotel_departments ADD COLUMN response_time_minutes INTEGER NOT NULL DEFAULT 30');
   if (!deptCols.includes('language'))
     exec("ALTER TABLE hotel_departments ADD COLUMN language TEXT NOT NULL DEFAULT 'en'");
+  if (!deptCols.includes('scheduling_enabled'))
+    exec('ALTER TABLE hotel_departments ADD COLUMN scheduling_enabled INTEGER NOT NULL DEFAULT 0');
+  if (!deptCols.includes('after_hours_message'))
+    exec('ALTER TABLE hotel_departments ADD COLUMN after_hours_message TEXT');
 
   const hotelReviewCols = prepare("SELECT name FROM pragma_table_info('hotel_reviews')")
     .all().map((r: any) => r.name as string);

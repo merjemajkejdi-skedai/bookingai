@@ -52,6 +52,20 @@ export interface Department {
   is_active: boolean;
   response_time_minutes: number;
   language: string;
+  scheduling_enabled: number; // 0 | 1
+  after_hours_message: string | null;
+  created_at: string;
+}
+
+export interface DepartmentSchedule {
+  id: string;
+  department_id: string;
+  tenant_id: string;
+  day_type: 'weekday' | 'weekend' | 'both';
+  start_time: string; // "HH:MM"
+  end_time: string;   // "HH:MM"
+  response_time_minutes: number;
+  display_order: number;
   created_at: string;
 }
 

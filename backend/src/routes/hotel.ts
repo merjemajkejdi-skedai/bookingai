@@ -444,8 +444,13 @@ hotelRouter.get('/departments', requireAuth, async (req: Request, res: Response)
 // POST /hotel/departments
 hotelRouter.post('/departments', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
-  const { name, whatsapp, request_types, response_time_minutes, language } = req.body as {
-    name: string; whatsapp: string; request_types: string[]; response_time_minutes?: number; language?: string;
+  const {
+    name, whatsapp, request_types, response_time_minutes, language,
+    scheduling_enabled = 0, after_hours_message = null,
+  } = req.body as {
+    name: string; whatsapp: string; request_types: string[];
+    response_time_minutes?: number; language?: string;
+    scheduling_enabled?: number; after_hours_message?: string | null;
   };
   if (!name || !whatsapp || !Array.isArray(request_types) || !request_types.length) {
     return err(res, 'name, whatsapp, and request_types are required');
@@ -456,10 +461,12 @@ hotelRouter.post('/departments', requireAuth, async (req: Request, res: Response
   try {
     const id = crypto.randomUUID();
     await dbRun(
-      `INSERT INTO hotel_departments (id, tenant_id, name, whatsapp, request_types, response_time_minutes, language)
-       VALUES (?,?,?,?,?,?,?)`,
+      `INSERT INTO hotel_departments
+         (id, tenant_id, name, whatsapp, request_types, response_time_minutes, language, scheduling_enabled, after_hours_message)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
       id, tenantId, name, whatsapp, JSON.stringify(request_types),
       Number(response_time_minutes) || 30, language || 'en',
+      scheduling_enabled ? 1 : 0, after_hours_message || null,
     );
     const row = await dbGet('SELECT * FROM hotel_departments WHERE id = ?', id) as any;
     ok(res, { ...row, request_types: JSON.parse(row.request_types || '[]') });
@@ -469,22 +476,96 @@ hotelRouter.post('/departments', requireAuth, async (req: Request, res: Response
 // PUT /hotel/departments/:id
 hotelRouter.put('/departments/:id', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
-  const { name, whatsapp, request_types, is_active, response_time_minutes, language } = req.body as {
-    name: string; whatsapp: string; request_types: string[]; is_active?: boolean; response_time_minutes?: number; language?: string;
+  const {
+    name, whatsapp, request_types, is_active, response_time_minutes, language,
+    scheduling_enabled = 0, after_hours_message = null,
+  } = req.body as {
+    name: string; whatsapp: string; request_types: string[];
+    is_active?: boolean; response_time_minutes?: number; language?: string;
+    scheduling_enabled?: number; after_hours_message?: string | null;
   };
   if (!name || !whatsapp || !Array.isArray(request_types) || !request_types.length) {
     return err(res, 'name, whatsapp, and request_types are required');
   }
   try {
     await dbRun(
-      `UPDATE hotel_departments SET name = ?, whatsapp = ?, request_types = ?, is_active = ?, response_time_minutes = ?, language = ?
+      `UPDATE hotel_departments
+       SET name = ?, whatsapp = ?, request_types = ?, is_active = ?,
+           response_time_minutes = ?, language = ?,
+           scheduling_enabled = ?, after_hours_message = ?
        WHERE id = ? AND tenant_id = ?`,
       name, whatsapp, JSON.stringify(request_types),
       is_active === false ? 0 : 1,
       Number(response_time_minutes) || 30, language || 'en',
+      scheduling_enabled ? 1 : 0, after_hours_message || null,
       req.params.id, tenantId,
     );
     ok(res, { updated: true });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// GET /hotel/departments/:id/schedules
+hotelRouter.get('/departments/:id/schedules', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    const rows = await dbAll(
+      `SELECT * FROM hotel_department_schedules
+       WHERE department_id = ? AND tenant_id = ?
+       ORDER BY display_order ASC, start_time ASC`,
+      req.params.id, tenantId,
+    );
+    ok(res, rows);
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// PUT /hotel/departments/:id/schedules  — full replace (send all windows)
+hotelRouter.put('/departments/:id/schedules', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const deptId   = req.params.id;
+  const { schedules } = req.body as {
+    schedules: Array<{
+      id?: string;
+      day_type: string;
+      start_time: string;
+      end_time: string;
+      response_time_minutes: number;
+      display_order?: number;
+    }>;
+  };
+  if (!Array.isArray(schedules)) return err(res, 'schedules array is required');
+
+  // Validate day_type values
+  const VALID_DAY_TYPES = ['weekday', 'weekend', 'both'];
+  for (const s of schedules) {
+    if (!VALID_DAY_TYPES.includes(s.day_type))
+      return err(res, `Invalid day_type: ${s.day_type}`);
+    if (!s.start_time || !s.end_time)
+      return err(res, 'start_time and end_time are required for each schedule');
+  }
+
+  try {
+    // Delete existing windows for this department
+    await dbRun(
+      'DELETE FROM hotel_department_schedules WHERE department_id = ? AND tenant_id = ?',
+      deptId, tenantId,
+    );
+
+    // Insert all new windows
+    for (let i = 0; i < schedules.length; i++) {
+      const s = schedules[i];
+      const windowId = s.id || crypto.randomUUID();
+      await dbRun(
+        `INSERT INTO hotel_department_schedules
+           (id, department_id, tenant_id, day_type, start_time, end_time, response_time_minutes, display_order)
+         VALUES (?,?,?,?,?,?,?,?)`,
+        windowId, deptId, tenantId,
+        s.day_type, s.start_time, s.end_time,
+        Number(s.response_time_minutes) || 30,
+        s.display_order ?? i,
+      );
+    }
+
+    ok(res, { saved: schedules.length });
   } catch (e: any) { err(res, e.message, 500); }
 });
 
