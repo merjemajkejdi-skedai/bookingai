@@ -154,6 +154,24 @@ export async function runHotelAgent(
   const safeMessage = customerMessage.trim()
     || (mediaUrl ? '[Guest sent a photo]' : '[Empty message]');
 
+  // ── PAUSE CHECK — must be first (before staff handler, survey, everything) ─
+  // Staff can pause AI per conversation via the dashboard. While paused,
+  // the agent returns '' so the webhook sends nothing.
+  try {
+    const pausedRow = await dbGet(
+      `SELECT ai_paused_until FROM hotel_conversations
+       WHERE tenant_id = ? AND guest_phone = ? LIMIT 1`,
+      tenantId, customerPhone,
+    ) as any;
+
+    if (pausedRow?.ai_paused_until && new Date(pausedRow.ai_paused_until) > new Date()) {
+      console.log(`[Hotel] ⏸ AI paused for ${customerPhone} until ${pausedRow.ai_paused_until}`);
+      return ''; // webhook guard `if (!reply) return;` prevents sending
+    }
+  } catch (e: any) {
+    console.warn('[Hotel] pause check failed:', e.message);
+  }
+
   // ── GUARD 1: Staff / blocked numbers ─────────────────────────────────────
   // Numbers on the hotel_blocked_numbers list are staff. Route their messages
   // to the staff handler (status updates, notes) instead of the guest AI.

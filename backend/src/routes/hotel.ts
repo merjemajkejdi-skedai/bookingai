@@ -681,6 +681,8 @@ hotelRouter.get('/conversations', requireAuth, async (req: Request, res: Respons
          c.last_message,
          c.updated_at,
          c.last_guest_message_at,
+         c.ai_paused_until,
+         c.ai_paused_by,
          g.id           AS stay_id,
          g.guest_name,
          g.check_in,
@@ -791,6 +793,72 @@ hotelRouter.post('/conversations/:phone/reply', requireAuth, async (req: Request
     await appendStaffMessage(tenantId, phone, message.trim());
 
     ok(res, { sent: true });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// POST /hotel/conversations/:phone/pause  — pause AI for 15 min (or custom)
+hotelRouter.post('/conversations/:phone/pause', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const phone    = decodeURIComponent(req.params.phone);
+  const minutes  = Number(req.body?.minutes) || 15;
+
+  const pausedUntil = new Date(Date.now() + minutes * 60 * 1000).toISOString();
+
+  try {
+    await dbRun(
+      `UPDATE hotel_conversations
+       SET ai_paused_until = ?, ai_paused_by = 'staff'
+       WHERE tenant_id = ? AND guest_phone = ?`,
+      pausedUntil, tenantId, phone,
+    );
+    console.log(`[Hotel] ⏸ AI paused for ${phone} until ${pausedUntil}`);
+    ok(res, { paused: true, paused_until: pausedUntil, minutes_remaining: minutes });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// POST /hotel/conversations/:phone/resume  — resume AI immediately
+hotelRouter.post('/conversations/:phone/resume', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const phone    = decodeURIComponent(req.params.phone);
+
+  try {
+    await dbRun(
+      `UPDATE hotel_conversations
+       SET ai_paused_until = NULL, ai_paused_by = NULL
+       WHERE tenant_id = ? AND guest_phone = ?`,
+      tenantId, phone,
+    );
+    console.log(`[Hotel] ▶ AI resumed for ${phone}`);
+    ok(res, { paused: false });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// GET /hotel/conversations/:phone/pause-status  — current pause state
+hotelRouter.get('/conversations/:phone/pause-status', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const phone    = decodeURIComponent(req.params.phone);
+
+  try {
+    const row = await dbGet(
+      `SELECT ai_paused_until, ai_paused_by
+       FROM hotel_conversations
+       WHERE tenant_id = ? AND guest_phone = ?`,
+      tenantId, phone,
+    ) as any;
+
+    const pausedUntil = row?.ai_paused_until ?? null;
+    const now         = new Date();
+    const isPaused    = !!pausedUntil && new Date(pausedUntil) > now;
+    const minutesRemaining = isPaused
+      ? Math.ceil((new Date(pausedUntil).getTime() - now.getTime()) / 60000)
+      : 0;
+
+    ok(res, {
+      paused:            isPaused,
+      paused_until:      isPaused ? pausedUntil : null,
+      minutes_remaining: minutesRemaining,
+      paused_by:         row?.ai_paused_by ?? null,
+    });
   } catch (e: any) { err(res, e.message, 500); }
 });
 

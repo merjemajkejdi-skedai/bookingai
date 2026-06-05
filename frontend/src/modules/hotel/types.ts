@@ -98,6 +98,9 @@ export interface Conversation {
   survey_score: number | null;
   // Timestamp of the last inbound guest message (used for 24h survey window)
   last_guest_message_at: string | null;
+  // Staff takeover / AI pause
+  ai_paused_until: string | null;
+  ai_paused_by: string | null;
 }
 
 export interface BlockedNumber {

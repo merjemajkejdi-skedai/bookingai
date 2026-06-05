@@ -112,6 +112,20 @@ export const api = {
     req(`/hotel/conversations/${encodeURIComponent(phone)}/reply`, {
       method: 'POST', body: JSON.stringify({ message }),
     }),
+  pauseAI: (phone: string, minutes = 15) =>
+    req<{ paused: boolean; paused_until: string; minutes_remaining: number }>(
+      `/hotel/conversations/${encodeURIComponent(phone)}/pause`,
+      { method: 'POST', body: JSON.stringify({ minutes }) },
+    ),
+  resumeAI: (phone: string) =>
+    req<{ paused: boolean }>(
+      `/hotel/conversations/${encodeURIComponent(phone)}/resume`,
+      { method: 'POST' },
+    ),
+  getPauseStatus: (phone: string) =>
+    req<{ paused: boolean; paused_until: string | null; minutes_remaining: number; paused_by: string | null }>(
+      `/hotel/conversations/${encodeURIComponent(phone)}/pause-status`,
+    ),
 
   // Blocked numbers / staff
   getBlocked: () => req<BlockedNumber[]>('/hotel/blocked'),

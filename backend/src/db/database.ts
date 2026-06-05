@@ -368,6 +368,8 @@ const SCHEMA = `
     last_message          TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     updated_at            TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     last_guest_message_at TEXT,
+    ai_paused_until       TEXT,
+    ai_paused_by          TEXT,
     UNIQUE (tenant_id, guest_phone)
   );
   CREATE INDEX IF NOT EXISTS idx_hotel_conv_tenant  ON hotel_conversations(tenant_id, updated_at);
@@ -584,6 +586,9 @@ export async function runMigrations() {
       `CREATE INDEX IF NOT EXISTS idx_dept_schedules_dept ON hotel_department_schedules(department_id)`,
       `ALTER TABLE hotel_departments ADD COLUMN IF NOT EXISTS scheduling_enabled INTEGER NOT NULL DEFAULT 0`,
       `ALTER TABLE hotel_departments ADD COLUMN IF NOT EXISTS after_hours_message TEXT`,
+      // staff_takeover_001 — AI pause / staff takeover per conversation
+      `ALTER TABLE hotel_conversations ADD COLUMN IF NOT EXISTS ai_paused_until TEXT`,
+      `ALTER TABLE hotel_conversations ADD COLUMN IF NOT EXISTS ai_paused_by TEXT`,
       // staff_workflow_001 — staff status updates via WhatsApp + staff fields on blocklist
       `ALTER TABLE hotel_requests ADD COLUMN IF NOT EXISTS in_progress_at TEXT`,
       `ALTER TABLE hotel_requests ADD COLUMN IF NOT EXISTS resolved_by TEXT`,
@@ -736,6 +741,10 @@ export async function runMigrations() {
     .all().map((r: any) => r.name as string);
   if (!convCols.includes('last_guest_message_at'))
     exec('ALTER TABLE hotel_conversations ADD COLUMN last_guest_message_at TEXT');
+  if (!convCols.includes('ai_paused_until'))
+    exec('ALTER TABLE hotel_conversations ADD COLUMN ai_paused_until TEXT');
+  if (!convCols.includes('ai_paused_by'))
+    exec('ALTER TABLE hotel_conversations ADD COLUMN ai_paused_by TEXT');
 
   const reqCols = prepare("SELECT name FROM pragma_table_info('hotel_requests')")
     .all().map((r: any) => r.name as string);

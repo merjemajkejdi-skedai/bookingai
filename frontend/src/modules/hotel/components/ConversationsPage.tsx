@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { MessageSquare, RefreshCw, Send, User, Bot, UserCheck, Search, Bell, BellOff, LogOut } from 'lucide-react';
+import { MessageSquare, RefreshCw, Send, User, Bot, UserCheck, Search, Bell, BellOff, LogOut, PauseCircle } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../api';
 import type { Conversation, HotelMessage } from '../types';
@@ -86,6 +86,81 @@ function LiveIndicator() {
       <span className="text-[10px] font-medium text-green-600">Live</span>
     </span>
   );
+}
+
+// ── CountdownTimer ────────────────────────────────────────────────────────────
+
+function CountdownTimer({
+  pausedUntil,
+  onExpired,
+}: {
+  pausedUntil: string;
+  onExpired: () => void;
+}) {
+  const [remaining, setRemaining] = useState('');
+
+  useEffect(() => {
+    function tick() {
+      const diff = new Date(pausedUntil).getTime() - Date.now();
+      if (diff <= 0) {
+        setRemaining('0:00');
+        onExpired();
+        return;
+      }
+      const m = Math.floor(diff / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      setRemaining(`${m}:${s.toString().padStart(2, '0')}`);
+    }
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [pausedUntil, onExpired]);
+
+  return <span className="font-mono font-semibold">{remaining}</span>;
+}
+
+// ── usePauseStatus ─────────────────────────────────────────────────────────────
+
+interface PauseStatus {
+  paused: boolean;
+  paused_until: string | null;
+  minutes_remaining: number;
+}
+
+function usePauseStatus(guestPhone: string) {
+  const [status, setStatus]   = useState<PauseStatus>({ paused: false, paused_until: null, minutes_remaining: 0 });
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const s = await api.getPauseStatus(guestPhone);
+      setStatus({ paused: s.paused, paused_until: s.paused_until, minutes_remaining: s.minutes_remaining });
+    } catch {}
+  }, [guestPhone]);
+
+  useEffect(() => {
+    load();
+    const id = setInterval(load, 30_000);
+    return () => clearInterval(id);
+  }, [load]);
+
+  async function takeOver() {
+    setLoading(true);
+    try {
+      const s = await api.pauseAI(guestPhone, 15);
+      setStatus({ paused: true, paused_until: s.paused_until, minutes_remaining: s.minutes_remaining });
+    } catch {} finally { setLoading(false); }
+  }
+
+  async function resumeAI() {
+    setLoading(true);
+    try {
+      await api.resumeAI(guestPhone);
+      setStatus({ paused: false, paused_until: null, minutes_remaining: 0 });
+    } catch {} finally { setLoading(false); }
+  }
+
+  return { status, loading, takeOver, resumeAI, reload: load };
 }
 
 // ── NotificationBanner ────────────────────────────────────────────────────────
@@ -198,6 +273,7 @@ function ThreadPanel({
   const [sending,     setSending]     = useState(false);
   const [loading,     setLoading]     = useState(false);
   const [checkingOut, setCheckingOut] = useState(false);
+  const pause = usePauseStatus(conv.guest_phone);
   // Live stay info — refreshed from the full conversation endpoint
   const [stayInfo, setStayInfo] = useState({
     stay_id:      conv.stay_id,
@@ -293,8 +369,38 @@ function ThreadPanel({
           </div>
         </div>
 
-        {/* Survey / checkout controls */}
+        {/* Controls: takeover + survey + back */}
         <div className="flex items-center gap-2 flex-shrink-0">
+          {/* ── Takeover buttons ── */}
+          {pause.status.paused ? (
+            <>
+              <button
+                onClick={pause.resumeAI}
+                disabled={pause.loading}
+                className="text-xs font-medium px-3 py-1.5 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors disabled:opacity-40"
+              >
+                ▶ Resume AI
+              </button>
+              <button
+                onClick={pause.takeOver}
+                disabled={pause.loading}
+                className="text-xs font-medium px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition-colors disabled:opacity-40"
+              >
+                ⏸ +15 min
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={pause.takeOver}
+              disabled={pause.loading}
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg transition-colors disabled:opacity-40"
+            >
+              {pause.loading ? <RefreshCw size={11} className="animate-spin" /> : '✋'}
+              Take over
+            </button>
+          )}
+
+          {/* ── Survey / checkout ── */}
           {surveyEnabled && !stayInfo.survey_sent &&
            conv.last_guest_message_at != null &&
            (Date.now() - new Date(conv.last_guest_message_at).getTime()) < 86_400_000 && (
@@ -327,6 +433,33 @@ function ThreadPanel({
           </button>
         </div>
       </div>
+
+      {/* Pause banner — shown when AI is paused */}
+      {pause.status.paused && pause.status.paused_until && (
+        <div className="flex-shrink-0 mx-3 mt-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <PauseCircle size={18} className="text-amber-500 flex-shrink-0" />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-amber-800">AI paused · you have control</p>
+              <p className="text-xs text-amber-600 mt-0.5">
+                AI resumes automatically in{' '}
+                <CountdownTimer
+                  pausedUntil={pause.status.paused_until}
+                  onExpired={() => {
+                    pause.reload();
+                  }}
+                />
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={pause.resumeAI}
+            className="text-xs font-medium text-amber-700 hover:text-amber-900 flex-shrink-0 whitespace-nowrap"
+          >
+            Resume now →
+          </button>
+        </div>
+      )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
@@ -575,6 +708,11 @@ export function ConversationsPage({ surveyEnabled = false }: { surveyEnabled?: b
                           {c.room_number && (
                             <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded flex-shrink-0">
                               Rm {c.room_number}
+                            </span>
+                          )}
+                          {c.ai_paused_until && new Date(c.ai_paused_until) > new Date() && (
+                            <span className="text-[10px] font-semibold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded flex-shrink-0">
+                              ⏸ Staff
                             </span>
                           )}
                         </div>
