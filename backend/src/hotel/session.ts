@@ -68,6 +68,65 @@ export async function getHotelHistory(
 }
 
 // ---------------------------------------------------------------------------
+// saveGuestMessage — write ONLY the incoming user message to the DB.
+//
+// Called immediately when a message arrives (before AI processing) so the
+// dashboard shows guest messages in real time — not only after the AI replies.
+// Also called when AI is paused so paused-period messages aren't lost.
+//
+// Intentionally does NOT update the in-memory session. The in-memory session
+// is Claude's source of truth for conversation history. If we added the user
+// message there, getHotelHistory() would return it and it would then be
+// included TWICE in the messages array sent to Claude (once in history, once
+// as the new user turn). Keeping in-memory clean avoids that duplication.
+// saveHotelConversation() will update in-memory with the complete
+// user+assistant pair once the AI responds.
+// ---------------------------------------------------------------------------
+export async function saveGuestMessage(
+  tenantId: string,
+  phone: string,
+  userMessage: string,
+  roomNumber?: string | null,
+): Promise<void> {
+  const now = new Date().toISOString();
+  try {
+    // Read current messages from DB (not in-memory — in-memory may lag during
+    // pause periods where multiple guest messages accumulate without AI replies)
+    const existing = await dbGet(
+      'SELECT messages FROM hotel_conversations WHERE tenant_id = ? AND guest_phone = ?',
+      tenantId, phone,
+    ) as any;
+
+    const prev: HotelMessage[] = existing?.messages ? JSON.parse(existing.messages) : [];
+
+    // Idempotency: don't duplicate if the last stored message is identical
+    const last = prev[prev.length - 1];
+    if (last?.role === 'user' && last.content === userMessage) return;
+
+    const updated: HotelMessage[] = [
+      ...prev,
+      { role: 'user' as const, content: userMessage, ts: now },
+    ].slice(-MAX_MESSAGES);
+
+    const id = crypto.randomUUID();
+    await dbRun(
+      `INSERT INTO hotel_conversations
+         (id, tenant_id, guest_phone, room_number, messages, last_message, updated_at, last_guest_message_at)
+       VALUES (?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+       ON CONFLICT (tenant_id, guest_phone) DO UPDATE SET
+         messages              = excluded.messages,
+         room_number           = COALESCE(excluded.room_number, hotel_conversations.room_number),
+         last_message          = CURRENT_TIMESTAMP,
+         updated_at            = CURRENT_TIMESTAMP,
+         last_guest_message_at = CURRENT_TIMESTAMP`,
+      id, tenantId, phone, roomNumber ?? null, JSON.stringify(updated),
+    );
+  } catch (e: any) {
+    console.warn('[Hotel session] Guest message DB save failed:', e.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // saveHotelConversation — append user + assistant messages, dual-write
 // ---------------------------------------------------------------------------
 export async function saveHotelConversation(

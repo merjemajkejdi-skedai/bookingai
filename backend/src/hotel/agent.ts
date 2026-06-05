@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { hotelTools, executeHotelTool } from './tools.js';
 import { buildHotelSystemPrompt } from './prompts.js';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
-import { getHotelHistory, saveHotelConversation } from './session.js';
+import { getHotelHistory, saveHotelConversation, saveGuestMessage } from './session.js';
 
 async function dbGet(sql: string, ...p: unknown[]) {
   return isPg ? queryOne(sql, p) : prepare(sql).get(...p);
@@ -166,6 +166,8 @@ export async function runHotelAgent(
 
     if (pausedRow?.ai_paused_until && new Date(pausedRow.ai_paused_until) > new Date()) {
       console.log(`[Hotel] ⏸ AI paused for ${customerPhone} until ${pausedRow.ai_paused_until}`);
+      // Save guest message so it appears in the dashboard during takeover
+      await saveGuestMessage(tenantId, customerPhone, safeMessage);
       return ''; // webhook guard `if (!reply) return;` prevents sending
     }
   } catch (e: any) {
@@ -206,6 +208,11 @@ export async function runHotelAgent(
   } catch (e: any) {
     console.warn('[Hotel] blocklist check failed:', e.message);
   }
+
+  // ── Save guest message to DB immediately ─────────────────────────────────
+  // This makes the message visible in the dashboard before the AI responds.
+  // Does NOT update in-memory — see saveGuestMessage() for why.
+  await saveGuestMessage(tenantId, customerPhone, safeMessage);
 
   // ── Load config + history (needed for both survey detection and main loop) ──
   const [tenantRow, hotelConfig, hotelHistory] = await Promise.all([
