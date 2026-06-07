@@ -76,6 +76,293 @@ hotelRouter.patch('/requests/:id', requireAuth, async (req: Request, res: Respon
 });
 
 // ---------------------------------------------------------------------------
+// Requests — Analytics
+//
+// Implemented as DB-agnostic JS aggregation rather than dialect-specific SQL,
+// because this codebase runs on both Postgres and SQLite, and `request_types`
+// is stored as a JSON text column (not a Postgres array). Status `open` in the
+// analytics contract maps to this codebase's `pending` status.
+// ---------------------------------------------------------------------------
+
+interface ReqRow {
+  request_type: string;
+  description: string | null;
+  status: string;
+  department: string | null;
+  created_at: string;
+  resolved_at: string | null;
+  resolved_by: string | null;
+}
+
+// Parse a stored timestamp (ISO `…Z` from new Date().toISOString(), or the
+// SQLite CURRENT_TIMESTAMP form `YYYY-MM-DD HH:MM:SS` in UTC) to epoch ms.
+function tsToMs(s: string | null | undefined): number | null {
+  if (!s) return null;
+  let v = s.includes('T') ? s : s.replace(' ', 'T');
+  if (!/[zZ]|[+-]\d\d:?\d\d$/.test(v)) v += 'Z';
+  const t = Date.parse(v);
+  return Number.isNaN(t) ? null : t;
+}
+
+// UTC day key `YYYY-MM-DD` for a stored timestamp.
+function dayKey(s: string): string {
+  const ms = tsToMs(s);
+  return ms === null ? '' : new Date(ms).toISOString().slice(0, 10);
+}
+
+function resolutionMinutes(r: ReqRow): number | null {
+  const start = tsToMs(r.created_at);
+  const end = tsToMs(r.resolved_at);
+  if (start === null || end === null) return null;
+  return (end - start) / 60000;
+}
+
+function round(n: number): number { return Math.round(n); }
+
+// Build a request_type -> target response time (minutes) lookup from active
+// departments, matching how requests are routed (request_types JSON includes).
+async function loadDeptTargets(tenantId: string): Promise<{
+  byType: Map<string, number>;
+  byName: Map<string, number>;
+}> {
+  const depts = await dbAll(
+    `SELECT name, request_types, response_time_minutes FROM hotel_departments WHERE tenant_id = ? AND is_active = 1`,
+    tenantId,
+  ) as any[];
+  const byType = new Map<string, number>();
+  const byName = new Map<string, number>();
+  for (const d of depts) {
+    const target = Number(d.response_time_minutes) || 30;
+    byName.set(d.name, target);
+    let types: string[] = [];
+    try { types = typeof d.request_types === 'string' ? JSON.parse(d.request_types) : (d.request_types || []); }
+    catch { types = []; }
+    for (const t of types) if (!byType.has(t)) byType.set(t, target);
+  }
+  return { byType, byName };
+}
+
+function targetFor(r: ReqRow, t: { byType: Map<string, number>; byName: Map<string, number> }): number {
+  return t.byType.get(r.request_type) ?? (r.department ? t.byName.get(r.department) : undefined) ?? 30;
+}
+
+// Fetch all of a tenant's requests once; period filtering happens in JS so the
+// mixed timestamp formats above are compared as numbers, not strings.
+async function loadRequests(tenantId: string): Promise<ReqRow[]> {
+  return await dbAll(
+    `SELECT request_type, description, status, department, created_at, resolved_at, resolved_by
+       FROM hotel_requests WHERE tenant_id = ?`,
+    tenantId,
+  ) as unknown as ReqRow[];
+}
+
+function parseDays(req: Request): number {
+  const d = parseInt(String(req.query.days), 10);
+  return [7, 30, 90].includes(d) ? d : 7;
+}
+
+// GET /hotel/requests/analytics/summary?days=7|30|90
+hotelRouter.get('/requests/analytics/summary', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const days = parseDays(req);
+  try {
+    const all = await loadRequests(tenantId);
+    const targets = await loadDeptTargets(tenantId);
+    const now = Date.now();
+    const periodMs = days * 86400000;
+    const curStart = now - periodMs;
+    const prevStart = now - periodMs * 2;
+
+    const inRange = (r: ReqRow, from: number, to: number) => {
+      const c = tsToMs(r.created_at);
+      return c !== null && c >= from && c < to;
+    };
+
+    const cur = all.filter(r => inRange(r, curStart, now));
+    const prev = all.filter(r => inRange(r, prevStart, curStart));
+
+    const total = cur.length;
+    const open = cur.filter(r => r.status === 'pending').length;
+    const in_progress = cur.filter(r => r.status === 'in_progress').length;
+    const resolved = cur.filter(r => r.status === 'resolved').length;
+
+    const curResMins = cur.map(resolutionMinutes).filter((m): m is number => m !== null);
+    const avg_resolution_minutes = curResMins.length
+      ? round(curResMins.reduce((a, b) => a + b, 0) / curResMins.length)
+      : null;
+
+    const prevResMins = prev.map(resolutionMinutes).filter((m): m is number => m !== null);
+    const prev_avg_resolution_minutes = prevResMins.length
+      ? round(prevResMins.reduce((a, b) => a + b, 0) / prevResMins.length)
+      : null;
+
+    const sla_breached = cur.filter(r => {
+      const m = resolutionMinutes(r);
+      return m !== null && m > targetFor(r, targets);
+    }).length;
+
+    ok(res, {
+      total,
+      open,
+      in_progress,
+      resolved,
+      avg_resolution_minutes,
+      prev_avg_resolution_minutes,
+      sla_breached,
+    });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// GET /hotel/requests/analytics/breakdown?days=7|30|90
+hotelRouter.get('/requests/analytics/breakdown', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const days = parseDays(req);
+  try {
+    const all = await loadRequests(tenantId);
+    const cutoff = Date.now() - days * 86400000;
+    const cur = all.filter(r => { const c = tsToMs(r.created_at); return c !== null && c >= cutoff; });
+
+    const tally = (rows: ReqRow[], key: (r: ReqRow) => string | null) => {
+      const m = new Map<string, number>();
+      for (const r of rows) {
+        const k = key(r);
+        if (k == null || k === '') continue;
+        m.set(k, (m.get(k) || 0) + 1);
+      }
+      return m;
+    };
+    const sortedRows = (m: Map<string, number>, label: string) =>
+      [...m.entries()].sort((a, b) => b[1] - a[1]).map(([k, count]) => ({ [label]: k, count }));
+
+    const by_type = sortedRows(tally(cur, r => r.request_type), 'request_type');
+    const by_dept = sortedRows(tally(cur, r => r.department), 'department');
+    const by_status = [...tally(cur, r => r.status).entries()].map(([status, count]) => ({ status, count }));
+    const top_issues = sortedRows(tally(cur, r => r.description), 'description').slice(0, 5);
+
+    // Daily — created per day + resolved (created in window and now resolved)
+    const dailyMap = new Map<string, { created: number; resolved: number }>();
+    for (const r of cur) {
+      const day = dayKey(r.created_at);
+      if (!day) continue;
+      const d = dailyMap.get(day) || { created: 0, resolved: 0 };
+      d.created += 1;
+      if (r.status === 'resolved') d.resolved += 1;
+      dailyMap.set(day, d);
+    }
+    const daily = [...dailyMap.entries()]
+      .sort((a, b) => a[0] < b[0] ? -1 : 1)
+      .map(([day, v]) => ({ day, created: v.created, resolved: v.resolved }));
+
+    // Hourly distribution (UTC hour of created_at)
+    const hourMap = new Map<number, number>();
+    for (const r of cur) {
+      const ms = tsToMs(r.created_at);
+      if (ms === null) continue;
+      const h = new Date(ms).getUTCHours();
+      hourMap.set(h, (hourMap.get(h) || 0) + 1);
+    }
+    const hourly = [...hourMap.entries()].sort((a, b) => a[0] - b[0]).map(([hour, count]) => ({ hour, count }));
+
+    ok(res, { by_type, by_dept, daily, hourly, top_issues, by_status });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// GET /hotel/requests/analytics/resolution?days=7|30|90
+hotelRouter.get('/requests/analytics/resolution', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const days = parseDays(req);
+  try {
+    const all = await loadRequests(tenantId);
+    const targets = await loadDeptTargets(tenantId);
+    const cutoff = Date.now() - days * 86400000;
+    const cur = all.filter(r => { const c = tsToMs(r.created_at); return c !== null && c >= cutoff; });
+
+    // By department — avg resolution time, counts, target
+    const deptMap = new Map<string, { mins: number[]; resolved: number; total: number; targets: number[] }>();
+    for (const r of cur) {
+      const dep = r.department || 'unknown';
+      const d = deptMap.get(dep) || { mins: [], resolved: 0, total: 0, targets: [] };
+      d.total += 1;
+      d.targets.push(targetFor(r, targets));
+      const m = resolutionMinutes(r);
+      if (m !== null) { d.mins.push(m); d.resolved += 1; }
+      deptMap.set(dep, d);
+    }
+    const by_dept = [...deptMap.entries()]
+      .filter(([, v]) => v.mins.length > 0)
+      .map(([department, v]) => ({
+        department,
+        avg_minutes: round(v.mins.reduce((a, b) => a + b, 0) / v.mins.length),
+        resolved_count: v.resolved,
+        total_count: v.total,
+        // Most common per-request target within the department group
+        target_minutes: mode(v.targets),
+      }))
+      .sort((a, b) => b.avg_minutes - a.avg_minutes);
+
+    // Resolution time trend — daily average over requests created that day
+    const trendMap = new Map<string, number[]>();
+    for (const r of cur) {
+      const m = resolutionMinutes(r);
+      if (m === null) continue;
+      const day = dayKey(r.created_at);
+      if (!day) continue;
+      const arr = trendMap.get(day) || [];
+      arr.push(m);
+      trendMap.set(day, arr);
+    }
+    const trend = [...trendMap.entries()]
+      .sort((a, b) => a[0] < b[0] ? -1 : 1)
+      .map(([day, mins]) => ({ day, avg_minutes: round(mins.reduce((a, b) => a + b, 0) / mins.length) }));
+
+    // Staff performance — keyed by resolved_by (mapped to staff name) + department
+    const blocked = await dbAll(
+      `SELECT phone, staff_name FROM hotel_blocked_numbers WHERE tenant_id = ?`,
+      tenantId,
+    ) as any[];
+    const staffNames = new Map<string, string>();
+    for (const b of blocked) if (b.staff_name) staffNames.set(b.phone, b.staff_name);
+
+    const staffMap = new Map<string, { staff_name: string; department: string; mins: number[]; count: number }>();
+    for (const r of cur) {
+      const m = resolutionMinutes(r);
+      if (m === null || !r.resolved_by) continue;
+      const name = staffNames.get(r.resolved_by) || r.resolved_by || 'Dashboard';
+      const dep = r.department || 'unknown';
+      const key = `${name}__${dep}`;
+      const s = staffMap.get(key) || { staff_name: name, department: dep, mins: [], count: 0 };
+      s.mins.push(m);
+      s.count += 1;
+      staffMap.set(key, s);
+    }
+    const staff_perf = [...staffMap.values()]
+      .map(s => ({
+        staff_name: s.staff_name,
+        department: s.department,
+        resolved_count: s.count,
+        total_count: s.count,
+        avg_minutes: round(s.mins.reduce((a, b) => a + b, 0) / s.mins.length),
+      }))
+      .sort((a, b) => b.resolved_count - a.resolved_count)
+      .slice(0, 10);
+
+    ok(res, { by_dept, trend, staff_perf });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+function mode(nums: number[]): number {
+  if (!nums.length) return 30;
+  const counts = new Map<number, number>();
+  let best = nums[0], bestC = 0;
+  for (const n of nums) {
+    const c = (counts.get(n) || 0) + 1;
+    counts.set(n, c);
+    if (c > bestC) { bestC = c; best = n; }
+  }
+  return best;
+}
+
+// ---------------------------------------------------------------------------
 // Guests
 // ---------------------------------------------------------------------------
 

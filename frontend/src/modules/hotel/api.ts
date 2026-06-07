@@ -40,6 +40,14 @@ export const api = {
   updateRequestStatus: (id: string, status: string) =>
     req(`/hotel/requests/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
 
+  // Requests analytics
+  getRequestsAnalyticsSummary: (days: number) =>
+    req<any>(`/hotel/requests/analytics/summary?days=${days}`),
+  getRequestsAnalyticsBreakdown: (days: number) =>
+    req<any>(`/hotel/requests/analytics/breakdown?days=${days}`),
+  getRequestsAnalyticsResolution: (days: number) =>
+    req<any>(`/hotel/requests/analytics/resolution?days=${days}`),
+
   // Guests
   getGuests: () => req<GuestStay[]>('/hotel/guests'),
   checkIn: (data: { room_number: string; guest_name: string; guest_phone: string; check_in: string; check_out: string }) =>
