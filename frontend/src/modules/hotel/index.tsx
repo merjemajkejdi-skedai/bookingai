@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
-import { BellRing, Users, BookOpen, Settings, Shield, LogOut, Building2, MessageSquare, ShieldOff, Star, UtensilsCrossed, BarChart2 } from 'lucide-react';
+import { BellRing, Users, BookOpen, Settings, Shield, LogOut, Building2, MessageSquare, ShieldOff, Star, UtensilsCrossed } from 'lucide-react';
 import clsx from 'clsx';
 import { isAdmin, getStoredUser, clearAuth } from '../../shared/lib/auth';
 import { AdminPage }           from '../../pages/AdminPage';
 import { RequestsPage }        from './components/RequestsPage';
-import { RequestsAnalytics }   from './components/RequestsAnalytics';
 import { GuestsPage }          from './components/GuestsPage';
 import { FaqPage }             from './components/FaqPage';
 import { ConfigPage }          from './components/ConfigPage';
@@ -15,7 +14,7 @@ import { ReviewsPage }         from './components/ReviewsPage';
 import { MenusPage }           from './components/MenusPage';
 import { api }                from './api';
 
-type Page = 'requests' | 'analytics' | 'guests' | 'faq' | 'config' | 'departments' | 'conversations' | 'blocked' | 'reviews' | 'menus' | 'admin';
+type Page = 'requests' | 'guests' | 'faq' | 'config' | 'departments' | 'conversations' | 'blocked' | 'reviews' | 'menus' | 'admin';
 
 interface Props { onLogout: () => void; }
 
@@ -41,7 +40,6 @@ export function HotelModule({ onLogout }: Props) {
   const nav: { id: Page; label: string; icon: React.ReactNode }[] = [
     { id: 'conversations', label: 'Conversations',   icon: <MessageSquare size={16} /> },
     { id: 'requests',      label: 'Requests',        icon: <BellRing size={16} /> },
-    { id: 'analytics',     label: 'Analytics',       icon: <BarChart2 size={16} /> },
     { id: 'guests',        label: 'Guests',          icon: <Users size={16} /> },
     { id: 'faq',           label: 'FAQ',             icon: <BookOpen size={16} /> },
     ...(menusEnabled ? [{ id: 'menus' as Page, label: 'Menus', icon: <UtensilsCrossed size={16} /> }] : []),
@@ -111,7 +109,6 @@ export function HotelModule({ onLogout }: Props) {
       {/* Main content */}
       <main className="flex-1 min-w-0 overflow-hidden flex flex-col p-3 md:p-5">
         {page === 'requests' && <RequestsPage />}
-        {page === 'analytics' && <RequestsAnalytics />}
         {page === 'guests'   && <GuestsPage />}
         {page === 'faq'      && <FaqPage />}
         {page === 'conversations' && <ConversationsPage surveyEnabled={surveyEnabled} />}

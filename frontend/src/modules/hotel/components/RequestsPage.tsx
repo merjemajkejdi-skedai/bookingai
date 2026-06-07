@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { AlertCircle, Clock, CheckCircle, ChevronDown, RefreshCw, Wrench, UtensilsCrossed, Sparkles, MessageSquare, ShieldAlert, HelpCircle, StickyNote } from 'lucide-react';
+import { AlertCircle, Clock, CheckCircle, ChevronDown, RefreshCw, Wrench, UtensilsCrossed, Sparkles, MessageSquare, ShieldAlert, HelpCircle, StickyNote, BellRing, BarChart2 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../api';
 import type { HotelRequest } from '../types';
 import { Button, Spinner } from '../ui';
+import { RequestsAnalytics } from './RequestsAnalytics';
 
 const DEPT_LABELS: Record<string, string> = {
   food_beverage: 'Food & Beverage',
@@ -67,6 +68,7 @@ function resolutionTime(req: HotelRequest): string | null {
 }
 
 export function RequestsPage() {
+  const [view, setView]         = useState<'requests' | 'analytics'>('requests');
   const [tab, setTab]           = useState<'pending' | 'in_progress' | 'resolved'>('pending');
   const [requests, setRequests] = useState<HotelRequest[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -107,14 +109,40 @@ export function RequestsPage() {
 
   return (
     <div className="h-full flex flex-col gap-3">
-      {/* Header */}
+      {/* Header — view toggle (Requests / Analytics) */}
       <div className="flex items-center justify-between flex-shrink-0">
-        <h1 className="text-lg font-semibold text-slate-800">Guest Requests</h1>
-        <button onClick={load} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-colors">
-          <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-        </button>
+        <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
+          {([
+            { id: 'requests',  label: 'Requests',  icon: <BellRing size={13} /> },
+            { id: 'analytics', label: 'Analytics', icon: <BarChart2 size={13} /> },
+          ] as const).map(v => (
+            <button
+              key={v.id}
+              onClick={() => setView(v.id)}
+              className={clsx(
+                'flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium transition-all',
+                view === v.id
+                  ? 'bg-white text-slate-800 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              )}
+            >
+              {v.icon}{v.label}
+            </button>
+          ))}
+        </div>
+        {view === 'requests' && (
+          <button onClick={load} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-colors">
+            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+          </button>
+        )}
       </div>
 
+      {view === 'analytics' ? (
+        <div className="flex-1 min-h-0">
+          <RequestsAnalytics />
+        </div>
+      ) : (
+      <>
       {/* Status tabs */}
       <div className="flex gap-1 bg-slate-100 p-1 rounded-xl flex-shrink-0">
         {STATUS_TABS.map(t => (
@@ -273,6 +301,8 @@ export function RequestsPage() {
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }

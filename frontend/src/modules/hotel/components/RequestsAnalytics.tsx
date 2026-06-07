@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { BarChart2 } from 'lucide-react';
 import { api } from '../api';
 import { Spinner } from '../ui';
 
@@ -87,11 +86,6 @@ export function RequestsAnalytics() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      <div className="flex items-center gap-2 mb-4 flex-shrink-0">
-        <BarChart2 size={18} className="text-brand-500" />
-        <h1 className="text-lg font-semibold text-slate-800">Requests Analytics</h1>
-      </div>
-
       <div className="flex-1 overflow-y-auto pr-1">
         {periodSelector}
 
