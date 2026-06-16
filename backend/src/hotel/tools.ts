@@ -191,23 +191,19 @@ export async function executeHotelTool(
       const finalPhoto    = photo_url    || null;
       const finalMime     = photo_mime_type || null;
 
-      const id = crypto.randomUUID();
-      await dbRun(
-        `INSERT INTO hotel_requests
-           (id, tenant_id, stay_id, room_number, guest_name, guest_phone, request_type, description, department, priority, photo_url, photo_mime_type)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-        id, tenantId, null, finalRoom, guest_name ?? null, guestPhone,
-        request_type, description, department, finalPriority, finalPhoto, finalMime,
-      );
+      // ── Find matching department + translate description before INSERT ────────
+      // Agent always writes description in English. We translate once here to the
+      // department's configured language, then reuse it for both the DB row and
+      // the WhatsApp notification — no double translation.
+      const LANG_NAMES: Record<string, string> = {
+        sq: 'Albanian', it: 'Italian', de: 'German',
+        fr: 'French',   es: 'Spanish', tr: 'Turkish',
+        ru: 'Russian',  ar: 'Arabic',
+      };
 
-      let etaMinutes = 30; // default, overwritten below if department found
+      let storedDescription = description; // English input from agent
+      let matchedDept: any = null;
 
-      // ETA vars — declared here so the return statement can see them
-      let etaDisplay: string | null = null;
-      let afterHours = false;
-      let afterHoursMessage: string | null = null;
-
-      // Notify the matching department via WhatsApp
       try {
         const depts = await dbAll(
           `SELECT * FROM hotel_departments WHERE tenant_id = ? AND is_active = 1`,
@@ -216,13 +212,76 @@ export async function executeHotelTool(
 
         console.log(`[Hotel notify] ${depts.length} active dept(s) for tenant ${tenantId}, request_type=${request_type}`);
 
-        const match = depts.find((d: any) => {
+        matchedDept = depts.find((d: any) => {
           const types: string[] = typeof d.request_types === 'string'
             ? JSON.parse(d.request_types)
             : d.request_types;
           console.log(`[Hotel notify] dept "${d.name}" handles: ${JSON.stringify(types)}`);
           return types.includes(request_type);
         });
+
+        if (matchedDept) {
+          const deptLang = (matchedDept.language as string) || 'en';
+          if (deptLang !== 'en') {
+            try {
+              const langName = LANG_NAMES[deptLang] || deptLang;
+              const translation = await anthropicClient.messages.create({
+                model:      process.env.CLAUDE_MODEL || 'claude-sonnet-4-6',
+                max_tokens: 200,
+                messages: [{
+                  role:    'user',
+                  content: `You are a translator. Translate the following hotel request description to ${langName}.
+
+Rules:
+- Reply with ONLY the translated text
+- No explanations, no notes, no parentheses, no commentary
+- No quotation marks
+- If the text is already in ${langName}, return it exactly as is with no changes and no comments
+- Do not say "this is already in ${langName}" or anything similar
+- Just the translation, nothing else
+
+Text to translate: ${description}`,
+                }],
+              });
+              const textBlock = translation.content.find((b: any) => b.type === 'text');
+              if (textBlock?.type === 'text' && (textBlock as any).text.trim()) {
+                let translated = (textBlock as any).text.trim();
+                translated = translated
+                  .replace(/\s*---.*$/s, '')
+                  .replace(/\s*\(This is.*$/s, '')
+                  .replace(/\s*\(Note:.*$/s, '')
+                  .replace(/\s*If you.*$/s, '')
+                  .trim();
+                storedDescription = translated || description;
+              }
+              console.log(`[Hotel notify] Translated description to ${langName}: "${storedDescription}"`);
+            } catch (err: any) {
+              console.warn('[Hotel create_request] Translation failed, storing original English:', err.message);
+            }
+          }
+        }
+      } catch (deptErr: any) {
+        console.warn('[Hotel create_request] Department lookup failed:', deptErr.message);
+      }
+
+      // ── INSERT with translated description ────────────────────────────────────
+      const id = crypto.randomUUID();
+      await dbRun(
+        `INSERT INTO hotel_requests
+           (id, tenant_id, stay_id, room_number, guest_name, guest_phone, request_type, description, department, priority, photo_url, photo_mime_type)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+        id, tenantId, null, finalRoom, guest_name ?? null, guestPhone,
+        request_type, storedDescription, department, finalPriority, finalPhoto, finalMime,
+      );
+
+      let etaMinutes = 30;
+      let etaDisplay: string | null = null;
+      let afterHours = false;
+      let afterHoursMessage: string | null = null;
+
+      // ── Notify the matched department via WhatsApp ────────────────────────────
+      try {
+        const match = matchedDept;
 
         if (match) {
           try {
@@ -247,7 +306,6 @@ export async function executeHotelTool(
         }
 
         if (match?.whatsapp) {
-          // Load full tenant row so per-tenant Twilio credentials are used
           const tenantRow = await dbGet('SELECT * FROM tenants WHERE id = ?', tenantId) as any;
 
           const accountSid  = tenantRow?.twilio_account_sid || process.env.TWILIO_ACCOUNT_SID;
@@ -280,59 +338,11 @@ export async function executeHotelTool(
 
           console.log(`[Hotel notify] Sending to ${match.whatsapp} (dept: ${match.name})`);
           if (templateSid) {
-            // Translate description to department language if not English
-            const deptLang = (match.language as string) || 'en';
-            let translatedDescription = description;
-
-            if (deptLang !== 'en') {
-              try {
-                const LANG_NAMES: Record<string, string> = {
-                  sq: 'Albanian', it: 'Italian', de: 'German',
-                  fr: 'French',   es: 'Spanish', tr: 'Turkish',
-                  ru: 'Russian',  ar: 'Arabic',
-                };
-                const langName = LANG_NAMES[deptLang] || deptLang;
-                const translation = await anthropicClient.messages.create({
-                  model:      process.env.CLAUDE_MODEL || 'claude-sonnet-4-6',
-                  max_tokens: 200,
-                  messages: [{
-                    role:    'user',
-                    content: `You are a translator. Translate the following text to ${langName}.
-
-Rules:
-- Reply with ONLY the translated text
-- No explanations, no notes, no parentheses, no commentary
-- No quotation marks
-- If the text is already in ${langName}, return it exactly as is with no changes and no comments
-- Do not say "this is already in ${langName}" or anything similar
-- Just the translation, nothing else
-
-Text to translate: ${description}`,
-                  }],
-                });
-                const textBlock = translation.content.find((b: any) => b.type === 'text');
-                if (textBlock?.type === 'text' && (textBlock as any).text.trim()) {
-                  let translated = (textBlock as any).text.trim();
-                  // Safety trim — strip any explanation text that slips through
-                  translated = translated
-                    .replace(/\s*---.*$/s, '')          // remove after ---
-                    .replace(/\s*\(This is.*$/s, '')    // remove explanation in parentheses
-                    .replace(/\s*\(Note:.*$/s, '')      // remove notes
-                    .replace(/\s*If you.*$/s, '')       // remove "If you meant..." explanations
-                    .trim();
-                  translatedDescription = translated || description; // fallback to original if empty
-                }
-                console.log(`[Hotel notify] Translated to ${langName}: "${translatedDescription}"`);
-              } catch (err: any) {
-                console.warn('[Hotel notify] Translation failed, using original:', err.message);
-              }
-            }
-
-            // Sanitize all variable values before building contentVariables
+            // storedDescription is already translated to dept language
             const templateVars = {
               '1': sanitizeTemplateVar(room_number || 'N/A'),
               '2': sanitizeTemplateVar(TYPE_LABELS[request_type] || request_type),
-              '3': sanitizeTemplateVar(translatedDescription),
+              '3': sanitizeTemplateVar(storedDescription),
               '4': sanitizeTemplateVar(time),
             };
             console.log('[Hotel notify] contentVariables:', JSON.stringify(templateVars));
@@ -344,7 +354,7 @@ Text to translate: ${description}`,
                 contentSid:       templateSid,
                 contentVariables: JSON.stringify(templateVars),
               });
-              console.log(`[Hotel notify] ✅ Template sent to ${match.name} in ${deptLang}`);
+              console.log(`[Hotel notify] ✅ Template sent to ${match.name}`);
             } catch (err: any) {
               console.error(`[Hotel notify] ❌ Template send failed:`, err.message);
             }
@@ -365,7 +375,7 @@ Text to translate: ${description}`,
               `${EMOJI[request_type] || '📋'} *${TYPE_LABELS[request_type] || request_type} — ${roomLabel}${nameLabel}*`,
               `📱 Guest: ${cleanPhone}`,
               ``,
-              description,
+              storedDescription,
               ``,
               `_${time}_`,
             ].join('\n');
