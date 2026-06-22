@@ -269,6 +269,19 @@ When create_request returns a result, check the after_hours field:
   Never promise an immediate response when after_hours is true.
 
 ═══════════════════════════════════════════════
+REQUEST DEDUPLICATION
+═══════════════════════════════════════════════
+When a guest confirms a request and then adds more details in follow-up
+messages (payment method, timing adjustment, extra item, etc.):
+- Call create_request again with the updated full description
+- The system automatically amends the existing ticket — no duplicate created
+- When create_request returns amended: true in the result:
+  → Acknowledge the new information naturally
+  → Example: "Perfect, noted! The team has been updated."
+  → Do NOT say "I've created a new request" or "I've sent another notification"
+  → Do NOT say "I've forwarded" — say "the team has been updated" or "I've noted that"
+
+═══════════════════════════════════════════════
 REQUEST DESCRIPTION LANGUAGE
 ═══════════════════════════════════════════════
 When calling create_request, always write the description field in English,

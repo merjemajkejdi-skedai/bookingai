@@ -191,7 +191,7 @@ export async function executeHotelTool(
       const finalPhoto    = photo_url    || null;
       const finalMime     = photo_mime_type || null;
 
-      // ── Find matching department + translate description before INSERT ────────
+      // ── Find matching department + translate description ────────────────────
       // Agent always writes description in English. We translate once here to the
       // department's configured language, then reuse it for both the DB row and
       // the WhatsApp notification — no double translation.
@@ -201,7 +201,7 @@ export async function executeHotelTool(
         ru: 'Russian',  ar: 'Arabic',
       };
 
-      let storedDescription = description; // English input from agent
+      let storedDescription = description;
       let matchedDept: any = null;
 
       try {
@@ -264,7 +264,165 @@ Text to translate: ${description}`,
         console.warn('[Hotel create_request] Department lookup failed:', deptErr.message);
       }
 
-      // ── INSERT with translated description ────────────────────────────────────
+      // ── ETA calculation ─────────────────────────────────────────────────────
+      // Computed before the dedup check so the early-return can include correct ETA.
+      let etaMinutes = 30;
+      let etaDisplay: string | null = null;
+      let afterHours = false;
+      let afterHoursMessage: string | null = null;
+
+      if (matchedDept) {
+        try {
+          const hotelCfg = await dbGet('SELECT timezone FROM hotel_config WHERE tenant_id = ?', tenantId) as any;
+          const timezone = hotelCfg?.timezone || 'Europe/Tirane';
+          const schedResult = await getDepartmentSchedule(matchedDept.id, timezone);
+
+          if (schedResult?.is_after_hours) {
+            const ah = schedResult as AfterHours;
+            etaDisplay = `tomorrow morning from ${ah.next_window_start}`;
+            afterHours = true;
+            afterHoursMessage = ah.after_hours_message;
+          } else if (schedResult) {
+            etaMinutes = (schedResult as ScheduleWindow).response_time_minutes;
+          } else if (matchedDept.response_time_minutes) {
+            etaMinutes = Number(matchedDept.response_time_minutes) || 30;
+          }
+        } catch (schedErr: any) {
+          console.warn('[Hotel notify] Schedule lookup failed, using flat ETA:', schedErr.message);
+          if (matchedDept.response_time_minutes) etaMinutes = Number(matchedDept.response_time_minutes) || 30;
+        }
+      }
+
+      // ── DEDUPLICATION: Check for recent open request same room + type ────────
+      // If same guest has an open request for same room+type within 30 minutes,
+      // amend it with new details instead of creating a duplicate ticket.
+      const DEDUP_WINDOW_MINUTES = 30;
+      let existingReq: any = null;
+
+      if (finalRoom) {
+        try {
+          const dedupSql = isPg
+            ? `SELECT id, description, photo_url FROM hotel_requests
+               WHERE tenant_id = ? AND room_number = ? AND request_type = ?
+                 AND status != 'resolved'
+                 AND created_at >= NOW() - INTERVAL '${DEDUP_WINDOW_MINUTES} minutes'
+               ORDER BY created_at DESC LIMIT 1`
+            : `SELECT id, description, photo_url FROM hotel_requests
+               WHERE tenant_id = ? AND room_number = ? AND request_type = ?
+                 AND status != 'resolved'
+                 AND created_at >= datetime('now', '-${DEDUP_WINDOW_MINUTES} minutes')
+               ORDER BY created_at DESC LIMIT 1`;
+
+          existingReq = await dbGet(dedupSql, tenantId, finalRoom, request_type) as any;
+        } catch (dedupErr: any) {
+          console.warn('[Hotel create_request] Dedup check failed:', dedupErr.message);
+        }
+      }
+
+      if (existingReq) {
+        const isSameDesc = existingReq.description?.trim().toLowerCase()
+          === storedDescription?.trim().toLowerCase();
+
+        // Attach photo if follow-up includes one but the existing request has none
+        if (finalPhoto && !existingReq.photo_url) {
+          try {
+            await dbRun(
+              `UPDATE hotel_requests SET photo_url = ?, photo_mime_type = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+              finalPhoto, finalMime, existingReq.id,
+            );
+          } catch { /* best-effort */ }
+        }
+
+        if (!isSameDesc) {
+          // Append new information as a timestamped note on the existing request
+          const timestamp = new Date().toLocaleTimeString('en-GB', {
+            hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Tirane',
+          });
+          const additionalNote = `[${timestamp}] Update: ${storedDescription}`;
+
+          try {
+            await dbRun(
+              isPg
+                ? `UPDATE hotel_requests
+                   SET notes = CASE WHEN notes IS NULL OR notes = '' THEN ? ELSE notes || E'\n' || ? END,
+                       updated_at = CURRENT_TIMESTAMP
+                   WHERE id = ?`
+                : `UPDATE hotel_requests
+                   SET notes = CASE WHEN notes IS NULL OR notes = '' THEN ? ELSE notes || char(10) || ? END,
+                       updated_at = CURRENT_TIMESTAMP
+                   WHERE id = ?`,
+              additionalNote, additionalNote, existingReq.id,
+            );
+            console.log(`[Hotel] 📝 Amended existing request ${existingReq.id}`);
+          } catch (err: any) {
+            console.warn('[Hotel create_request] Amendment update failed:', err.message);
+          }
+
+          // Re-notify department with UPDATE prefix so staff know this is additional info
+          if (matchedDept?.whatsapp) {
+            try {
+              const tenantRow = await dbGet('SELECT * FROM tenants WHERE id = ?', tenantId) as any;
+              const accountSid = tenantRow?.twilio_account_sid || process.env.TWILIO_ACCOUNT_SID;
+              const authToken  = tenantRow?.twilio_auth_token  || process.env.TWILIO_AUTH_TOKEN;
+              const fromNumber = tenantRow?.whatsapp_number?.startsWith('whatsapp:')
+                ? tenantRow.whatsapp_number
+                : `whatsapp:${tenantRow?.whatsapp_number}`;
+              const toNumber = matchedDept.whatsapp.startsWith('whatsapp:')
+                ? matchedDept.whatsapp
+                : `whatsapp:${matchedDept.whatsapp}`;
+              const templateSid = (tenantRow?.twilio_dept_template_sid as string | null)
+                || process.env.TWILIO_DEPT_TEMPLATE_SID;
+
+              if (templateSid) {
+                const { default: twilio } = await import('twilio');
+                const twilioClient = twilio(accountSid, authToken);
+                const TYPE_LABELS: Record<string, string> = {
+                  room_service: 'Room Service', housekeeping: 'Housekeeping',
+                  maintenance: 'Maintenance', concierge_question: 'Guest Question',
+                  complaint: 'Complaint', other: 'General',
+                };
+                const time = new Date().toLocaleTimeString('en-GB', {
+                  hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Tirane',
+                });
+                try {
+                  await twilioClient.messages.create({
+                    from: fromNumber, to: toNumber,
+                    contentSid: templateSid,
+                    contentVariables: JSON.stringify({
+                      '1': sanitizeTemplateVar(room_number || 'N/A'),
+                      '2': sanitizeTemplateVar(TYPE_LABELS[request_type] || request_type),
+                      '3': sanitizeTemplateVar(`UPDATE: ${storedDescription}`),
+                      '4': sanitizeTemplateVar(time),
+                    }),
+                  });
+                  console.log(`[Hotel notify] ✅ Update notification sent to ${matchedDept.name}`);
+                } catch (err: any) {
+                  console.warn('[Hotel notify] Update re-notification failed:', err.message);
+                }
+              }
+            } catch (err: any) {
+              console.warn('[Hotel notify] Update re-notification setup failed:', err.message);
+            }
+          }
+        } else {
+          console.log(`[Hotel] 🔕 Duplicate request room ${finalRoom} same desc — returning existing silently`);
+        }
+
+        return {
+          success:             true,
+          request_id:          existingReq.id,
+          room:                finalRoom,
+          department,
+          priority:            finalPriority,
+          eta:                 etaDisplay || formatEta(etaMinutes),
+          after_hours:         afterHours,
+          after_hours_message: afterHoursMessage,
+          amended:             true,
+          photo_saved:         !!(finalPhoto || existingReq.photo_url),
+        };
+      }
+
+      // ── INSERT (no recent duplicate found) ───────────────────────────────────
       const id = crypto.randomUUID();
       await dbRun(
         `INSERT INTO hotel_requests
@@ -274,36 +432,9 @@ Text to translate: ${description}`,
         request_type, storedDescription, department, finalPriority, finalPhoto, finalMime,
       );
 
-      let etaMinutes = 30;
-      let etaDisplay: string | null = null;
-      let afterHours = false;
-      let afterHoursMessage: string | null = null;
-
       // ── Notify the matched department via WhatsApp ────────────────────────────
       try {
         const match = matchedDept;
-
-        if (match) {
-          try {
-            const hotelCfg = await dbGet('SELECT timezone FROM hotel_config WHERE tenant_id = ?', tenantId) as any;
-            const timezone = hotelCfg?.timezone || 'Europe/Tirane';
-            const schedResult = await getDepartmentSchedule(match.id, timezone);
-
-            if (schedResult?.is_after_hours) {
-              const ah = schedResult as AfterHours;
-              etaDisplay = `tomorrow morning from ${ah.next_window_start}`;
-              afterHours = true;
-              afterHoursMessage = ah.after_hours_message;
-            } else if (schedResult) {
-              etaMinutes = (schedResult as ScheduleWindow).response_time_minutes;
-            } else if (match.response_time_minutes) {
-              etaMinutes = Number(match.response_time_minutes) || 30;
-            }
-          } catch (schedErr: any) {
-            console.warn('[Hotel notify] Schedule lookup failed, using flat ETA:', schedErr.message);
-            if (match.response_time_minutes) etaMinutes = Number(match.response_time_minutes) || 30;
-          }
-        }
 
         if (match?.whatsapp) {
           const tenantRow = await dbGet('SELECT * FROM tenants WHERE id = ?', tenantId) as any;
@@ -338,7 +469,6 @@ Text to translate: ${description}`,
 
           console.log(`[Hotel notify] Sending to ${match.whatsapp} (dept: ${match.name})`);
           if (templateSid) {
-            // storedDescription is already translated to dept language
             const templateVars = {
               '1': sanitizeTemplateVar(room_number || 'N/A'),
               '2': sanitizeTemplateVar(TYPE_LABELS[request_type] || request_type),
@@ -402,6 +532,7 @@ Text to translate: ${description}`,
         eta:                  etaDisplay || formatEta(etaMinutes),
         after_hours:          afterHours,
         after_hours_message:  afterHoursMessage,
+        amended:              false,
         photo_saved:          !!finalPhoto,
       };
     }
