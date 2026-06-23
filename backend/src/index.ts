@@ -14,9 +14,11 @@ import { artClassRouter } from './modules/art_class/routes.js';
 import { restaurantRouter } from './modules/restaurant/routes.js';
 import { hotelRouter } from './routes/hotel.js';
 import { hotelMenusRouter } from './routes/hotelMenus.js';
+import { shopRouter } from './routes/shop.js';
 import { emailWebhookRouter } from './routes/emailWebhook.js';
 import { skedaiRouter } from './skedai/routes.js';
 import { startDigestCron } from './reviews/digestCron.js';
+import { startShopCron } from './shop/cron.js';
 import { adminAnalyticsRouter } from './routes/adminAnalytics.js';
 
 const app = express();
@@ -37,6 +39,7 @@ app.use(express.urlencoded({ extended: false, limit: '10mb' }));
 // Serve uploaded files (Railway filesystem — ephemeral across deploys)
 fs.mkdirSync(path.join(process.cwd(), 'uploads', 'menus'),        { recursive: true });
 fs.mkdirSync(path.join(process.cwd(), 'uploads', 'maintenance'),  { recursive: true });
+fs.mkdirSync(path.join(process.cwd(), 'uploads', 'shop'),         { recursive: true });
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 app.get('/health', (_, res) => res.json({
@@ -54,6 +57,7 @@ app.use('/admin', adminRouter);
 app.use('/admin/analytics', adminAnalyticsRouter);
 app.use('/hotel', hotelRouter);
 app.use('/hotel', hotelMenusRouter);
+app.use('/shop', shopRouter);
 app.use('/api', skedaiRouter);
 app.use('/whatsapp', whatsappRouter);
 app.use('/', emailWebhookRouter);
@@ -61,6 +65,7 @@ app.use('/', emailWebhookRouter);
 async function start() {
   await runMigrations();
   startDigestCron();
+  startShopCron();
   app.listen(Number(PORT), '0.0.0.0', () => {
     console.log(`\n🚀 BookingAI backend running at http://localhost:${PORT}`);
     console.log(`   API:       http://localhost:${PORT}/api`);

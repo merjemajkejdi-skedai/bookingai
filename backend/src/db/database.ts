@@ -475,6 +475,104 @@ const SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS idx_hotel_menus_tenant    ON hotel_menus(tenant_id, is_active);
   CREATE INDEX IF NOT EXISTS idx_hotel_menu_items_menu ON hotel_menu_items(menu_id, display_order);
+  CREATE TABLE IF NOT EXISTS shop_config (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL UNIQUE,
+    shop_name TEXT,
+    opening_hours TEXT,
+    estimated_pickup_minutes INTEGER DEFAULT 15,
+    pickup_mode TEXT DEFAULT 'estimated',
+    agent_personality TEXT DEFAULT 'friendly',
+    fallback_message TEXT DEFAULT 'We are temporarily unavailable. Please try again shortly.',
+    address TEXT,
+    instagram_url TEXT,
+    facebook_url TEXT,
+    tiktok_url TEXT,
+    website_url TEXT,
+    phone TEXT,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE TABLE IF NOT EXISTS shop_menu_categories (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    sort_order INTEGER DEFAULT 0,
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE TABLE IF NOT EXISTS shop_menu_items (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    category_id TEXT,
+    name TEXT NOT NULL,
+    description TEXT,
+    price REAL NOT NULL,
+    currency TEXT DEFAULT 'ALL',
+    photo_url TEXT,
+    photo_filename TEXT,
+    stock_type TEXT DEFAULT 'unlimited',
+    stock_limit INTEGER,
+    stock_used INTEGER DEFAULT 0,
+    stock_last_reset TEXT,
+    is_active INTEGER DEFAULT 1,
+    sort_order INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE TABLE IF NOT EXISTS shop_orders (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    order_number INTEGER NOT NULL,
+    order_date TEXT NOT NULL,
+    guest_phone TEXT NOT NULL,
+    pickup_name TEXT,
+    status TEXT DEFAULT 'new',
+    total_price REAL,
+    currency TEXT DEFAULT 'ALL',
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    in_progress_at TEXT,
+    done_at TEXT,
+    picked_up_at TEXT,
+    cancelled_at TEXT
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_shop_orders_unique ON shop_orders(tenant_id, order_date, order_number);
+  CREATE TABLE IF NOT EXISTS shop_order_items (
+    id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL,
+    tenant_id TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    item_name TEXT NOT NULL,
+    item_price REAL NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 1,
+    subtotal REAL NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS shop_conversations (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    guest_phone TEXT NOT NULL,
+    messages TEXT NOT NULL DEFAULT '[]',
+    cart TEXT NOT NULL DEFAULT '[]',
+    cart_state TEXT DEFAULT 'idle',
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    UNIQUE(tenant_id, guest_phone)
+  );
+  CREATE TABLE IF NOT EXISTS shop_faq (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    question TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    sort_order INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE INDEX IF NOT EXISTS idx_shop_orders_status   ON shop_orders(tenant_id, status, created_at);
+  CREATE INDEX IF NOT EXISTS idx_shop_orders_date     ON shop_orders(tenant_id, order_date);
+  CREATE INDEX IF NOT EXISTS idx_shop_items_tenant    ON shop_menu_items(tenant_id, is_active);
+  CREATE INDEX IF NOT EXISTS idx_shop_convs_phone     ON shop_conversations(tenant_id, guest_phone);
 `;
 
 export async function runMigrations() {
@@ -597,6 +695,19 @@ export async function runMigrations() {
       `ALTER TABLE hotel_blocked_numbers ADD COLUMN IF NOT EXISTS staff_role TEXT`,
       `ALTER TABLE hotel_blocked_numbers ADD COLUMN IF NOT EXISTS is_staff INTEGER NOT NULL DEFAULT 1`,
       `CREATE INDEX IF NOT EXISTS idx_hotel_requests_room_status ON hotel_requests(tenant_id, room_number, status)`,
+      // shop_001 — shop vertical tables
+      `CREATE TABLE IF NOT EXISTS shop_config (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL UNIQUE, shop_name TEXT, opening_hours TEXT, estimated_pickup_minutes INTEGER DEFAULT 15, pickup_mode TEXT DEFAULT 'estimated', agent_personality TEXT DEFAULT 'friendly', fallback_message TEXT DEFAULT 'We are temporarily unavailable. Please try again shortly.', address TEXT, instagram_url TEXT, facebook_url TEXT, tiktok_url TEXT, website_url TEXT, phone TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+      `CREATE TABLE IF NOT EXISTS shop_menu_categories (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, name TEXT NOT NULL, description TEXT, sort_order INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+      `CREATE TABLE IF NOT EXISTS shop_menu_items (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, category_id TEXT, name TEXT NOT NULL, description TEXT, price REAL NOT NULL, currency TEXT DEFAULT 'ALL', photo_url TEXT, photo_filename TEXT, stock_type TEXT DEFAULT 'unlimited', stock_limit INTEGER, stock_used INTEGER DEFAULT 0, stock_last_reset TEXT, is_active INTEGER DEFAULT 1, sort_order INTEGER DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+      `CREATE TABLE IF NOT EXISTS shop_orders (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, order_number INTEGER NOT NULL, order_date TEXT NOT NULL, guest_phone TEXT NOT NULL, pickup_name TEXT, status TEXT DEFAULT 'new', total_price REAL, currency TEXT DEFAULT 'ALL', notes TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, in_progress_at TEXT, done_at TEXT, picked_up_at TEXT, cancelled_at TEXT)`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_shop_orders_unique ON shop_orders(tenant_id, order_date, order_number)`,
+      `CREATE TABLE IF NOT EXISTS shop_order_items (id TEXT PRIMARY KEY, order_id TEXT NOT NULL, tenant_id TEXT NOT NULL, item_id TEXT NOT NULL, item_name TEXT NOT NULL, item_price REAL NOT NULL, quantity INTEGER NOT NULL DEFAULT 1, subtotal REAL NOT NULL)`,
+      `CREATE TABLE IF NOT EXISTS shop_conversations (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, guest_phone TEXT NOT NULL, messages TEXT NOT NULL DEFAULT '[]', cart TEXT NOT NULL DEFAULT '[]', cart_state TEXT DEFAULT 'idle', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(tenant_id, guest_phone))`,
+      `CREATE TABLE IF NOT EXISTS shop_faq (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, question TEXT NOT NULL, answer TEXT NOT NULL, sort_order INTEGER DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+      `CREATE INDEX IF NOT EXISTS idx_shop_orders_status ON shop_orders(tenant_id, status, created_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_shop_orders_date   ON shop_orders(tenant_id, order_date)`,
+      `CREATE INDEX IF NOT EXISTS idx_shop_items_tenant  ON shop_menu_items(tenant_id, is_active)`,
+      `CREATE INDEX IF NOT EXISTS idx_shop_convs_phone   ON shop_conversations(tenant_id, guest_phone)`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));

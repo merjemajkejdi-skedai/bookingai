@@ -11,8 +11,9 @@ import { ArtClassModule } from './modules/art_class';
 import { RestaurantModule } from './modules/restaurant';
 import { HotelModule } from './modules/hotel';
 import { SkedAIModule } from './modules/skedai';
+import { ShopModule } from './modules/shop';
 
-type ShopMode = 'booking' | 'art_event' | 'art_class' | 'restaurant' | 'hotel' | 'skedai';
+type ShopMode = 'booking' | 'art_event' | 'art_class' | 'restaurant' | 'hotel' | 'skedai' | 'shop';
 
 function getShopMode(type: string): ShopMode {
   const t = type.toLowerCase();
@@ -21,6 +22,7 @@ function getShopMode(type: string): ShopMode {
   if (t === 'restaurant') return 'restaurant';
   if (t === 'hotel')      return 'hotel';
   if (t === 'skedai')     return 'skedai';
+  if (t === 'shop')       return 'shop';
   return 'booking';
 }
 
@@ -195,6 +197,7 @@ export default function App() {
           {mode === 'restaurant' && <RestaurantModule   key={viewTenant.id} onLogout={handleLogout} />}
           {mode === 'hotel'      && <HotelModule        key={viewTenant.id} onLogout={handleLogout} />}
           {mode === 'skedai'     && <SkedAIModule       key={viewTenant.id} onLogout={handleLogout} />}
+          {mode === 'shop'       && <ShopModule         key={viewTenant.id} onLogout={handleLogout} />}
         </div>
       </div>
     );
@@ -210,6 +213,7 @@ export default function App() {
       {mode === 'restaurant' && <RestaurantModule   onLogout={handleLogout} />}
       {mode === 'hotel'      && <HotelModule        onLogout={handleLogout} />}
       {mode === 'skedai'     && <SkedAIModule       onLogout={handleLogout} />}
+      {mode === 'shop'       && <ShopModule         onLogout={handleLogout} />}
     </div>
   );
 }

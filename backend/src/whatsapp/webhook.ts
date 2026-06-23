@@ -7,6 +7,7 @@ import { runArtClassAgent } from '../modules/art_class/agent.js';
 import { runRestaurantAgent } from '../modules/restaurant/agent.js';
 import { runHotelAgent } from '../hotel/agent.js';
 import { runSkedAIAgent } from '../skedai/agent.js';
+import { runShopAgent } from '../shop/agent.js';
 import { isPg, prepare, query, queryOne } from '../db/database.js';
 import { sendWhatsAppMessage } from './twilio.js';
 import { logMessage } from './messageLog.js';
@@ -163,6 +164,16 @@ async function handleMetaWebhook(req: Request, res: Response) {
           .catch((e: any) => console.error('[Meta] fallback send failed:', e.message));
         return;
       }
+    } else if (tenantType === 'shop') {
+      try {
+        reply = await withTimeout(runShopAgent(body, customerPhone, tenant.id), 15_000);
+      } catch (agentErr: any) {
+        console.error('[Meta] ❌ Shop agent error/timeout:', agentErr?.message ?? agentErr);
+        const fallback = await getFallbackMessage(tenant);
+        await sendWhatsAppMessage(customerPhone, fallback, tenant)
+          .catch((e: any) => console.error('[Meta] fallback send failed:', e.message));
+        return;
+      }
     } else {
       const history = getSession(customerPhone);
       try {
@@ -291,6 +302,25 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
       if (skedReply) {
         await sendWhatsAppMessage(phone, skedReply, tenant);
         console.log(`✅ SkedAI reply sent to ${phone}`);
+      }
+      return;
+    }
+
+    // ── Shop — WhatsApp ordering agent ────────────────────────────────────
+    if (tenantType === 'shop') {
+      let shopReply: string;
+      try {
+        shopReply = await withTimeout(runShopAgent(messageText, phone, tenant.id), 15_000);
+      } catch (agentErr: any) {
+        console.error('❌ Shop agent error/timeout:', agentErr?.message ?? agentErr);
+        const fallback = await getFallbackMessage(tenant);
+        await sendWhatsAppMessage(phone, fallback, tenant)
+          .catch((e: any) => console.error('❌ Shop fallback send failed:', e.message));
+        return;
+      }
+      if (shopReply) {
+        await sendWhatsAppMessage(phone, shopReply, tenant);
+        console.log(`✅ Shop reply sent to ${phone}`);
       }
       return;
     }
