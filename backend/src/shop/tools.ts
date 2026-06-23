@@ -121,11 +121,27 @@ export async function executeShopTool(
   switch (toolName) {
     case 'get_menu': {
       try {
+        // LOG 1 — what tenantId is the tool receiving?
+        console.log('[Shop get_menu] tenantId received:', tenantId);
+        console.log('[Shop get_menu] category filter:', input.category_id || 'none');
+
+        // LOG 2 — raw count for this tenant (no filters)
+        const countRow = await dbGet(`SELECT COUNT(*) as total FROM shop_menu_items WHERE tenant_id = ?`, tenantId);
+        console.log('[Shop get_menu] raw count for tenant:', JSON.stringify(countRow));
+
+        // LOG 3 — all items without is_active filter
+        const allItems = await dbAll(`SELECT id, name, is_active, tenant_id FROM shop_menu_items WHERE tenant_id = ?`, tenantId);
+        console.log('[Shop get_menu] all items (no filter):', JSON.stringify(allItems));
+
+        // LOG 4 — distinct is_active values
+        const distinctActive = await dbAll(`SELECT DISTINCT is_active FROM shop_menu_items WHERE tenant_id = ?`, tenantId);
+        console.log('[Shop get_menu] distinct is_active values:', JSON.stringify(distinctActive));
+
         const categories = await dbAll(
           `SELECT id, name, description, sort_order FROM shop_menu_categories WHERE tenant_id = ? AND is_active = 1 ORDER BY sort_order ASC`,
           tenantId,
         );
-        let itemSql = `SELECT i.*, c.name AS category_name FROM shop_menu_items i LEFT JOIN shop_menu_categories c ON i.category_id = c.id WHERE i.tenant_id = ? AND i.is_active = 1`;
+        let itemSql = `SELECT i.*, c.name AS category_name FROM shop_menu_items i LEFT JOIN shop_menu_categories c ON i.category_id = c.id WHERE i.tenant_id = ? AND i.is_active != 0`;
         const params: unknown[] = [tenantId];
         if (input.category_id) { itemSql += ` AND i.category_id = ?`; params.push(input.category_id); }
         if (input.search) {
@@ -135,7 +151,14 @@ export async function executeShopTool(
         }
         itemSql += ` ORDER BY i.sort_order ASC`;
         const items = await dbAll(itemSql, ...params);
-        console.log(`[Shop] get_menu OK: ${categories.length} categories, ${items.length} items`);
+
+        // LOG 5 — final result
+        console.log('[Shop get_menu] final query returned:', items.length, 'items');
+        console.log('[Shop get_menu] first item sample:', JSON.stringify(items[0] || null));
+        if (items.length === 0) {
+          console.log('[Shop get_menu] ⚠️ ZERO RESULTS — check tenant_id match and is_active values above');
+        }
+
         return {
           success: true,
           categories,
