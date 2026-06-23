@@ -9,6 +9,31 @@ const anthropic = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
 async function dbGet(sql: string, ...p: unknown[]) { return (isPg ? queryOne(sql, p) : prepare(sql).get(...p)) as any; }
 async function dbRun(sql: string, ...p: unknown[]) { if (isPg) return queryRun(sql, p); prepare(sql).run(...p); }
 
+/**
+ * Calls Claude API with automatic retry on 500/529 errors.
+ * Waits 3 seconds between attempts.
+ */
+async function callClaudeWithRetry(
+  client: Anthropic,
+  params: Anthropic.MessageCreateParamsNonStreaming,
+  maxRetries = 1,
+): Promise<Anthropic.Message> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await client.messages.create(params);
+    } catch (err: any) {
+      const isRetryable = err.status === 500 || err.status === 529;
+      if (attempt < maxRetries && isRetryable) {
+        console.log(`[Shop] Claude error ${err.status} (attempt ${attempt + 1}) — retrying in 3s...`);
+        await new Promise(r => setTimeout(r, 3000));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error('callClaudeWithRetry: exhausted retries');
+}
+
 export async function runShopAgent(
   message: string,
   guestPhone: string,
@@ -60,28 +85,16 @@ export async function runShopAgent(
   let finalReply = '';
 
   // Agentic tool-use loop
-  let apiRetried = false;
   while (true) {
     console.log('[Shop] calling Claude with', shopTools.length, 'tools, messages:', messages.length);
-    let response: Awaited<ReturnType<typeof anthropic.messages.create>>;
-    try {
-      response = await anthropic.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1024,
-        system: systemPrompt,
-        tools: shopTools,
-        tool_choice: { type: 'auto' },
-        messages,
-      });
-    } catch (err: any) {
-      if (!apiRetried && (err.status === 529 || err.message?.includes('overloaded'))) {
-        console.log('[Shop] Claude overloaded — retrying in 3s...');
-        apiRetried = true;
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        continue;
-      }
-      throw err;
-    }
+    const response = await callClaudeWithRetry(anthropic, {
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1024,
+      system: systemPrompt,
+      tools: shopTools,
+      tool_choice: { type: 'auto' },
+      messages,
+    });
 
     if (response.stop_reason === 'tool_use') {
       messages.push({ role: 'assistant', content: response.content });
