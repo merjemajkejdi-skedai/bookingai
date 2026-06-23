@@ -486,9 +486,14 @@ function ConversationsTab() {
   const [selected, setSelected] = useState<ShopConversation | null>(null);
   const [loading, setLoading] = useState(true);
   const [clearing, setClearing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   function loadList() {
-    shopApi.getConversations().then(setConvs).catch(() => {}).finally(() => setLoading(false));
+    setLoadError(null);
+    shopApi.getConversations()
+      .then(setConvs)
+      .catch((e: any) => setLoadError(e.message ?? 'Failed to load conversations'))
+      .finally(() => setLoading(false));
   }
   useEffect(() => { loadList(); }, []);
 
@@ -517,7 +522,12 @@ function ConversationsTab() {
             <p className="text-xs text-slate-400">{timeAgo(c.updated_at)}</p>
           </button>
         ))}
-        {!loading && convs.length === 0 && <div className="text-slate-300 text-sm text-center py-8">No conversations yet</div>}
+        {loadError && (
+          <div className="text-red-500 text-xs px-2 py-2 bg-red-50 rounded-lg">
+            Error: {loadError}
+          </div>
+        )}
+        {!loading && !loadError && convs.length === 0 && <div className="text-slate-300 text-sm text-center py-8">No conversations yet</div>}
       </div>
       <div className="flex-1 overflow-y-auto bg-white rounded-xl border border-slate-200 p-4">
         {!selected ? (

@@ -14,6 +14,8 @@ export async function runShopAgent(
   guestPhone: string,
   tenantId: string,
 ): Promise<string> {
+  console.log(`[Shop] runShopAgent tenantId=${tenantId} phone=${guestPhone}`);
+
   const [config, tenant] = await Promise.all([
     dbGet(`SELECT * FROM shop_config WHERE tenant_id = ?`, tenantId),
     dbGet(`SELECT * FROM tenants WHERE id = ?`, tenantId),
@@ -27,11 +29,13 @@ export async function runShopAgent(
 
   if (!conv) {
     const convId = crypto.randomUUID();
+    const now = new Date().toISOString();
     await dbRun(
-      `INSERT INTO shop_conversations (id, tenant_id, guest_phone, messages, cart, cart_state, created_at, updated_at) VALUES (?,?,?,'[]','[]','idle',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`,
-      convId, tenantId, guestPhone,
+      `INSERT INTO shop_conversations (id, tenant_id, guest_phone, messages, cart, cart_state, created_at, updated_at) VALUES (?,?,?,'[]','[]','idle',?,?)`,
+      convId, tenantId, guestPhone, now, now,
     );
     conv = { id: convId, messages: '[]' };
+    console.log(`[Shop] created conversation ${convId} for ${guestPhone}`);
   }
 
   // Parse stored history
@@ -96,8 +100,8 @@ export async function runShopAgent(
   ].slice(-40);
 
   await dbRun(
-    `UPDATE shop_conversations SET messages = ?, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND guest_phone = ?`,
-    JSON.stringify(updatedHistory), tenantId, guestPhone,
+    `UPDATE shop_conversations SET messages = ?, updated_at = ? WHERE tenant_id = ? AND guest_phone = ?`,
+    JSON.stringify(updatedHistory), new Date().toISOString(), tenantId, guestPhone,
   );
 
   return finalReply;
