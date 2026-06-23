@@ -46,8 +46,12 @@ export async function runShopAgent(
   })();
 
   const history: Anthropic.MessageParam[] = storedMessages
-    .filter((m) => m.role && m.content)
-    .map((m) => ({ role: m.role as 'user' | 'assistant', content: String(m.content) }));
+    .slice(-10)
+    .filter((m: any) => m.content && m.content.trim())
+    .map((m: any) => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+    }));
 
   history.push({ role: 'user', content: message });
 
