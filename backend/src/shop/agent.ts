@@ -16,6 +16,7 @@ export async function runShopAgent(
 ): Promise<string> {
   console.log('[Shop] *** runShopAgent called, tenantId:', tenantId, 'phone:', guestPhone);
   console.log(`[Shop] runShopAgent tenantId=${tenantId} phone=${guestPhone}`);
+  console.log('[Shop] tools loaded:', shopTools.map(t => t.name));
 
   const [config, tenant] = await Promise.all([
     dbGet(`SELECT * FROM shop_config WHERE tenant_id = ?`, tenantId),
@@ -56,11 +57,13 @@ export async function runShopAgent(
 
   // Agentic tool-use loop
   while (true) {
+    console.log('[Shop] calling Claude with', shopTools.length, 'tools, messages:', messages.length);
     const response = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 1024,
       system: systemPrompt,
       tools: shopTools,
+      tool_choice: { type: 'auto' },
       messages,
     });
 
