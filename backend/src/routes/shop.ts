@@ -182,6 +182,7 @@ shopRouter.delete('/items/:id', requireAuth, async (req: any, res: Response) => 
 shopRouter.get('/orders', requireAuth, async (req: any, res: Response) => {
   try {
     const tenantId = resolveTenantId(req);
+    console.log('[Shop] GET /shop/orders tenantId:', tenantId);
     const { status, date } = req.query as { status?: string; date?: string };
     let sql = `SELECT * FROM shop_orders WHERE tenant_id = ?`;
     const params: unknown[] = [tenantId];
@@ -197,6 +198,7 @@ shopRouter.get('/orders', requireAuth, async (req: any, res: Response) => {
       for (const order of orders) order.items = allItems.filter((i: any) => i.order_id === order.id);
     }
 
+    console.log('[Shop] orders found:', orders.length);
     res.json({ success: true, data: orders });
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
 });
@@ -282,10 +284,13 @@ shopRouter.delete('/faq/:id', requireAuth, async (req: any, res: Response) => {
 
 shopRouter.get('/conversations', requireAuth, async (req: any, res: Response) => {
   try {
+    const tenantId = resolveTenantId(req);
+    console.log('[Shop] GET /shop/conversations tenantId:', tenantId);
     const rows = await dbAll(
       `SELECT id, guest_phone, cart_state, created_at, updated_at FROM shop_conversations WHERE tenant_id=? ORDER BY updated_at DESC`,
-      resolveTenantId(req),
+      tenantId,
     );
+    console.log('[Shop] conversations found:', rows.length);
     res.json({ success: true, data: rows });
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
 });

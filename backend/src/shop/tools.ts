@@ -187,6 +187,7 @@ export async function executeShopTool(
     }
 
     case 'create_order': {
+      try {
       console.log('[Shop create_order] input:', JSON.stringify(input));
       console.log('[Shop create_order] tenantId:', tenantId);
       console.log('[Shop create_order] item IDs to find:', input.items?.map((i: any) => i.item_id));
@@ -254,6 +255,10 @@ export async function executeShopTool(
         estimated_pickup_minutes: etaMins,
         items: lineItems.map((li) => ({ name: li.item.name, quantity: li.qty, subtotal: parseFloat(li.item.price) * li.qty })),
       };
+      } catch (err: any) {
+        console.error('[Shop create_order] ❌ FAILED:', err.message, err.stack);
+        return { success: false, error: err.message };
+      }
     }
 
     case 'add_to_order': {

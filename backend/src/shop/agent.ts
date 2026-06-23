@@ -71,7 +71,7 @@ export async function runShopAgent(
   })();
 
   const history: Anthropic.MessageParam[] = storedMessages
-    .slice(-10)
+    .slice(-6)
     .filter((m: any) => m.content && m.content.trim())
     .map((m: any) => ({
       role: m.role as 'user' | 'assistant',
@@ -88,7 +88,7 @@ export async function runShopAgent(
   while (true) {
     console.log('[Shop] calling Claude with', shopTools.length, 'tools, messages:', messages.length);
     const response = await callClaudeWithRetry(anthropic, {
-      model: 'claude-haiku-4-5-20251001',
+      model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-6',
       max_tokens: 1024,
       system: systemPrompt,
       tools: shopTools,
