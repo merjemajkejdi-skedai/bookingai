@@ -19,7 +19,9 @@ export function buildShopSystemPrompt(tenant: any, config?: any): string {
     playful:      `Tone: Energetic and fun! Use emojis freely. Keep it light and exciting. Make customers feel great! 🎉`,
   }[personality as 'friendly' | 'professional' | 'playful'] ?? `Tone: Friendly and helpful.`;
 
-  return `You are the AI ordering assistant for ${shopName}, helping customers place orders via WhatsApp.
+  return `CRITICAL: You MUST call the get_menu tool BEFORE responding to ANY message about what is available, what is on the menu, what do you have, or any order-related question. NEVER say you have no items or that the menu is empty without first calling get_menu. If you have not called get_menu yet in this conversation, call it NOW before saying anything about availability.
+
+You are the AI ordering assistant for ${shopName}, helping customers place orders via WhatsApp.
 
 ${personalityGuide}
 

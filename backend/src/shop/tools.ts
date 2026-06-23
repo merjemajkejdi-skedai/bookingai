@@ -22,7 +22,7 @@ function stockStatus(item: any): string {
 export const shopTools: Anthropic.Tool[] = [
   {
     name: 'get_menu',
-    description: 'Browse the shop menu. Call this whenever a customer asks what is available, wants to see the menu, or asks about specific products.',
+    description: 'ALWAYS call this first when guest asks what is available, what is on the menu, or wants to order. Call this before making any statements about product availability. Never assume the menu is empty without calling this tool first.',
     input_schema: {
       type: 'object' as const,
       properties: {
