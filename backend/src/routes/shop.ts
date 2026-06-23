@@ -303,9 +303,22 @@ shopRouter.get('/conversations/:phone', requireAuth, async (req: any, res: Respo
 shopRouter.delete('/conversations/:phone', requireAuth, async (req: any, res: Response) => {
   try {
     const phone = decodeURIComponent(req.params.phone);
+    const now = new Date().toISOString();
     await dbRun(
-      `UPDATE shop_conversations SET messages = '[]', cart = '[]', cart_state = 'idle', updated_at = CURRENT_TIMESTAMP WHERE tenant_id=? AND guest_phone=?`,
-      resolveTenantId(req), phone,
+      `UPDATE shop_conversations SET messages = '[]', cart = '[]', cart_state = 'idle', updated_at = ? WHERE tenant_id=? AND guest_phone=?`,
+      now, resolveTenantId(req), phone,
+    );
+    res.json({ success: true });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// Clear all conversations for this tenant (admin convenience — resets all AI memory)
+shopRouter.delete('/conversations', requireAuth, async (req: any, res: Response) => {
+  try {
+    const now = new Date().toISOString();
+    await dbRun(
+      `UPDATE shop_conversations SET messages = '[]', cart = '[]', cart_state = 'idle', updated_at = ? WHERE tenant_id=?`,
+      now, resolveTenantId(req),
     );
     res.json({ success: true });
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }

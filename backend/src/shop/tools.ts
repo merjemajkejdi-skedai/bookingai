@@ -117,6 +117,7 @@ export async function executeShopTool(
   tenantId: string,
   guestPhone: string,
 ): Promise<any> {
+  console.log(`[Shop] tool call: ${toolName}`, JSON.stringify(input));
   switch (toolName) {
     case 'get_menu': {
       try {
@@ -134,6 +135,7 @@ export async function executeShopTool(
         }
         itemSql += ` ORDER BY i.sort_order ASC`;
         const items = await dbAll(itemSql, ...params);
+        console.log(`[Shop] get_menu OK: ${categories.length} categories, ${items.length} items`);
         return {
           success: true,
           categories,
