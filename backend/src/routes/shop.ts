@@ -300,6 +300,17 @@ shopRouter.get('/conversations/:phone', requireAuth, async (req: any, res: Respo
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
 });
 
+shopRouter.delete('/conversations/:phone', requireAuth, async (req: any, res: Response) => {
+  try {
+    const phone = decodeURIComponent(req.params.phone);
+    await dbRun(
+      `UPDATE shop_conversations SET messages = '[]', cart = '[]', cart_state = 'idle', updated_at = CURRENT_TIMESTAMP WHERE tenant_id=? AND guest_phone=?`,
+      resolveTenantId(req), phone,
+    );
+    res.json({ success: true });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
 // ── Analytics ──────────────────────────────────────────────────────────────────
 
 shopRouter.get('/analytics', requireAuth, async (req: any, res: Response) => {

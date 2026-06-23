@@ -48,6 +48,7 @@ export const shopApi = {
   updateFaq:    (id: string, d: Partial<ShopFaq>) => req<void>(`/shop/faq/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
   deleteFaq:    (id: string)             => req<void>(`/shop/faq/${id}`, { method: 'DELETE' }),
 
-  getConversations: ()             => req<ShopConversation[]>('/shop/conversations'),
-  getConversation:  (phone: string) => req<ShopConversation>(`/shop/conversations/${encodeURIComponent(phone)}`),
+  getConversations:   ()             => req<ShopConversation[]>('/shop/conversations'),
+  getConversation:    (phone: string) => req<ShopConversation>(`/shop/conversations/${encodeURIComponent(phone)}`),
+  clearConversation:  (phone: string) => req<void>(`/shop/conversations/${encodeURIComponent(phone)}`, { method: 'DELETE' }),
 };

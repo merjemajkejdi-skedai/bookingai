@@ -485,14 +485,26 @@ function ConversationsTab() {
   const [convs, setConvs] = useState<ShopConversation[]>([]);
   const [selected, setSelected] = useState<ShopConversation | null>(null);
   const [loading, setLoading] = useState(true);
+  const [clearing, setClearing] = useState(false);
 
-  useEffect(() => {
+  function loadList() {
     shopApi.getConversations().then(setConvs).catch(() => {}).finally(() => setLoading(false));
-  }, []);
+  }
+  useEffect(() => { loadList(); }, []);
 
   async function open(c: ShopConversation) {
     const full = await shopApi.getConversation(c.guest_phone).catch(() => c);
     setSelected(full);
+  }
+
+  async function clearHistory() {
+    if (!selected || !confirm(`Clear conversation history for ${selected.guest_phone}? This resets the AI memory for this customer.`)) return;
+    setClearing(true);
+    try {
+      await shopApi.clearConversation(selected.guest_phone);
+      setSelected(prev => prev ? { ...prev, messages: [] } : null);
+      loadList();
+    } catch { /* ignore */ } finally { setClearing(false); }
   }
 
   return (
@@ -515,7 +527,16 @@ function ConversationsTab() {
           </div>
         ) : (
           <div className="space-y-3">
-            <p className="text-xs text-slate-400 font-medium">{selected.guest_phone}</p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-slate-400 font-medium">{selected.guest_phone}</p>
+              <button
+                onClick={clearHistory}
+                disabled={clearing}
+                title="Clear conversation history (resets AI memory for this customer)"
+                className="flex items-center gap-1 text-xs text-red-400 hover:text-red-600 disabled:opacity-40 transition-colors">
+                <Trash2 size={12} /> {clearing ? 'Clearing…' : 'Clear history'}
+              </button>
+            </div>
             {(selected.messages || []).map((m, i) => (
               <div key={i} className={`flex ${m.role === 'assistant' ? 'justify-start' : 'justify-end'}`}>
                 <div className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm ${m.role === 'assistant' ? 'bg-slate-100 text-slate-800' : 'bg-brand-600 text-white'}`}>

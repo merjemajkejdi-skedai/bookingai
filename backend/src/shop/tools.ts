@@ -119,24 +119,31 @@ export async function executeShopTool(
 ): Promise<any> {
   switch (toolName) {
     case 'get_menu': {
-      const categories = await dbAll(
-        `SELECT id, name, description, sort_order FROM shop_menu_categories WHERE tenant_id = ? AND is_active = 1 ORDER BY sort_order ASC`,
-        tenantId,
-      );
-      let itemSql = `SELECT i.*, c.name AS category_name FROM shop_menu_items i LEFT JOIN shop_menu_categories c ON i.category_id = c.id WHERE i.tenant_id = ? AND i.is_active = 1`;
-      const params: unknown[] = [tenantId];
-      if (input.category_id) { itemSql += ` AND i.category_id = ?`; params.push(input.category_id); }
-      if (input.search) {
-        const s = `%${String(input.search).toLowerCase()}%`;
-        itemSql += ` AND (LOWER(i.name) LIKE ? OR LOWER(i.description) LIKE ?)`;
-        params.push(s, s);
+      try {
+        const categories = await dbAll(
+          `SELECT id, name, description, sort_order FROM shop_menu_categories WHERE tenant_id = ? AND is_active = 1 ORDER BY sort_order ASC`,
+          tenantId,
+        );
+        let itemSql = `SELECT i.*, c.name AS category_name FROM shop_menu_items i LEFT JOIN shop_menu_categories c ON i.category_id = c.id WHERE i.tenant_id = ? AND i.is_active = 1`;
+        const params: unknown[] = [tenantId];
+        if (input.category_id) { itemSql += ` AND i.category_id = ?`; params.push(input.category_id); }
+        if (input.search) {
+          const s = `%${String(input.search).toLowerCase()}%`;
+          itemSql += ` AND (LOWER(i.name) LIKE ? OR LOWER(i.description) LIKE ?)`;
+          params.push(s, s);
+        }
+        itemSql += ` ORDER BY i.sort_order ASC`;
+        const items = await dbAll(itemSql, ...params);
+        return {
+          success: true,
+          categories,
+          items: items.map((item: any) => ({ ...item, stock_status: stockStatus(item), available: isAvailable(item) })),
+          item_count: items.length,
+        };
+      } catch (err: any) {
+        console.error('[Shop] get_menu failed:', err.message);
+        return { success: false, error: err.message, items: [], categories: [] };
       }
-      itemSql += ` ORDER BY i.sort_order ASC`;
-      const items = await dbAll(itemSql, ...params);
-      return {
-        categories,
-        items: items.map((item: any) => ({ ...item, stock_status: stockStatus(item), available: isAvailable(item) })),
-      };
     }
 
     case 'check_stock': {

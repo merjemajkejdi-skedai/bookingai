@@ -65,8 +65,18 @@ export async function runShopAgent(
       const toolResults: Anthropic.ToolResultBlockParam[] = [];
       for (const block of response.content) {
         if (block.type !== 'tool_use') continue;
-        const result = await executeShopTool(block.name, block.input as any, tenantId, guestPhone);
-        toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) });
+        try {
+          const result = await executeShopTool(block.name, block.input as any, tenantId, guestPhone);
+          toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) });
+        } catch (toolErr: any) {
+          console.error(`[Shop] tool ${block.name} threw:`, toolErr.message);
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: JSON.stringify({ error: toolErr.message, success: false }),
+            is_error: true,
+          });
+        }
       }
       messages.push({ role: 'user', content: toolResults });
       continue;
