@@ -14,6 +14,7 @@ export async function runShopAgent(
   guestPhone: string,
   tenantId: string,
 ): Promise<string> {
+  console.log('[Shop] *** runShopAgent called, tenantId:', tenantId, 'phone:', guestPhone);
   console.log(`[Shop] runShopAgent tenantId=${tenantId} phone=${guestPhone}`);
 
   const [config, tenant] = await Promise.all([
