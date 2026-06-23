@@ -187,6 +187,10 @@ export async function executeShopTool(
     }
 
     case 'create_order': {
+      console.log('[Shop create_order] input:', JSON.stringify(input));
+      console.log('[Shop create_order] tenantId:', tenantId);
+      console.log('[Shop create_order] item IDs to find:', input.items?.map((i: any) => i.item_id));
+
       const { items, pickup_name, notes } = input as { items: Array<{ item_id: string; quantity: number }>; pickup_name: string; notes?: string };
       if (!items?.length) return { success: false, message: 'No items provided' };
 
@@ -194,13 +198,20 @@ export async function executeShopTool(
       const ph = ids.map(() => '?').join(',');
       const menuItems = await dbAll(`SELECT * FROM shop_menu_items WHERE tenant_id = ? AND id IN (${ph}) AND is_active = 1`, tenantId, ...ids);
 
+      console.log('[Shop create_order] items found in DB:', menuItems.length, 'of', items.length);
+      console.log('[Shop create_order] found IDs:', menuItems.map((i: any) => i.id));
+
       const lineItems: Array<{ item: any; qty: number }> = [];
+      const outOfStock: string[] = [];
       for (const req of items) {
         const item = menuItems.find((m: any) => m.id === req.item_id);
         if (!item) return { success: false, message: `Item not found or unavailable` };
-        if (!isAvailable(item, req.quantity)) return { success: false, message: `${item.name} is out of stock or insufficient quantity available` };
-        lineItems.push({ item, qty: req.quantity });
+        if (!isAvailable(item, req.quantity)) outOfStock.push(item.name);
+        else lineItems.push({ item, qty: req.quantity });
       }
+
+      console.log('[Shop create_order] out of stock items:', outOfStock);
+      if (outOfStock.length) return { success: false, message: `${outOfStock[0]} is out of stock or insufficient quantity available` };
 
       const today = new Date().toISOString().split('T')[0];
       const nextNumRow = await dbGet(
@@ -211,6 +222,8 @@ export async function executeShopTool(
       const totalPrice = lineItems.reduce((s, li) => s + parseFloat(li.item.price) * li.qty, 0);
       const currency = lineItems[0]?.item?.currency || 'ALL';
       const orderId = crypto.randomUUID();
+
+      console.log('[Shop create_order] inserting order, total:', totalPrice);
 
       await dbRun(
         `INSERT INTO shop_orders (id, tenant_id, order_number, order_date, guest_phone, pickup_name, status, total_price, currency, notes, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`,
@@ -226,6 +239,8 @@ export async function executeShopTool(
           await dbRun(`UPDATE shop_menu_items SET stock_used = stock_used + ? WHERE id = ?`, li.qty, li.item.id);
         }
       }
+
+      console.log('[Shop create_order] ✅ order created:', orderId, 'number:', orderNumber);
 
       const config = await dbGet(`SELECT estimated_pickup_minutes FROM shop_config WHERE tenant_id = ?`, tenantId);
       const etaMins = config?.estimated_pickup_minutes ?? 15;
