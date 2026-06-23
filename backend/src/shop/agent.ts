@@ -60,16 +60,28 @@ export async function runShopAgent(
   let finalReply = '';
 
   // Agentic tool-use loop
+  let apiRetried = false;
   while (true) {
     console.log('[Shop] calling Claude with', shopTools.length, 'tools, messages:', messages.length);
-    const response = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1024,
-      system: systemPrompt,
-      tools: shopTools,
-      tool_choice: { type: 'auto' },
-      messages,
-    });
+    let response: Awaited<ReturnType<typeof anthropic.messages.create>>;
+    try {
+      response = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        system: systemPrompt,
+        tools: shopTools,
+        tool_choice: { type: 'auto' },
+        messages,
+      });
+    } catch (err: any) {
+      if (!apiRetried && (err.status === 529 || err.message?.includes('overloaded'))) {
+        console.log('[Shop] Claude overloaded — retrying in 3s...');
+        apiRetried = true;
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        continue;
+      }
+      throw err;
+    }
 
     if (response.stop_reason === 'tool_use') {
       messages.push({ role: 'assistant', content: response.content });
