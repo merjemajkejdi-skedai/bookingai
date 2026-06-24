@@ -335,11 +335,13 @@ shopRouter.delete('/conversations', requireAuth, async (req: any, res: Response)
 function shopDateFilter(period: string, alias = 'so'): string {
   const col = alias ? `${alias}.created_at` : 'created_at';
   if (isPg) {
+    // created_at is stored as TEXT — cast to timestamptz for PG comparisons
+    const ts = `(${col})::timestamptz`;
     switch (period) {
-      case 'today': return `DATE(${col}) = CURRENT_DATE`;
-      case '7d':    return `${col} >= NOW() - INTERVAL '7 days'`;
-      case 'ytd':   return `DATE_TRUNC('year', ${col}) = DATE_TRUNC('year', NOW())`;
-      default:      return `${col} >= NOW() - INTERVAL '30 days'`;
+      case 'today': return `DATE(${ts}) = CURRENT_DATE`;
+      case '7d':    return `${ts} >= NOW() - INTERVAL '7 days'`;
+      case 'ytd':   return `DATE_TRUNC('year', ${ts}) = DATE_TRUNC('year', NOW())`;
+      default:      return `${ts} >= NOW() - INTERVAL '30 days'`;
     }
   }
   switch (period) {
