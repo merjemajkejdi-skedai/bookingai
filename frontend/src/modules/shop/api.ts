@@ -61,4 +61,7 @@ export const shopApi = {
   getConversations:   ()             => req<ShopConversation[]>('/shop/conversations'),
   getConversation:    (phone: string) => req<ShopConversation>(`/shop/conversations/${encodeURIComponent(phone)}`),
   clearConversation:  (phone: string) => req<void>(`/shop/conversations/${encodeURIComponent(phone)}`, { method: 'DELETE' }),
+
+  getReportsSummary:   (period: string) => req<any>(`/shop/reports/summary?period=${period}`),
+  getReportsBreakdown: (period: string) => req<any>(`/shop/reports/breakdown?period=${period}`),
 };

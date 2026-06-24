@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ShoppingBag, Package, MessageSquare, HelpCircle, Settings, Plus, Trash2, Pencil, X, Check, RefreshCw, LogOut } from 'lucide-react';
+import { ShoppingBag, Package, MessageSquare, HelpCircle, Settings, Plus, Trash2, Pencil, X, Check, RefreshCw, LogOut, BarChart2 } from 'lucide-react';
 import { shopApi, setViewTenantId } from './api';
 import type { ShopOrder, ShopItem, ShopCategory, ShopFaq, ShopConversation, ShopConfig } from './types';
+import { ShopReports } from './ShopReports';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -697,13 +698,14 @@ function Field({ label, value, onChange, placeholder }: { label: string; value: 
 
 // ── Root ───────────────────────────────────────────────────────────────────────
 
-type Tab = 'orders' | 'menu' | 'conversations' | 'faq' | 'config';
+type Tab = 'orders' | 'menu' | 'conversations' | 'faq' | 'config' | 'reports';
 
 const TABS: Array<{ id: Tab; label: string; icon: React.ReactNode }> = [
   { id: 'orders',        label: 'Orders',        icon: <ShoppingBag size={16} /> },
   { id: 'menu',          label: 'Menu',          icon: <Package size={16} /> },
   { id: 'conversations', label: 'Chats',         icon: <MessageSquare size={16} /> },
   { id: 'faq',           label: 'FAQ',           icon: <HelpCircle size={16} /> },
+  { id: 'reports',       label: 'Reports',       icon: <BarChart2 size={16} /> },
   { id: 'config',        label: 'Settings',      icon: <Settings size={16} /> },
 ];
 
@@ -749,6 +751,7 @@ export function ShopDashboard({ onLogout, tenantId }: { onLogout: () => void; te
         {tab === 'menu'          && <MenuTab />}
         {tab === 'conversations' && <ConversationsTab />}
         {tab === 'faq'           && <FaqTab />}
+        {tab === 'reports'       && <ShopReports />}
         {tab === 'config'        && <ConfigTab />}
       </div>
     </div>

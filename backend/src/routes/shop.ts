@@ -330,6 +330,217 @@ shopRouter.delete('/conversations', requireAuth, async (req: any, res: Response)
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
 });
 
+// ── Reports ────────────────────────────────────────────────────────────────────
+
+function shopDateFilter(period: string, alias = 'so'): string {
+  const col = alias ? `${alias}.created_at` : 'created_at';
+  if (isPg) {
+    switch (period) {
+      case 'today': return `DATE(${col}) = CURRENT_DATE`;
+      case '7d':    return `${col} >= NOW() - INTERVAL '7 days'`;
+      case 'ytd':   return `DATE_TRUNC('year', ${col}) = DATE_TRUNC('year', NOW())`;
+      default:      return `${col} >= NOW() - INTERVAL '30 days'`;
+    }
+  }
+  switch (period) {
+    case 'today': return `DATE(${col}) = DATE('now')`;
+    case '7d':    return `${col} >= datetime('now', '-7 days')`;
+    case 'ytd':   return `strftime('%Y', ${col}) = strftime('%Y', 'now')`;
+    default:      return `${col} >= datetime('now', '-30 days')`;
+  }
+}
+
+shopRouter.get('/reports/summary', requireAuth, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const period = String(req.query.period || '30d');
+    const df = shopDateFilter(period, '');  // no alias — direct shop_orders query
+
+    const overviewRows = await dbAll(`
+      SELECT
+        COUNT(*)                                                        AS total_orders,
+        COUNT(*) FILTER (WHERE status != 'cancelled')                   AS confirmed_orders,
+        COUNT(*) FILTER (WHERE status = 'cancelled')                    AS cancelled_orders,
+        COALESCE(SUM(total_price) FILTER (WHERE status != 'cancelled'), 0) AS total_revenue,
+        COALESCE(AVG(total_price) FILTER (WHERE status != 'cancelled'), 0) AS avg_order_value,
+        COUNT(DISTINCT guest_phone)                                     AS unique_customers
+      FROM shop_orders
+      WHERE tenant_id = ? AND ${df}
+    `, tenantId);
+
+    // Repeat customers — computed in app to avoid correlated subquery cross-DB issues
+    const custCounts = await dbAll(`
+      SELECT guest_phone, COUNT(*) FILTER (WHERE status != 'cancelled') AS cnt
+      FROM shop_orders WHERE tenant_id = ? AND ${df}
+      GROUP BY guest_phone
+    `, tenantId);
+    const repeatCustomers = custCounts.filter((c: any) => +c.cnt > 1).length;
+
+    const minutesDiff = isPg
+      ? `EXTRACT(EPOCH FROM (done_at::timestamptz - created_at::timestamptz)) / 60`
+      : `(julianday(done_at) - julianday(created_at)) * 24 * 60`;
+    const speedRows = await dbAll(`
+      SELECT
+        ROUND(AVG(${minutesDiff})) AS avg_minutes,
+        MIN(${minutesDiff})        AS min_minutes,
+        MAX(${minutesDiff})        AS max_minutes
+      FROM shop_orders
+      WHERE tenant_id = ? AND ${df} AND done_at IS NOT NULL AND status != 'cancelled'
+    `, tenantId);
+
+    const row = overviewRows[0] || {};
+    const total     = +row.total_orders || 0;
+    const cancelled = +row.cancelled_orders || 0;
+    res.json({
+      success: true,
+      data: {
+        total_orders:        total,
+        confirmed_orders:    +row.confirmed_orders || 0,
+        cancelled_orders:    cancelled,
+        total_revenue:       +row.total_revenue || 0,
+        avg_order_value:     +row.avg_order_value || 0,
+        unique_customers:    +row.unique_customers || 0,
+        repeat_customers:    repeatCustomers,
+        cancellation_rate:   total > 0 ? Math.round((cancelled / total) * 100) : 0,
+        avg_minutes_to_done: speedRows[0]?.avg_minutes != null ? +speedRows[0].avg_minutes : null,
+        min_minutes_to_done: speedRows[0]?.min_minutes != null ? Math.round(+speedRows[0].min_minutes) : null,
+        max_minutes_to_done: speedRows[0]?.max_minutes != null ? Math.round(+speedRows[0].max_minutes) : null,
+      },
+    });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.get('/reports/breakdown', requireAuth, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const period = String(req.query.period || '30d');
+    const df     = shopDateFilter(period, '');   // no alias
+    const dfSo   = shopDateFilter(period);        // so. alias for join queries
+
+    // 1 — orders per day
+    const ordersPerDay = await dbAll(`
+      SELECT DATE(created_at) AS day,
+        COUNT(*) AS total_orders,
+        COUNT(*) FILTER (WHERE status != 'cancelled') AS confirmed,
+        COALESCE(SUM(total_price) FILTER (WHERE status != 'cancelled'), 0) AS revenue
+      FROM shop_orders WHERE tenant_id = ? AND ${df}
+      GROUP BY DATE(created_at) ORDER BY day ASC
+    `, tenantId);
+
+    // 2 — orders by day of week
+    const dowExpr = isPg ? `EXTRACT(DOW FROM created_at)::int` : `CAST(strftime('%w', created_at) AS INTEGER)`;
+    const ordersByDow = await dbAll(`
+      SELECT ${dowExpr} AS day_of_week,
+        COUNT(*) FILTER (WHERE status != 'cancelled') AS orders,
+        COALESCE(SUM(total_price) FILTER (WHERE status != 'cancelled'), 0) AS revenue
+      FROM shop_orders WHERE tenant_id = ? AND ${df}
+      GROUP BY day_of_week ORDER BY day_of_week ASC
+    `, tenantId);
+
+    // 3 — revenue by category
+    const revenueByCategory = await dbAll(`
+      SELECT COALESCE(smc.name, 'Uncategorised') AS category,
+        COUNT(soi.id) AS items_sold,
+        COALESCE(SUM(soi.subtotal), 0) AS revenue
+      FROM shop_order_items soi
+      JOIN shop_orders so ON so.id = soi.order_id
+      LEFT JOIN shop_menu_items smi ON smi.id = soi.item_id
+      LEFT JOIN shop_menu_categories smc ON smc.id = smi.category_id
+      WHERE soi.tenant_id = ? AND ${dfSo} AND so.status != 'cancelled'
+      GROUP BY category ORDER BY revenue DESC
+    `, tenantId);
+
+    // 4 — revenue by item (top 10)
+    const revenueByItem = await dbAll(`
+      SELECT soi.item_name,
+        SUM(soi.quantity) AS units_sold,
+        COALESCE(SUM(soi.subtotal), 0) AS revenue,
+        COUNT(DISTINCT so.id) AS order_count
+      FROM shop_order_items soi
+      JOIN shop_orders so ON so.id = soi.order_id
+      WHERE soi.tenant_id = ? AND ${dfSo} AND so.status != 'cancelled'
+      GROUP BY soi.item_name ORDER BY revenue DESC
+      LIMIT 10
+    `, tenantId);
+
+    // 5 — peak hours
+    const hourExpr = isPg ? `EXTRACT(HOUR FROM created_at)::int` : `CAST(strftime('%H', created_at) AS INTEGER)`;
+    const ordersByHour = await dbAll(`
+      SELECT ${hourExpr} AS hour, COUNT(*) AS orders
+      FROM shop_orders WHERE tenant_id = ? AND ${df} AND status != 'cancelled'
+      GROUP BY hour ORDER BY hour ASC
+    `, tenantId);
+
+    // 6 — avg order value trend per day
+    const avgOrderTrend = await dbAll(`
+      SELECT DATE(created_at) AS day,
+        ROUND(AVG(total_price)) AS avg_value,
+        COUNT(*) AS order_count
+      FROM shop_orders WHERE tenant_id = ? AND ${df} AND status != 'cancelled'
+      GROUP BY DATE(created_at) ORDER BY day ASC
+    `, tenantId);
+
+    // 7 — stock depletion (daily stock items only)
+    const depletionExpr = isPg
+      ? `ROUND((stock_used::numeric / NULLIF(stock_limit,0)) * 100)`
+      : `ROUND(CAST(stock_used AS REAL) / NULLIF(stock_limit,0) * 100)`;
+    const stockDepletion = await dbAll(`
+      SELECT name, stock_limit, stock_used, ${depletionExpr} AS depletion_pct
+      FROM shop_menu_items
+      WHERE tenant_id = ? AND stock_type = 'daily' AND stock_limit > 0
+      ORDER BY depletion_pct DESC
+    `, tenantId);
+
+    // 8 — new vs repeat customers
+    const custCounts = await dbAll(`
+      SELECT guest_phone, COUNT(*) FILTER (WHERE status != 'cancelled') AS cnt
+      FROM shop_orders WHERE tenant_id = ? AND ${df}
+      GROUP BY guest_phone
+    `, tenantId);
+    const repeatCustomers = custCounts.filter((c: any) => +c.cnt > 1).length;
+    const newCustomers    = custCounts.filter((c: any) => +c.cnt === 1).length;
+
+    // 9 — most cancelled items
+    const cancelledItems = await dbAll(`
+      SELECT soi.item_name, COUNT(*) AS cancelled_count
+      FROM shop_order_items soi
+      JOIN shop_orders so ON so.id = soi.order_id
+      WHERE soi.tenant_id = ? AND ${dfSo} AND so.status = 'cancelled'
+      GROUP BY soi.item_name ORDER BY cancelled_count DESC
+      LIMIT 10
+    `, tenantId);
+
+    // 10 — speed trend per day
+    const minutesDiff = isPg
+      ? `EXTRACT(EPOCH FROM (done_at::timestamptz - created_at::timestamptz)) / 60`
+      : `(julianday(done_at) - julianday(created_at)) * 24 * 60`;
+    const speedTrend = await dbAll(`
+      SELECT DATE(created_at) AS day,
+        ROUND(AVG(${minutesDiff})) AS avg_minutes
+      FROM shop_orders
+      WHERE tenant_id = ? AND ${df} AND done_at IS NOT NULL AND status != 'cancelled'
+      GROUP BY DATE(created_at) ORDER BY day ASC
+    `, tenantId);
+
+    res.json({
+      success: true,
+      data: {
+        orders_per_day:      ordersPerDay,
+        orders_by_dow:       ordersByDow,
+        revenue_by_category: revenueByCategory,
+        revenue_by_item:     revenueByItem,
+        orders_by_hour:      ordersByHour,
+        avg_order_trend:     avgOrderTrend,
+        stock_depletion:     stockDepletion,
+        repeat_customers:    repeatCustomers,
+        new_customers:       newCustomers,
+        cancelled_items:     cancelledItems,
+        speed_trend:         speedTrend,
+      },
+    });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
 // ── Analytics ──────────────────────────────────────────────────────────────────
 
 shopRouter.get('/analytics', requireAuth, async (req: any, res: Response) => {
