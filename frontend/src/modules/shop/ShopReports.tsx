@@ -23,26 +23,28 @@ function BarChart({
 }: {
   values: number[]; labels?: string[]; colors?: string | string[]; showValues?: boolean;
 }) {
-  const max = Math.max(...values, 1);
-  const n   = values.length;
+  const TOP   = showValues ? 16 : 4;   // headroom above bars for value labels
+  const max   = Math.max(...values, 1);
+  const n     = values.length;
   const slotW = VW / n;
   const barW  = slotW * 0.7;
   const getColor = (i: number) =>
     Array.isArray(colors) ? (colors[i] ?? '#0F6E56') : (colors ?? '#0F6E56');
 
   return (
-    <svg viewBox={`0 0 ${VW} ${VH + (labels ? LH : 4)}`} className="w-full">
+    <svg viewBox={`0 0 ${VW} ${TOP + VH + (labels ? LH : 4)}`} className="w-full">
       {values.map((v, i) => {
-        const barH = Math.max((v / max) * (VH - 6), v > 0 ? 3 : 0);
+        const barH = Math.max((v / max) * (VH - 4), v > 0 ? 3 : 0);
         const x    = i * slotW + (slotW - barW) / 2;
+        const barY = TOP + VH - barH;
         return (
           <g key={i}>
-            <rect x={x} y={VH - barH} width={barW} height={barH} fill={getColor(i)} rx="2" />
+            <rect x={x} y={barY} width={barW} height={barH} fill={getColor(i)} rx="2" />
             {showValues && v > 0 && (
-              <text x={x + barW / 2} y={VH - barH - 3} textAnchor="middle" fontSize="8" fill="#64748b">{v}</text>
+              <text x={x + barW / 2} y={barY - 3} textAnchor="middle" fontSize="8" fill="#64748b">{v}</text>
             )}
             {labels && (
-              <text x={x + barW / 2} y={VH + 10} textAnchor="middle" fontSize="8" fill="#94a3b8">{labels[i]}</text>
+              <text x={x + barW / 2} y={TOP + VH + 10} textAnchor="middle" fontSize="8" fill="#94a3b8">{labels[i]}</text>
             )}
           </g>
         );
