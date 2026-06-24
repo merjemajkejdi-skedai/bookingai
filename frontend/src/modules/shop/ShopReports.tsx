@@ -287,7 +287,7 @@ export function ShopReports() {
                     return +(found?.orders || 0);
                   })}
                   labels={DOW_LABELS}
-                  color="#185FA5"
+                  colors="#185FA5"
                   showValues
                 />
               ) : <Empty />}
