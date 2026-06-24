@@ -50,18 +50,19 @@ shopRouter.put('/config', requireAuth, async (req: any, res: Response) => {
     const tenantId = resolveTenantId(req);
     const {
       shop_name, opening_hours, estimated_pickup_minutes, pickup_mode, agent_personality,
-      fallback_message, address, instagram_url, facebook_url, tiktok_url, website_url, phone,
+      fallback_message, fallback_backup_number, fallback_after_attempts,
+      address, instagram_url, facebook_url, tiktok_url, website_url, phone,
     } = req.body;
     const exists = await dbGet(`SELECT id FROM shop_config WHERE tenant_id = ?`, tenantId);
     if (exists) {
       await dbRun(
-        `UPDATE shop_config SET shop_name=?,opening_hours=?,estimated_pickup_minutes=?,pickup_mode=?,agent_personality=?,fallback_message=?,address=?,instagram_url=?,facebook_url=?,tiktok_url=?,website_url=?,phone=?,updated_at=CURRENT_TIMESTAMP WHERE tenant_id=?`,
-        shop_name, opening_hours, estimated_pickup_minutes, pickup_mode, agent_personality, fallback_message, address, instagram_url, facebook_url, tiktok_url, website_url, phone, tenantId,
+        `UPDATE shop_config SET shop_name=?,opening_hours=?,estimated_pickup_minutes=?,pickup_mode=?,agent_personality=?,fallback_message=?,fallback_backup_number=?,fallback_after_attempts=?,address=?,instagram_url=?,facebook_url=?,tiktok_url=?,website_url=?,phone=?,updated_at=CURRENT_TIMESTAMP WHERE tenant_id=?`,
+        shop_name, opening_hours, estimated_pickup_minutes, pickup_mode, agent_personality, fallback_message, fallback_backup_number, fallback_after_attempts, address, instagram_url, facebook_url, tiktok_url, website_url, phone, tenantId,
       );
     } else {
       await dbRun(
-        `INSERT INTO shop_config (id,tenant_id,shop_name,opening_hours,estimated_pickup_minutes,pickup_mode,agent_personality,fallback_message,address,instagram_url,facebook_url,tiktok_url,website_url,phone) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        crypto.randomUUID(), tenantId, shop_name, opening_hours, estimated_pickup_minutes, pickup_mode, agent_personality, fallback_message, address, instagram_url, facebook_url, tiktok_url, website_url, phone,
+        `INSERT INTO shop_config (id,tenant_id,shop_name,opening_hours,estimated_pickup_minutes,pickup_mode,agent_personality,fallback_message,fallback_backup_number,fallback_after_attempts,address,instagram_url,facebook_url,tiktok_url,website_url,phone) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        crypto.randomUUID(), tenantId, shop_name, opening_hours, estimated_pickup_minutes, pickup_mode, agent_personality, fallback_message, fallback_backup_number, fallback_after_attempts, address, instagram_url, facebook_url, tiktok_url, website_url, phone,
       );
     }
     res.json({ success: true });

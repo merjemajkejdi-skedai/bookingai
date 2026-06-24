@@ -7,6 +7,8 @@ export interface ShopConfig {
   pickup_mode: 'estimated' | 'exact' | 'asap';
   agent_personality: 'friendly' | 'professional' | 'playful';
   fallback_message?: string;
+  fallback_backup_number?: string;
+  fallback_after_attempts?: number;
   address?: string;
   instagram_url?: string;
   facebook_url?: string;

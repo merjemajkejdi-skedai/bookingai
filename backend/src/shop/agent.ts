@@ -43,99 +43,142 @@ export async function runShopAgent(
   console.log(`[Shop] runShopAgent tenantId=${tenantId} phone=${guestPhone}`);
   console.log('[Shop] tools loaded:', shopTools.map(t => t.name));
 
-  const [config, tenant] = await Promise.all([
-    dbGet(`SELECT * FROM shop_config WHERE tenant_id = ?`, tenantId),
-    dbGet(`SELECT * FROM tenants WHERE id = ?`, tenantId),
-  ]);
+  try {
+    const [config, tenant] = await Promise.all([
+      dbGet(`SELECT * FROM shop_config WHERE tenant_id = ?`, tenantId),
+      dbGet(`SELECT * FROM tenants WHERE id = ?`, tenantId),
+    ]);
 
-  // Load or create conversation record
-  let conv = await dbGet(
-    `SELECT * FROM shop_conversations WHERE tenant_id = ? AND guest_phone = ?`,
-    tenantId, guestPhone,
-  );
-
-  if (!conv) {
-    const convId = crypto.randomUUID();
-    const now = new Date().toISOString();
-    await dbRun(
-      `INSERT INTO shop_conversations (id, tenant_id, guest_phone, messages, cart, cart_state, created_at, updated_at) VALUES (?,?,?,'[]','[]','idle',?,?)`,
-      convId, tenantId, guestPhone, now, now,
+    // Load or create conversation record
+    let conv = await dbGet(
+      `SELECT * FROM shop_conversations WHERE tenant_id = ? AND guest_phone = ?`,
+      tenantId, guestPhone,
     );
-    conv = { id: convId, messages: '[]' };
-    console.log(`[Shop] created conversation ${convId} for ${guestPhone}`);
-  }
 
-  // Parse stored history
-  const storedMessages: Array<{ role: string; content: string }> = (() => {
-    try { return JSON.parse(conv.messages || '[]'); } catch { return []; }
-  })();
+    if (!conv) {
+      const convId = crypto.randomUUID();
+      const now = new Date().toISOString();
+      await dbRun(
+        `INSERT INTO shop_conversations (id, tenant_id, guest_phone, messages, cart, cart_state, created_at, updated_at) VALUES (?,?,?,'[]','[]','idle',?,?)`,
+        convId, tenantId, guestPhone, now, now,
+      );
+      conv = { id: convId, messages: '[]' };
+      console.log(`[Shop] created conversation ${convId} for ${guestPhone}`);
+    }
 
-  const history: Anthropic.MessageParam[] = storedMessages
-    .slice(-6)
-    .filter((m: any) => m.content && m.content.trim())
-    .map((m: any) => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.content,
-    }));
+    // Parse stored history
+    const storedMessages: Array<{ role: string; content: string }> = (() => {
+      try { return JSON.parse(conv.messages || '[]'); } catch { return []; }
+    })();
 
-  history.push({ role: 'user', content: message });
+    const history: Anthropic.MessageParam[] = storedMessages
+      .slice(-6)
+      .filter((m: any) => m.content && m.content.trim())
+      .map((m: any) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+      }));
 
-  const systemPrompt = buildShopSystemPrompt(tenant, config);
-  const messages = [...history];
-  let finalReply = '';
+    history.push({ role: 'user', content: message });
 
-  // Agentic tool-use loop
-  while (true) {
-    console.log('[Shop] calling Claude with', shopTools.length, 'tools, messages:', messages.length);
-    const response = await callClaudeWithRetry(anthropic, {
-      model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-6',
-      max_tokens: 1024,
-      system: systemPrompt,
-      tools: shopTools,
-      tool_choice: { type: 'auto' },
-      messages,
-    });
+    const systemPrompt = buildShopSystemPrompt(tenant, config);
+    const messages = [...history];
+    let finalReply = '';
 
-    if (response.stop_reason === 'tool_use') {
-      messages.push({ role: 'assistant', content: response.content });
+    // Agentic tool-use loop
+    while (true) {
+      console.log('[Shop] calling Claude with', shopTools.length, 'tools, messages:', messages.length);
+      const response = await callClaudeWithRetry(anthropic, {
+        model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-6',
+        max_tokens: 1024,
+        system: systemPrompt,
+        tools: shopTools,
+        tool_choice: { type: 'auto' },
+        messages,
+      });
 
-      const toolResults: Anthropic.ToolResultBlockParam[] = [];
-      for (const block of response.content) {
-        if (block.type !== 'tool_use') continue;
-        try {
-          const result = await executeShopTool(block.name, block.input as any, tenantId, guestPhone);
-          toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) });
-        } catch (toolErr: any) {
-          console.error(`[Shop] tool ${block.name} threw:`, toolErr.message);
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: block.id,
-            content: JSON.stringify({ error: toolErr.message, success: false }),
-            is_error: true,
-          });
+      if (response.stop_reason === 'tool_use') {
+        messages.push({ role: 'assistant', content: response.content });
+
+        const toolResults: Anthropic.ToolResultBlockParam[] = [];
+        for (const block of response.content) {
+          if (block.type !== 'tool_use') continue;
+          try {
+            const result = await executeShopTool(block.name, block.input as any, tenantId, guestPhone);
+            toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) });
+          } catch (toolErr: any) {
+            console.error(`[Shop] tool ${block.name} threw:`, toolErr.message);
+            toolResults.push({
+              type: 'tool_result',
+              tool_use_id: block.id,
+              content: JSON.stringify({ error: toolErr.message, success: false }),
+              is_error: true,
+            });
+          }
         }
+        messages.push({ role: 'user', content: toolResults });
+        continue;
       }
-      messages.push({ role: 'user', content: toolResults });
-      continue;
+
+      for (const block of response.content) {
+        if (block.type === 'text') finalReply += block.text;
+      }
+      break;
     }
 
-    for (const block of response.content) {
-      if (block.type === 'text') finalReply += block.text;
+    // Reset consecutive error counter on success (fire-and-forget, must not break reply)
+    dbRun(
+      `UPDATE shop_conversations SET consecutive_errors = 0 WHERE tenant_id = ? AND guest_phone = ?`,
+      tenantId, guestPhone,
+    ).catch(() => {});
+
+    // Persist conversation — keep last 40 messages (~20 turns) to avoid unbounded growth
+    const updatedHistory = [
+      ...storedMessages,
+      { role: 'user', content: message },
+      { role: 'assistant', content: finalReply },
+    ].slice(-40);
+
+    await dbRun(
+      `UPDATE shop_conversations SET messages = ?, updated_at = ? WHERE tenant_id = ? AND guest_phone = ?`,
+      JSON.stringify(updatedHistory), new Date().toISOString(), tenantId, guestPhone,
+    );
+
+    return finalReply;
+
+  } catch (err: any) {
+    console.error('[Shop] Agent error:', err.message);
+
+    try {
+      const cfg = await dbGet(
+        `SELECT fallback_message, fallback_backup_number, fallback_after_attempts FROM shop_config WHERE tenant_id = ?`,
+        tenantId,
+      );
+
+      // Increment consecutive error count then read back the new value
+      await dbRun(
+        `UPDATE shop_conversations SET consecutive_errors = COALESCE(consecutive_errors, 0) + 1 WHERE tenant_id = ? AND guest_phone = ?`,
+        tenantId, guestPhone,
+      );
+      const convAfter = await dbGet(
+        `SELECT consecutive_errors FROM shop_conversations WHERE tenant_id = ? AND guest_phone = ?`,
+        tenantId, guestPhone,
+      );
+      const errorCount: number = convAfter?.consecutive_errors || 1;
+
+      const fallbackMsg   = cfg?.fallback_message || 'We are temporarily unable to process your order online.';
+      const backupNumber  = cfg?.fallback_backup_number as string | undefined;
+      const afterAttempts = cfg?.fallback_after_attempts ?? 1;
+
+      let reply = fallbackMsg;
+      if (backupNumber && errorCount >= afterAttempts) {
+        reply += `\n\nPlease contact us directly on WhatsApp:\n📱 ${backupNumber}`;
+      }
+      return reply;
+
+    } catch (fallbackErr: any) {
+      console.error('[Shop] Fallback config load failed:', fallbackErr.message);
+      return 'We are temporarily unavailable. Please try again shortly.';
     }
-    break;
   }
-
-  // Persist conversation — keep last 40 messages (~20 turns) to avoid unbounded growth
-  const updatedHistory = [
-    ...storedMessages,
-    { role: 'user', content: message },
-    { role: 'assistant', content: finalReply },
-  ].slice(-40);
-
-  await dbRun(
-    `UPDATE shop_conversations SET messages = ?, updated_at = ? WHERE tenant_id = ? AND guest_phone = ?`,
-    JSON.stringify(updatedHistory), new Date().toISOString(), tenantId, guestPhone,
-  );
-
-  return finalReply;
 }

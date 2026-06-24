@@ -621,6 +621,64 @@ function ConfigTab() {
         <Field label="Website" value={cfg.website_url || ''} onChange={v => set('website_url', v)} placeholder="https://myshop.com" />
       </div>
 
+      <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+        <div>
+          <h4 className="font-medium text-slate-800">Fallback &amp; Error Handling</h4>
+          <p className="text-xs text-slate-400 mt-0.5">When orders cannot be processed, guests receive this message instead of a generic error.</p>
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-xs text-slate-500 font-medium">Fallback message</label>
+          <textarea
+            rows={2}
+            value={cfg.fallback_message || ''}
+            onChange={e => set('fallback_message', e.target.value)}
+            placeholder="We are temporarily unable to process your order online."
+            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm resize-none"
+          />
+          <p className="text-xs text-slate-400">Shown to guest when the AI encounters an error</p>
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-xs text-slate-500 font-medium">Backup WhatsApp number</label>
+          <input
+            type="text"
+            value={cfg.fallback_backup_number || ''}
+            onChange={e => set('fallback_backup_number', e.target.value)}
+            placeholder="+355691234567"
+            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+          />
+          <p className="text-xs text-slate-400">Shared with guest when error threshold is reached. Leave empty to not share.</p>
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-xs text-slate-500 font-medium">Share backup number after</label>
+          <select
+            value={cfg.fallback_after_attempts ?? 1}
+            onChange={e => set('fallback_after_attempts', parseInt(e.target.value))}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
+          >
+            <option value={1}>1st error (immediately)</option>
+            <option value={2}>2nd consecutive error</option>
+            <option value={3}>3rd consecutive error</option>
+          </select>
+          <p className="text-xs text-slate-400">How many errors in a row before the backup number is shown</p>
+        </div>
+
+        {cfg.fallback_backup_number && (
+          <div className="bg-slate-50 rounded-lg px-3 py-2.5 border border-slate-200">
+            <p className="text-xs font-medium text-slate-600 mb-1">
+              Preview — what guest sees after {cfg.fallback_after_attempts ?? 1} error(s):
+            </p>
+            <p className="text-xs text-slate-700 whitespace-pre-wrap">
+              {cfg.fallback_message || 'We are temporarily unable to process your order online.'}
+              {'\n\nPlease contact us directly on WhatsApp:\n📱 '}
+              {cfg.fallback_backup_number}
+            </p>
+          </div>
+        )}
+      </div>
+
       <button onClick={save} disabled={busy} className="px-5 py-2 bg-brand-600 text-white rounded-lg text-sm hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2">
         {busy ? 'Saving…' : saved ? <><Check size={14} /> Saved!</> : 'Save Settings'}
       </button>
