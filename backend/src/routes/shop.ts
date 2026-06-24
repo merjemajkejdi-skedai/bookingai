@@ -419,18 +419,22 @@ shopRouter.get('/reports/breakdown', requireAuth, async (req: any, res: Response
     const df     = shopDateFilter(period, '');   // no alias
     const dfSo   = shopDateFilter(period);        // so. alias for join queries
 
+    // PG: created_at is TEXT — must cast before using any date/time function
+    const dateExpr = isPg ? `DATE((created_at)::timestamptz)` : `DATE(created_at)`;
+    const dowExpr  = isPg ? `EXTRACT(DOW FROM (created_at)::timestamptz)::int` : `CAST(strftime('%w', created_at) AS INTEGER)`;
+    const hourExpr = isPg ? `EXTRACT(HOUR FROM (created_at)::timestamptz)::int` : `CAST(strftime('%H', created_at) AS INTEGER)`;
+
     // 1 — orders per day
     const ordersPerDay = await dbAll(`
-      SELECT DATE(created_at) AS day,
+      SELECT ${dateExpr} AS day,
         COUNT(*) AS total_orders,
         COUNT(*) FILTER (WHERE status != 'cancelled') AS confirmed,
         COALESCE(SUM(total_price) FILTER (WHERE status != 'cancelled'), 0) AS revenue
       FROM shop_orders WHERE tenant_id = ? AND ${df}
-      GROUP BY DATE(created_at) ORDER BY day ASC
+      GROUP BY ${dateExpr} ORDER BY day ASC
     `, tenantId);
 
     // 2 — orders by day of week
-    const dowExpr = isPg ? `EXTRACT(DOW FROM created_at)::int` : `CAST(strftime('%w', created_at) AS INTEGER)`;
     const ordersByDow = await dbAll(`
       SELECT ${dowExpr} AS day_of_week,
         COUNT(*) FILTER (WHERE status != 'cancelled') AS orders,
@@ -466,7 +470,6 @@ shopRouter.get('/reports/breakdown', requireAuth, async (req: any, res: Response
     `, tenantId);
 
     // 5 — peak hours
-    const hourExpr = isPg ? `EXTRACT(HOUR FROM created_at)::int` : `CAST(strftime('%H', created_at) AS INTEGER)`;
     const ordersByHour = await dbAll(`
       SELECT ${hourExpr} AS hour, COUNT(*) AS orders
       FROM shop_orders WHERE tenant_id = ? AND ${df} AND status != 'cancelled'
@@ -475,11 +478,11 @@ shopRouter.get('/reports/breakdown', requireAuth, async (req: any, res: Response
 
     // 6 — avg order value trend per day
     const avgOrderTrend = await dbAll(`
-      SELECT DATE(created_at) AS day,
+      SELECT ${dateExpr} AS day,
         ROUND(AVG(total_price)) AS avg_value,
         COUNT(*) AS order_count
       FROM shop_orders WHERE tenant_id = ? AND ${df} AND status != 'cancelled'
-      GROUP BY DATE(created_at) ORDER BY day ASC
+      GROUP BY ${dateExpr} ORDER BY day ASC
     `, tenantId);
 
     // 7 — stock depletion (daily stock items only)
@@ -517,11 +520,11 @@ shopRouter.get('/reports/breakdown', requireAuth, async (req: any, res: Response
       ? `EXTRACT(EPOCH FROM (done_at::timestamptz - created_at::timestamptz)) / 60`
       : `(julianday(done_at) - julianday(created_at)) * 24 * 60`;
     const speedTrend = await dbAll(`
-      SELECT DATE(created_at) AS day,
+      SELECT ${dateExpr} AS day,
         ROUND(AVG(${minutesDiff})) AS avg_minutes
       FROM shop_orders
       WHERE tenant_id = ? AND ${df} AND done_at IS NOT NULL AND status != 'cancelled'
-      GROUP BY DATE(created_at) ORDER BY day ASC
+      GROUP BY ${dateExpr} ORDER BY day ASC
     `, tenantId);
 
     res.json({
