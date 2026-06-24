@@ -197,7 +197,7 @@ export default function App() {
           {mode === 'restaurant' && <RestaurantModule   key={viewTenant.id} onLogout={handleLogout} />}
           {mode === 'hotel'      && <HotelModule        key={viewTenant.id} onLogout={handleLogout} />}
           {mode === 'skedai'     && <SkedAIModule       key={viewTenant.id} onLogout={handleLogout} />}
-          {mode === 'shop'       && <ShopModule         key={viewTenant.id} onLogout={handleLogout} />}
+          {mode === 'shop'       && <ShopModule         key={viewTenant.id} onLogout={handleLogout} tenantId={viewTenant.id} />}
         </div>
       </div>
     );

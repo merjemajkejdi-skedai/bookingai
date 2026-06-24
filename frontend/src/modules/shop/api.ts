@@ -4,9 +4,18 @@ const BASE = (import.meta.env.VITE_API_URL as string) || '';
 
 function token() { return localStorage.getItem('bookingai_token') || ''; }
 
+// When a super_admin views a specific shop, set this so all requests carry ?tenantId=X
+let _viewTenantId: string | null = null;
+export function setViewTenantId(id: string | null) { _viewTenantId = id; }
+
 async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const isForm = opts.body instanceof FormData;
-  const res = await fetch(`${BASE}${path}`, {
+  // Append tenantId for super_admin viewing a specific shop tenant
+  let url = `${BASE}${path}`;
+  if (_viewTenantId && (opts.method === undefined || opts.method === 'GET')) {
+    url += (url.includes('?') ? '&' : '?') + `tenantId=${encodeURIComponent(_viewTenantId)}`;
+  }
+  const res = await fetch(url, {
     ...opts,
     headers: {
       ...(!isForm ? { 'Content-Type': 'application/json' } : {}),
@@ -14,6 +23,7 @@ async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
       ...(opts.headers as object ?? {}),
     },
   });
+
   let json: any;
   try { json = JSON.parse(await res.text()); } catch { throw new Error(`Server error ${res.status}`); }
   if (!json.success) throw new Error(json.error || 'API error');

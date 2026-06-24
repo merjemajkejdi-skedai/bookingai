@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ShoppingBag, Package, MessageSquare, HelpCircle, Settings, Plus, Trash2, Pencil, X, Check, RefreshCw, LogOut } from 'lucide-react';
-import { shopApi } from './api';
+import { shopApi, setViewTenantId } from './api';
 import type { ShopOrder, ShopItem, ShopCategory, ShopFaq, ShopConversation, ShopConfig } from './types';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -96,11 +96,15 @@ function OrderCard({ order, onStatusChange }: { order: ShopOrder; onStatusChange
 function OrdersTab() {
   const [orders, setOrders] = useState<ShopOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { setOrders(await shopApi.getOrders('all', date)); } catch { /* ignore */ } finally { setLoading(false); }
+    setLoadError(null);
+    try { setOrders(await shopApi.getOrders('all', date)); }
+    catch (e: any) { setLoadError(e.message ?? 'Failed to load orders'); }
+    finally { setLoading(false); }
   }, [date]);
 
   useEffect(() => { load(); }, [load]);
@@ -120,6 +124,10 @@ function OrdersTab() {
         <button onClick={load} className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors"><RefreshCw size={15} className={loading ? 'animate-spin text-slate-400' : 'text-slate-500'} /></button>
         <span className="text-xs text-slate-400">{orders.filter(o => o.status !== 'cancelled').length} orders</span>
       </div>
+
+      {loadError && (
+        <div className="text-red-500 text-xs px-3 py-2 bg-red-50 rounded-lg">Error: {loadError}</div>
+      )}
 
       {loading ? (
         <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">Loading…</div>
@@ -641,8 +649,14 @@ const TABS: Array<{ id: Tab; label: string; icon: React.ReactNode }> = [
   { id: 'config',        label: 'Settings',      icon: <Settings size={16} /> },
 ];
 
-export function ShopDashboard({ onLogout }: { onLogout: () => void }) {
+export function ShopDashboard({ onLogout, tenantId }: { onLogout: () => void; tenantId?: string }) {
   const [tab, setTab] = useState<Tab>('orders');
+
+  // When super_admin views a specific shop, inject tenantId into all API requests
+  useEffect(() => {
+    setViewTenantId(tenantId ?? null);
+    return () => setViewTenantId(null);
+  }, [tenantId]);
 
   return (
     <div className="flex flex-col h-full bg-slate-50">
