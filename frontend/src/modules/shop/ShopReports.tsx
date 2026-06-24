@@ -11,42 +11,38 @@ const PERIODS = [
 ];
 
 // ── SVG chart primitives ────────────────────────────────────────────────────────
+// viewBox width is 400 (vs chart area height 72) → aspect ratio ~5.5:1
+// so `w-full` renders charts ~72/400 * containerWidth tall (~90px on 500px card)
+
+const VW = 400;   // viewBox width — wide aspect keeps charts short on screen
+const VH = 72;    // chart area height in viewBox units
+const LH = 14;    // label row height
 
 function BarChart({
-  values, labels, colors, height = 100, showValues = false,
+  values, labels, colors, showValues = false,
 }: {
-  values: number[]; labels?: string[]; colors?: string | string[]; height?: number; showValues?: boolean;
+  values: number[]; labels?: string[]; colors?: string | string[]; showValues?: boolean;
 }) {
   const max = Math.max(...values, 1);
-  const n = values.length;
-  const barW = 80 / n;
-  const gap  = 20 / Math.max(n - 1, 1);
+  const n   = values.length;
+  const slotW = VW / n;
+  const barW  = slotW * 0.7;
   const getColor = (i: number) =>
     Array.isArray(colors) ? (colors[i] ?? '#0F6E56') : (colors ?? '#0F6E56');
 
   return (
-    <svg viewBox={`0 0 100 ${height + (labels ? 16 : 4)}`} className="w-full">
+    <svg viewBox={`0 0 ${VW} ${VH + (labels ? LH : 4)}`} className="w-full">
       {values.map((v, i) => {
-        const barH = Math.max((v / max) * (height - 4), v > 0 ? 2 : 0);
-        const x = n === 1 ? 10 : i * (barW + (n > 1 ? (80 - barW * n) / (n - 1) : 0)) + (100 - barW * n - (n > 1 ? (80 - barW * n) : 0)) / 2;
-        const xPos = (i / Math.max(n - 1, 1)) * (100 - barW) + barW / 2 - barW / 2;
+        const barH = Math.max((v / max) * (VH - 6), v > 0 ? 3 : 0);
+        const x    = i * slotW + (slotW - barW) / 2;
         return (
           <g key={i}>
-            <rect
-              x={xPos}
-              y={height - barH}
-              width={barW * 0.8}
-              height={barH}
-              fill={getColor(i)}
-              rx="1"
-            />
+            <rect x={x} y={VH - barH} width={barW} height={barH} fill={getColor(i)} rx="2" />
             {showValues && v > 0 && (
-              <text x={xPos + barW * 0.4} y={height - barH - 2} textAnchor="middle"
-                fontSize="5" fill="#64748b">{v}</text>
+              <text x={x + barW / 2} y={VH - barH - 3} textAnchor="middle" fontSize="8" fill="#64748b">{v}</text>
             )}
             {labels && (
-              <text x={xPos + barW * 0.4} y={height + 10} textAnchor="middle"
-                fontSize="5" fill="#94a3b8">{labels[i]}</text>
+              <text x={x + barW / 2} y={VH + 10} textAnchor="middle" fontSize="8" fill="#94a3b8">{labels[i]}</text>
             )}
           </g>
         );
@@ -56,31 +52,30 @@ function BarChart({
 }
 
 function LineChart({
-  values, labels, color = '#0F6E56', height = 100, fillColor,
+  values, labels, color = '#0F6E56', fillColor,
 }: {
-  values: number[]; labels?: string[]; color?: string; height?: number; fillColor?: string;
+  values: number[]; labels?: string[]; color?: string; fillColor?: string;
 }) {
   if (values.length < 2) return (
-    <div className="flex items-center justify-center h-full text-slate-300 text-xs">Not enough data</div>
+    <p className="text-xs text-slate-300 text-center py-4">Not enough data</p>
   );
-  const max = Math.max(...values, 1);
-  const min = 0;
-  const n = values.length;
-  const toX = (i: number) => (i / (n - 1)) * 96 + 2;
-  const toY = (v: number) => height - 4 - ((v - min) / (max - min)) * (height - 8);
-  const pts = values.map((v, i) => `${toX(i)},${toY(v)}`).join(' ');
-  const fillPts = `${toX(0)},${height} ${pts} ${toX(n - 1)},${height}`;
+  const max  = Math.max(...values, 1);
+  const n    = values.length;
+  const toX  = (i: number) => (i / (n - 1)) * (VW - 8) + 4;
+  const toY  = (v: number) => VH - 4 - (v / max) * (VH - 10);
+  const pts  = values.map((v, i) => `${toX(i)},${toY(v)}`).join(' ');
+  const fill = `${toX(0)},${VH} ${pts} ${toX(n - 1)},${VH}`;
 
   return (
-    <svg viewBox={`0 0 100 ${height + (labels ? 14 : 4)}`} className="w-full">
-      {fillColor && <polygon points={fillPts} fill={fillColor} opacity="0.15" />}
-      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+    <svg viewBox={`0 0 ${VW} ${VH + (labels ? LH : 4)}`} className="w-full">
+      {fillColor && <polygon points={fill} fill={fillColor} opacity="0.12" />}
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
       {values.map((v, i) => (
-        <circle key={i} cx={toX(i)} cy={toY(v)} r="1.5" fill={color} />
+        <circle key={i} cx={toX(i)} cy={toY(v)} r="3" fill={color} />
       ))}
       {labels && labels.map((l, i) => (
         i % Math.ceil(n / 6) === 0 || i === n - 1 ? (
-          <text key={i} x={toX(i)} y={height + 10} textAnchor="middle" fontSize="4.5" fill="#94a3b8">{l}</text>
+          <text key={i} x={toX(i)} y={VH + 10} textAnchor="middle" fontSize="8" fill="#94a3b8">{l}</text>
         ) : null
       ))}
     </svg>
