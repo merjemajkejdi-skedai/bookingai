@@ -12,7 +12,7 @@ async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const isForm = opts.body instanceof FormData;
   // Append tenantId for super_admin viewing a specific shop tenant
   let url = `${BASE}${path}`;
-  if (_viewTenantId && (opts.method === undefined || opts.method === 'GET')) {
+  if (_viewTenantId) {
     url += (url.includes('?') ? '&' : '?') + `tenantId=${encodeURIComponent(_viewTenantId)}`;
   }
   const res = await fetch(url, {
