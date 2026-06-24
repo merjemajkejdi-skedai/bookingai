@@ -318,10 +318,11 @@ shopRouter.post('/orders/manual', requireAuth, async (req: any, res: Response) =
       return { item_id: oi.item_id, item_name: mi.name, item_price: parseFloat(mi.price), quantity: oi.quantity, subtotal, currency: mi.currency };
     });
 
-    // Next order number for today
+    // Next order number for today — use JS date string to avoid text=date cast error in PG
+    const today = new Date().toISOString().split('T')[0]; // 'YYYY-MM-DD'
     const numRows = await dbAll(
-      `SELECT COALESCE(MAX(order_number), 0) + 1 AS next_num FROM shop_orders WHERE tenant_id=? AND order_date=CURRENT_DATE`,
-      tenantId,
+      `SELECT COALESCE(MAX(order_number), 0) + 1 AS next_num FROM shop_orders WHERE tenant_id=? AND order_date=?`,
+      tenantId, today,
     );
     const orderNumber = (numRows[0] as any)?.next_num || 1;
 
@@ -331,8 +332,8 @@ shopRouter.post('/orders/manual', requireAuth, async (req: any, res: Response) =
     const currency = orderLines[0]?.currency || 'ALL';
     await dbRun(
       `INSERT INTO shop_orders (id,tenant_id,order_number,order_date,guest_phone,pickup_name,status,total_price,currency,notes,source,in_progress_at,created_at,updated_at)
-       VALUES (?,?,?,CURRENT_DATE,?,?,'in_progress',?,?,?,'manual',CURRENT_TIMESTAMP,?,?)`,
-      orderId, tenantId, orderNumber, guest_phone || null, pickup_name || null, total, currency, notes || null, now, now,
+       VALUES (?,?,?,?,?,?,'in_progress',?,?,?,'manual',CURRENT_TIMESTAMP,?,?)`,
+      orderId, tenantId, orderNumber, today, guest_phone || null, pickup_name || null, total, currency, notes || null, now, now,
     );
 
     // Insert order items
