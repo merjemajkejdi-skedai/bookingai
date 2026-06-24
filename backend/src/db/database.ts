@@ -486,6 +486,7 @@ const SCHEMA = `
     fallback_message TEXT DEFAULT 'We are temporarily unavailable. Please try again shortly.',
     fallback_backup_number TEXT,
     fallback_after_attempts INTEGER DEFAULT 1,
+    manual_orders_enabled INTEGER DEFAULT 0,
     address TEXT,
     instagram_url TEXT,
     facebook_url TEXT,
@@ -534,6 +535,9 @@ const SCHEMA = `
     total_price REAL,
     currency TEXT DEFAULT 'ALL',
     notes TEXT,
+    source TEXT DEFAULT 'whatsapp',
+    is_paid INTEGER DEFAULT 0,
+    paid_at TEXT,
     created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     in_progress_at TEXT,
@@ -708,6 +712,10 @@ export async function runMigrations() {
       `CREATE TABLE IF NOT EXISTS shop_conversations (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, guest_phone TEXT NOT NULL, messages TEXT NOT NULL DEFAULT '[]', cart TEXT NOT NULL DEFAULT '[]', cart_state TEXT DEFAULT 'idle', consecutive_errors INTEGER DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(tenant_id, guest_phone))`,
       `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS fallback_backup_number TEXT`,
       `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS fallback_after_attempts INTEGER DEFAULT 1`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS manual_orders_enabled INTEGER DEFAULT 0`,
+      `ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'whatsapp'`,
+      `ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS is_paid INTEGER DEFAULT 0`,
+      `ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS paid_at TEXT`,
       `ALTER TABLE shop_conversations ADD COLUMN IF NOT EXISTS consecutive_errors INTEGER DEFAULT 0`,
       `CREATE TABLE IF NOT EXISTS shop_faq (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, question TEXT NOT NULL, answer TEXT NOT NULL, sort_order INTEGER DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
       `CREATE INDEX IF NOT EXISTS idx_shop_orders_status ON shop_orders(tenant_id, status, created_at)`,
@@ -907,13 +915,25 @@ export async function runMigrations() {
   if (!userCols.includes('is_admin'))
     exec('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0');
 
-  // shop_config — fallback columns added after initial schema
+  // shop_config — columns added after initial schema
   const shopConfigCols = prepare("SELECT name FROM pragma_table_info('shop_config')")
     .all().map((r: any) => r.name as string);
   if (!shopConfigCols.includes('fallback_backup_number'))
     exec('ALTER TABLE shop_config ADD COLUMN fallback_backup_number TEXT');
   if (!shopConfigCols.includes('fallback_after_attempts'))
     exec('ALTER TABLE shop_config ADD COLUMN fallback_after_attempts INTEGER DEFAULT 1');
+  if (!shopConfigCols.includes('manual_orders_enabled'))
+    exec('ALTER TABLE shop_config ADD COLUMN manual_orders_enabled INTEGER DEFAULT 0');
+
+  // shop_orders — source / payment columns added after initial schema
+  const shopOrderCols = prepare("SELECT name FROM pragma_table_info('shop_orders')")
+    .all().map((r: any) => r.name as string);
+  if (!shopOrderCols.includes('source'))
+    exec("ALTER TABLE shop_orders ADD COLUMN source TEXT DEFAULT 'whatsapp'");
+  if (!shopOrderCols.includes('is_paid'))
+    exec('ALTER TABLE shop_orders ADD COLUMN is_paid INTEGER DEFAULT 0');
+  if (!shopOrderCols.includes('paid_at'))
+    exec('ALTER TABLE shop_orders ADD COLUMN paid_at TEXT');
 
   // shop_conversations — consecutive error tracking
   const shopConvCols = prepare("SELECT name FROM pragma_table_info('shop_conversations')")

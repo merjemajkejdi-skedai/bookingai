@@ -52,17 +52,19 @@ shopRouter.put('/config', requireAuth, async (req: any, res: Response) => {
       shop_name, opening_hours, estimated_pickup_minutes, pickup_mode, agent_personality,
       fallback_message, fallback_backup_number, fallback_after_attempts,
       address, instagram_url, facebook_url, tiktok_url, website_url, phone,
+      manual_orders_enabled,
     } = req.body;
+    const manualEnabled = manual_orders_enabled ? 1 : 0;
     const exists = await dbGet(`SELECT id FROM shop_config WHERE tenant_id = ?`, tenantId);
     if (exists) {
       await dbRun(
-        `UPDATE shop_config SET shop_name=?,opening_hours=?,estimated_pickup_minutes=?,pickup_mode=?,agent_personality=?,fallback_message=?,fallback_backup_number=?,fallback_after_attempts=?,address=?,instagram_url=?,facebook_url=?,tiktok_url=?,website_url=?,phone=?,updated_at=CURRENT_TIMESTAMP WHERE tenant_id=?`,
-        shop_name, opening_hours, estimated_pickup_minutes, pickup_mode, agent_personality, fallback_message, fallback_backup_number, fallback_after_attempts, address, instagram_url, facebook_url, tiktok_url, website_url, phone, tenantId,
+        `UPDATE shop_config SET shop_name=?,opening_hours=?,estimated_pickup_minutes=?,pickup_mode=?,agent_personality=?,fallback_message=?,fallback_backup_number=?,fallback_after_attempts=?,manual_orders_enabled=?,address=?,instagram_url=?,facebook_url=?,tiktok_url=?,website_url=?,phone=?,updated_at=CURRENT_TIMESTAMP WHERE tenant_id=?`,
+        shop_name, opening_hours, estimated_pickup_minutes, pickup_mode, agent_personality, fallback_message, fallback_backup_number, fallback_after_attempts, manualEnabled, address, instagram_url, facebook_url, tiktok_url, website_url, phone, tenantId,
       );
     } else {
       await dbRun(
-        `INSERT INTO shop_config (id,tenant_id,shop_name,opening_hours,estimated_pickup_minutes,pickup_mode,agent_personality,fallback_message,fallback_backup_number,fallback_after_attempts,address,instagram_url,facebook_url,tiktok_url,website_url,phone) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        crypto.randomUUID(), tenantId, shop_name, opening_hours, estimated_pickup_minutes, pickup_mode, agent_personality, fallback_message, fallback_backup_number, fallback_after_attempts, address, instagram_url, facebook_url, tiktok_url, website_url, phone,
+        `INSERT INTO shop_config (id,tenant_id,shop_name,opening_hours,estimated_pickup_minutes,pickup_mode,agent_personality,fallback_message,fallback_backup_number,fallback_after_attempts,manual_orders_enabled,address,instagram_url,facebook_url,tiktok_url,website_url,phone) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        crypto.randomUUID(), tenantId, shop_name, opening_hours, estimated_pickup_minutes, pickup_mode, agent_personality, fallback_message, fallback_backup_number, fallback_after_attempts, manualEnabled, address, instagram_url, facebook_url, tiktok_url, website_url, phone,
       );
     }
     res.json({ success: true });
@@ -207,43 +209,150 @@ shopRouter.get('/orders', requireAuth, async (req: any, res: Response) => {
 shopRouter.patch('/orders/:id', requireAuth, async (req: any, res: Response) => {
   try {
     const tenantId = resolveTenantId(req);
-    const { status } = req.body as { status: string };
+    const { status, is_paid } = req.body as { status?: string; is_paid?: boolean };
     const order = await dbGet(`SELECT * FROM shop_orders WHERE id=? AND tenant_id=?`, req.params.id, tenantId);
     if (!order) return res.status(404).json({ success: false, error: 'Not found' });
 
-    const tsCol: Record<string, string> = {
-      in_progress: 'in_progress_at', done: 'done_at', picked_up: 'picked_up_at', cancelled: 'cancelled_at',
-    };
-    const ts = tsCol[status];
-    if (ts) {
-      await dbRun(`UPDATE shop_orders SET status=?, ${ts}=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=? AND tenant_id=?`, status, req.params.id, tenantId);
-    } else {
-      await dbRun(`UPDATE shop_orders SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND tenant_id=?`, status, req.params.id, tenantId);
+    // Block unpaid manual orders from moving to Picked Up
+    if (status === 'picked_up' && order.source === 'manual' && !order.is_paid) {
+      return res.status(400).json({ success: false, error: 'Mark order as paid before moving to Picked Up' });
     }
 
-    // Notify guest when order is ready
-    if (status === 'done') {
-      try {
-        const tenant = await dbGet(`SELECT * FROM tenants WHERE id=?`, tenantId);
-        const cfg = await dbGet(`SELECT shop_name FROM shop_config WHERE tenant_id=?`, tenantId);
-        const shopName = cfg?.shop_name || tenant?.name || 'our shop';
-        const msg = `✅ Your order #${order.order_number} from ${shopName} is ready for pickup! Please come to the counter.`;
-        await sendWhatsAppMessage(order.guest_phone, msg, tenant);
-      } catch (e: any) { console.error('[Shop] WA notify failed:', e.message); }
+    // Handle is_paid toggle
+    if (is_paid !== undefined) {
+      const newPaid = is_paid ? 1 : 0;
+      if (newPaid && !order.is_paid) {
+        await dbRun(`UPDATE shop_orders SET is_paid=?, paid_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=? AND tenant_id=?`, newPaid, req.params.id, tenantId);
+      } else {
+        await dbRun(`UPDATE shop_orders SET is_paid=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND tenant_id=?`, newPaid, req.params.id, tenantId);
+      }
     }
 
-    // Restore stock on cancellation
-    if (status === 'cancelled' && order.status !== 'cancelled') {
-      const orderItems = await dbAll(`SELECT item_id, quantity FROM shop_order_items WHERE order_id=?`, req.params.id);
-      for (const oi of orderItems) {
-        const restoreSql = isPg
-          ? `UPDATE shop_menu_items SET stock_used = GREATEST(0, stock_used - ?) WHERE id=? AND stock_type != 'unlimited'`
-          : `UPDATE shop_menu_items SET stock_used = max(0, stock_used - ?) WHERE id=? AND stock_type != 'unlimited'`;
-        await dbRun(restoreSql, oi.quantity, oi.item_id);
+    // Handle status change
+    if (status) {
+      const tsCol: Record<string, string> = {
+        in_progress: 'in_progress_at', done: 'done_at', picked_up: 'picked_up_at', cancelled: 'cancelled_at',
+      };
+      const ts = tsCol[status];
+      if (ts) {
+        await dbRun(`UPDATE shop_orders SET status=?, ${ts}=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=? AND tenant_id=?`, status, req.params.id, tenantId);
+      } else {
+        await dbRun(`UPDATE shop_orders SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND tenant_id=?`, status, req.params.id, tenantId);
+      }
+
+      // Notify guest when order is ready (skip manual orders without a phone)
+      if (status === 'done' && order.guest_phone) {
+        try {
+          const tenant = await dbGet(`SELECT * FROM tenants WHERE id=?`, tenantId);
+          const cfg = await dbGet(`SELECT shop_name FROM shop_config WHERE tenant_id=?`, tenantId);
+          const shopName = cfg?.shop_name || tenant?.name || 'our shop';
+          const msg = `✅ Your order #${order.order_number} from ${shopName} is ready for pickup! Please come to the counter.`;
+          await sendWhatsAppMessage(order.guest_phone, msg, tenant);
+        } catch (e: any) { console.error('[Shop] WA notify failed:', e.message); }
+      }
+
+      // Restore stock on cancellation
+      if (status === 'cancelled' && order.status !== 'cancelled') {
+        const orderItems = await dbAll(`SELECT item_id, quantity FROM shop_order_items WHERE order_id=?`, req.params.id);
+        for (const oi of orderItems) {
+          const restoreSql = isPg
+            ? `UPDATE shop_menu_items SET stock_used = GREATEST(0, stock_used - ?) WHERE id=? AND stock_type != 'unlimited'`
+            : `UPDATE shop_menu_items SET stock_used = max(0, stock_used - ?) WHERE id=? AND stock_type != 'unlimited'`;
+          await dbRun(restoreSql, oi.quantity, oi.item_id);
+        }
       }
     }
 
     res.json({ success: true });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ── Manual Order Creation ──────────────────────────────────────────────────────
+
+shopRouter.post('/orders/manual', requireAuth, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+
+    const cfg = await dbGet(`SELECT manual_orders_enabled FROM shop_config WHERE tenant_id=?`, tenantId);
+    if (!cfg?.manual_orders_enabled) {
+      return res.status(403).json({ success: false, error: 'Manual orders are not enabled for this shop' });
+    }
+
+    const { items, pickup_name, guest_phone, notes } = req.body as {
+      items: { item_id: string; quantity: number }[];
+      pickup_name?: string; guest_phone?: string; notes?: string;
+    };
+    if (!items || items.length === 0) {
+      return res.status(400).json({ success: false, error: 'At least one item is required' });
+    }
+
+    // Load menu items — dual-DB IN clause
+    const itemIds: string[] = items.map((i) => i.item_id);
+    const ph = itemIds.map(() => '?').join(',');
+    const menuItems = await dbAll(
+      `SELECT id, name, price, currency, stock_type, stock_limit, stock_used FROM shop_menu_items WHERE tenant_id=? AND id IN (${ph}) AND is_active=1`,
+      tenantId, ...itemIds,
+    );
+    const itemMap = new Map(menuItems.map((i: any) => [i.id, i]));
+
+    // Validate stock
+    const outOfStock: string[] = [];
+    for (const oi of items) {
+      const mi = itemMap.get(oi.item_id);
+      if (!mi) { outOfStock.push(oi.item_id); continue; }
+      if ((mi as any).stock_type !== 'unlimited') {
+        const remaining = ((mi as any).stock_limit || 0) - ((mi as any).stock_used || 0);
+        if (remaining < oi.quantity) outOfStock.push((mi as any).name);
+      }
+    }
+    if (outOfStock.length > 0) {
+      return res.status(400).json({ success: false, error: 'Some items are out of stock', out_of_stock: outOfStock });
+    }
+
+    // Calculate total & build order lines
+    let total = 0;
+    const orderLines = items.map((oi) => {
+      const mi = itemMap.get(oi.item_id) as any;
+      const subtotal = parseFloat(mi.price) * oi.quantity;
+      total += subtotal;
+      return { item_id: oi.item_id, item_name: mi.name, item_price: parseFloat(mi.price), quantity: oi.quantity, subtotal, currency: mi.currency };
+    });
+
+    // Next order number for today
+    const numRows = await dbAll(
+      `SELECT COALESCE(MAX(order_number), 0) + 1 AS next_num FROM shop_orders WHERE tenant_id=? AND order_date=CURRENT_DATE`,
+      tenantId,
+    );
+    const orderNumber = (numRows[0] as any)?.next_num || 1;
+
+    // Create order — manual orders start as in_progress
+    const orderId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const currency = orderLines[0]?.currency || 'ALL';
+    await dbRun(
+      `INSERT INTO shop_orders (id,tenant_id,order_number,order_date,guest_phone,pickup_name,status,total_price,currency,notes,source,in_progress_at,created_at,updated_at)
+       VALUES (?,?,?,CURRENT_DATE,?,?,'in_progress',?,?,?,'manual',CURRENT_TIMESTAMP,?,?)`,
+      orderId, tenantId, orderNumber, guest_phone || null, pickup_name || null, total, currency, notes || null, now, now,
+    );
+
+    // Insert order items
+    for (const line of orderLines) {
+      await dbRun(
+        `INSERT INTO shop_order_items (id,order_id,tenant_id,item_id,item_name,item_price,quantity,subtotal) VALUES (?,?,?,?,?,?,?,?)`,
+        crypto.randomUUID(), orderId, tenantId, line.item_id, line.item_name, line.item_price, line.quantity, line.subtotal,
+      );
+    }
+
+    // Decrement stock
+    for (const line of orderLines) {
+      await dbRun(
+        `UPDATE shop_menu_items SET stock_used = stock_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id=? AND stock_type != 'unlimited'`,
+        line.quantity, line.item_id,
+      );
+    }
+
+    console.log(`[Shop] Manual order #${orderNumber} created by staff`);
+    res.json({ success: true, data: { order_id: orderId, order_number: orderNumber, total, status: 'in_progress' } });
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
 });
 

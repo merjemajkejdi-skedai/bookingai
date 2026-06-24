@@ -9,6 +9,7 @@ export interface ShopConfig {
   fallback_message?: string;
   fallback_backup_number?: string;
   fallback_after_attempts?: number;
+  manual_orders_enabled?: boolean | number;
   address?: string;
   instagram_url?: string;
   facebook_url?: string;
@@ -68,6 +69,9 @@ export interface ShopOrder {
   total_price: number;
   currency: string;
   notes?: string;
+  source?: 'whatsapp' | 'manual';
+  is_paid?: boolean | number;
+  paid_at?: string;
   created_at: string;
   updated_at: string;
   in_progress_at?: string;

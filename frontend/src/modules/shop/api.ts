@@ -52,6 +52,9 @@ export const shopApi = {
     return req<ShopOrder[]>(`/shop/orders${q ? `?${q}` : ''}`);
   },
   updateOrderStatus:  (id: string, status: string) => req<void>(`/shop/orders/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+  updateOrderPaid:    (id: string, isPaid: boolean) => req<void>(`/shop/orders/${id}`, { method: 'PATCH', body: JSON.stringify({ is_paid: isPaid }) }),
+  createManualOrder:  (data: { items: { item_id: string; quantity: number }[]; pickup_name?: string; guest_phone?: string; notes?: string }) =>
+    req<{ order_id: string; order_number: number; total: number }>('/shop/orders/manual', { method: 'POST', body: JSON.stringify(data) }),
 
   getFaq:       ()                        => req<ShopFaq[]>('/shop/faq'),
   createFaq:    (d: Partial<ShopFaq>)    => req<{ id: string }>('/shop/faq', { method: 'POST', body: JSON.stringify(d) }),

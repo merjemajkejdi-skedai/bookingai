@@ -38,12 +38,30 @@ function timeAgo(s: string) {
 
 // ── Order Card ─────────────────────────────────────────────────────────────────
 
-function OrderCard({ order, onStatusChange }: { order: ShopOrder; onStatusChange: (id: string, s: string) => void }) {
+function OrderCard({
+  order,
+  onStatusChange,
+  onPaidChange,
+}: {
+  order: ShopOrder;
+  onStatusChange: (id: string, s: string) => void;
+  onPaidChange: (id: string, isPaid: boolean) => void;
+}) {
   const [busy, setBusy] = useState(false);
+  const [paidBusy, setPaidBusy] = useState(false);
 
   async function changeStatus(status: string) {
+    if (status === 'picked_up' && order.source === 'manual' && !order.is_paid) {
+      alert('Please mark this order as paid before moving to Picked Up.');
+      return;
+    }
     setBusy(true);
     try { await onStatusChange(order.id, status); } finally { setBusy(false); }
+  }
+
+  async function togglePaid() {
+    setPaidBusy(true);
+    try { await onPaidChange(order.id, !order.is_paid); } finally { setPaidBusy(false); }
   }
 
   const nextAction = order.status === 'new' ? { label: 'Start', next: 'in_progress', color: 'bg-amber-500 hover:bg-amber-600' }
@@ -54,14 +72,25 @@ function OrderCard({ order, onStatusChange }: { order: ShopOrder; onStatusChange
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-col gap-2">
       <div className="flex items-start justify-between gap-2">
-        <div>
+        <div className="flex items-center gap-1.5">
           <span className="text-xs font-bold text-slate-800">#{order.order_number}</span>
-          {order.pickup_name && <span className="ml-2 text-xs text-slate-500">· {order.pickup_name}</span>}
+          {order.pickup_name && <span className="text-xs text-slate-500">· {order.pickup_name}</span>}
+          {order.source === 'manual' && (
+            <span className="text-xs bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded font-medium">Manual</span>
+          )}
+          {order.source === 'whatsapp' && (
+            <span className="text-xs bg-green-50 text-green-700 px-1.5 py-0.5 rounded font-medium">WhatsApp</span>
+          )}
         </div>
         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[order.status]}`}>{STATUS_LABELS[order.status]}</span>
       </div>
 
-      <div className="text-xs text-slate-500">{order.guest_phone} · {timeAgo(order.created_at)}</div>
+      {order.guest_phone && (
+        <div className="text-xs text-slate-500">{order.guest_phone} · {timeAgo(order.created_at)}</div>
+      )}
+      {!order.guest_phone && (
+        <div className="text-xs text-slate-400">{timeAgo(order.created_at)}</div>
+      )}
 
       <div className="border-t border-slate-100 pt-2 space-y-1">
         {(order.items || []).map((it, i) => (
@@ -87,7 +116,185 @@ function OrderCard({ order, onStatusChange }: { order: ShopOrder; onStatusChange
           )}
         </div>
       </div>
+
       {order.notes && <div className="text-xs text-slate-400 italic">Note: {order.notes}</div>}
+
+      {order.source === 'manual' && (order.status === 'in_progress' || order.status === 'done') && (
+        <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+          <button
+            onClick={togglePaid}
+            disabled={paidBusy}
+            className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg transition-colors disabled:opacity-50 ${
+              order.is_paid ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+            }`}
+          >
+            {order.is_paid ? '✓ Paid' : '○ Mark as paid'}
+          </button>
+          {order.is_paid && order.paid_at && (
+            <span className="text-xs text-slate-400">
+              {new Date(order.paid_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Manual Order Modal ─────────────────────────────────────────────────────────
+
+function ManualOrderModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const [menuItems, setMenuItems] = useState<ShopItem[]>([]);
+  const [cart, setCart] = useState<{ item: ShopItem; qty: number }[]>([]);
+  const [pickupName, setPickupName] = useState('');
+  const [guestPhone, setGuestPhone] = useState('');
+  const [notes, setNotes] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [loadingItems, setLoadingItems] = useState(true);
+
+  useEffect(() => {
+    shopApi.getItems().then(data => {
+      setMenuItems(data.filter((i) => !!i.is_active));
+      setLoadingItems(false);
+    }).catch(() => setLoadingItems(false));
+  }, []);
+
+  function addToCart(item: ShopItem) {
+    setCart(c => {
+      const existing = c.find(ci => ci.item.id === item.id);
+      if (existing) return c.map(ci => ci.item.id === item.id ? { ...ci, qty: ci.qty + 1 } : ci);
+      return [...c, { item, qty: 1 }];
+    });
+  }
+
+  function updateQty(itemId: string, qty: number) {
+    if (qty <= 0) { setCart(c => c.filter(ci => ci.item.id !== itemId)); return; }
+    setCart(c => c.map(ci => ci.item.id === itemId ? { ...ci, qty } : ci));
+  }
+
+  const total = cart.reduce((sum, ci) => sum + ci.item.price * ci.qty, 0);
+  const currency = cart[0]?.item.currency || 'ALL';
+
+  async function submit() {
+    if (cart.length === 0) return;
+    setSubmitting(true);
+    try {
+      await shopApi.createManualOrder({
+        items: cart.map(ci => ({ item_id: ci.item.id, quantity: ci.qty })),
+        pickup_name: pickupName || undefined,
+        guest_phone: guestPhone || undefined,
+        notes: notes || undefined,
+      });
+      onCreated();
+      onClose();
+    } catch (err: any) {
+      alert(err.message || 'Failed to create order');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const categories = [...new Set(menuItems.map(i => i.category_name || 'Other'))];
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <h2 className="text-base font-semibold text-slate-800">New manual order</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+        </div>
+
+        <div className="flex flex-1 overflow-hidden">
+          {/* Left — menu */}
+          <div className="flex-1 overflow-y-auto p-4 border-r border-slate-100">
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-3">Menu</p>
+            {loadingItems && <div className="text-sm text-slate-400 text-center py-8">Loading…</div>}
+            {!loadingItems && categories.map(cat => (
+              <div key={cat} className="mb-4">
+                <p className="text-xs font-medium text-slate-400 mb-2">{cat}</p>
+                <div className="space-y-1.5">
+                  {menuItems.filter(i => (i.category_name || 'Other') === cat).map(item => {
+                    const inCart = cart.find(ci => ci.item.id === item.id);
+                    const remaining = item.stock_type !== 'unlimited' ? (item.stock_limit || 0) - (item.stock_used || 0) : null;
+                    const outOfStock = remaining !== null && remaining <= 0;
+                    return (
+                      <div
+                        key={item.id}
+                        onClick={() => !outOfStock && addToCart(item)}
+                        className={`flex items-center gap-3 px-3 py-2 rounded-lg border transition-colors ${
+                          outOfStock ? 'border-slate-100 bg-slate-50 opacity-50' :
+                          inCart ? 'border-brand-200 bg-brand-50' :
+                          'border-slate-100 hover:border-slate-200 cursor-pointer'
+                        }`}
+                      >
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-slate-700">{item.name}</p>
+                          {remaining !== null && <p className="text-xs text-slate-400">{remaining} left</p>}
+                        </div>
+                        <span className="text-sm font-medium text-slate-600">{item.price.toLocaleString()} {item.currency}</span>
+                        {inCart
+                          ? <span className="text-xs bg-brand-500 text-white px-2 py-0.5 rounded-full">{inCart.qty}</span>
+                          : <span className="text-xs text-slate-300">+</span>
+                        }
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Right — cart + guest info */}
+          <div className="w-64 flex flex-col p-4">
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-3">Order</p>
+
+            {cart.length === 0
+              ? <p className="text-xs text-slate-400 text-center py-6">Tap items to add</p>
+              : (
+                <div className="space-y-2 mb-4 flex-1 overflow-y-auto">
+                  {cart.map(ci => (
+                    <div key={ci.item.id} className="flex items-center gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-slate-700 truncate">{ci.item.name}</p>
+                        <p className="text-xs text-slate-400">{(ci.item.price * ci.qty).toLocaleString()} {ci.item.currency}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => updateQty(ci.item.id, ci.qty - 1)} className="w-5 h-5 rounded bg-slate-100 text-slate-600 text-xs flex items-center justify-center">−</button>
+                        <span className="text-xs w-4 text-center">{ci.qty}</span>
+                        <button onClick={() => updateQty(ci.item.id, ci.qty + 1)} className="w-5 h-5 rounded bg-slate-100 text-slate-600 text-xs flex items-center justify-center">+</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            }
+
+            {cart.length > 0 && (
+              <div className="border-t border-slate-100 pt-3 mb-4">
+                <div className="flex justify-between">
+                  <span className="text-sm font-medium text-slate-700">Total</span>
+                  <span className="text-sm font-semibold text-slate-800">{total.toLocaleString()} {currency}</span>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2 mb-4">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Guest info (optional)</p>
+              <input type="text" placeholder="Pickup name" value={pickupName} onChange={e => setPickupName(e.target.value)} className="w-full text-sm rounded-lg border border-slate-200 px-2.5 py-1.5" />
+              <input type="text" placeholder="WhatsApp number" value={guestPhone} onChange={e => setGuestPhone(e.target.value)} className="w-full text-sm rounded-lg border border-slate-200 px-2.5 py-1.5" />
+              <textarea placeholder="Notes (optional)" value={notes} onChange={e => setNotes(e.target.value)} rows={2} className="w-full text-sm rounded-lg border border-slate-200 px-2.5 py-1.5 resize-none" />
+            </div>
+
+            <button
+              onClick={submit}
+              disabled={cart.length === 0 || submitting}
+              className="w-full py-2.5 bg-brand-500 hover:bg-brand-600 text-white text-sm font-medium rounded-lg disabled:opacity-40 transition-colors"
+            >
+              {submitting ? 'Creating…' : `Create order · ${total.toLocaleString()} ${currency}`}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -96,9 +303,11 @@ function OrderCard({ order, onStatusChange }: { order: ShopOrder; onStatusChange
 
 function OrdersTab() {
   const [orders, setOrders] = useState<ShopOrder[]>([]);
+  const [shopConfig, setShopConfig] = useState<ShopConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [showManualOrderModal, setShowManualOrderModal] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -110,8 +319,17 @@ function OrdersTab() {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    shopApi.getConfig().then(setShopConfig).catch(() => {});
+  }, []);
+
   async function handleStatusChange(id: string, status: string) {
     await shopApi.updateOrderStatus(id, status);
+    await load();
+  }
+
+  async function handlePaidChange(id: string, isPaid: boolean) {
+    await shopApi.updateOrderPaid(id, isPaid);
     await load();
   }
 
@@ -124,6 +342,14 @@ function OrdersTab() {
         <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
         <button onClick={load} className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors"><RefreshCw size={15} className={loading ? 'animate-spin text-slate-400' : 'text-slate-500'} /></button>
         <span className="text-xs text-slate-400">{orders.filter(o => o.status !== 'cancelled').length} orders</span>
+        {shopConfig?.manual_orders_enabled && (
+          <button
+            onClick={() => setShowManualOrderModal(true)}
+            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-brand-500 hover:bg-brand-600 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            <Plus size={14} /> New order
+          </button>
+        )}
       </div>
 
       {loadError && (
@@ -143,12 +369,19 @@ function OrdersTab() {
               <div className="flex flex-col gap-2 overflow-y-auto">
                 {byStatus(col).length === 0
                   ? <div className="text-xs text-slate-300 text-center py-4">Empty</div>
-                  : byStatus(col).map((o) => <OrderCard key={o.id} order={o} onStatusChange={handleStatusChange} />)
+                  : byStatus(col).map((o) => <OrderCard key={o.id} order={o} onStatusChange={handleStatusChange} onPaidChange={handlePaidChange} />)
                 }
               </div>
             </div>
           ))}
         </div>
+      )}
+
+      {showManualOrderModal && (
+        <ManualOrderModal
+          onClose={() => setShowManualOrderModal(false)}
+          onCreated={() => { setShowManualOrderModal(false); load(); }}
+        />
       )}
     </div>
   );
@@ -678,6 +911,22 @@ function ConfigTab() {
             </p>
           </div>
         )}
+      </div>
+
+      <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+        <h4 className="font-medium text-slate-800">Order Settings</h4>
+        <div className="flex items-center justify-between py-1">
+          <div>
+            <p className="text-sm font-medium text-slate-700">Manual order creation</p>
+            <p className="text-xs text-slate-400 mt-0.5">Allow staff to create orders directly from the dashboard without a WhatsApp conversation</p>
+          </div>
+          <button
+            onClick={() => set('manual_orders_enabled', !cfg.manual_orders_enabled)}
+            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${cfg.manual_orders_enabled ? 'bg-brand-500' : 'bg-slate-200'}`}
+          >
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${cfg.manual_orders_enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+          </button>
+        </div>
       </div>
 
       <button onClick={save} disabled={busy} className="px-5 py-2 bg-brand-600 text-white rounded-lg text-sm hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2">
