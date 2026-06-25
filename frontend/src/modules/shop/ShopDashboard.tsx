@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ShoppingBag, Package, MessageSquare, HelpCircle, Settings, Plus, Trash2, Pencil, X, Check, RefreshCw, LogOut, BarChart2, Users, QrCode } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
+import jsPDF from 'jspdf';
 import { shopApi, setViewTenantId } from './api';
 import type { ShopOrder, ShopItem, ShopCategory, ShopFaq, ShopConversation, ShopConfig } from './types';
 import { ShopReports } from './ShopReports';
@@ -39,16 +40,171 @@ function timeAgo(s: string) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+// ── Receipt PDF ────────────────────────────────────────────────────────────────
+
+function openReceipt(receiptData: any) {
+  const doc = new jsPDF({ format: 'a6', unit: 'mm' });
+  const W = 105;
+  let y = 10;
+
+  doc.setFontSize(14); doc.setFont('helvetica', 'bold');
+  doc.text(receiptData.shop_name || 'Receipt', W / 2, y, { align: 'center' }); y += 6;
+
+  if (receiptData.fiscal_nuis) {
+    doc.setFontSize(8); doc.setFont('helvetica', 'normal');
+    doc.text(`NIPT: ${receiptData.fiscal_nuis}`, W / 2, y, { align: 'center' }); y += 6;
+  }
+
+  doc.line(5, y, W - 5, y); y += 5;
+  doc.setFontSize(9);
+  doc.text(`Order #${receiptData.order_number}`, 5, y);
+  doc.text(new Date(receiptData.order_date).toLocaleString('en-GB'), W - 5, y, { align: 'right' }); y += 5;
+  if (receiptData.pickup_name) { doc.text(`Customer: ${receiptData.pickup_name}`, 5, y); y += 4; }
+  if (receiptData.table_name)  { doc.text(`Table: ${receiptData.table_name}`, 5, y); y += 4; }
+
+  doc.line(5, y, W - 5, y); y += 5;
+  doc.setFont('helvetica', 'bold');
+  doc.text('Item', 5, y); doc.text('Qty', 65, y, { align: 'right' }); doc.text('Total', W - 5, y, { align: 'right' }); y += 4;
+  doc.setFont('helvetica', 'normal');
+
+  for (const item of receiptData.items || []) {
+    doc.text(String(item.name), 5, y);
+    doc.text(`x${item.qty}`, 65, y, { align: 'right' });
+    doc.text(`${parseFloat(item.sub).toLocaleString()} ALL`, W - 5, y, { align: 'right' }); y += 4;
+  }
+
+  doc.line(5, y, W - 5, y); y += 5;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+  doc.text('TOTAL', 5, y);
+  doc.text(`${parseFloat(receiptData.total).toLocaleString()} ALL`, W - 5, y, { align: 'right' }); y += 5;
+
+  doc.setFontSize(8); doc.setFont('helvetica', 'normal');
+  doc.text(`Payment: ${receiptData.payment_type === 'BANKNOTE' ? 'Cash' : 'Card'}`, 5, y); y += 6;
+
+  if (receiptData.fiscal_inv_num) {
+    doc.line(5, y, W - 5, y); y += 4;
+    doc.setFontSize(7);
+    doc.text(`Invoice: ${receiptData.fiscal_inv_num}`, 5, y); y += 4;
+    doc.text(`IIC: ${receiptData.fiscal_iic}`, 5, y); y += 6;
+    if (receiptData.fiscal_verify_url) {
+      const urlLines = doc.splitTextToSize(receiptData.fiscal_verify_url, W - 10);
+      doc.text(urlLines, 5, y); y += urlLines.length * 3.5;
+    }
+  }
+
+  y += 4; doc.setFontSize(8);
+  doc.text('Thank you!', W / 2, y, { align: 'center' });
+  window.open(doc.output('bloburl'), '_blank');
+}
+
+// ── Pay Button ─────────────────────────────────────────────────────────────────
+
+function PayButton({ order, onRefresh }: { order: ShopOrder; onRefresh: () => void }) {
+  const [paying, setPaying]           = useState(false);
+  const [paymentType, setPaymentType] = useState<'BANKNOTE' | 'CARD'>('BANKNOTE');
+  const [showModal, setShowModal]     = useState(false);
+  const [result, setResult]           = useState<any>(null);
+
+  if (order.is_paid || order.status === 'cancelled' || order.status === 'picked_up') return null;
+
+  async function handlePay() {
+    setPaying(true);
+    try {
+      const res = await shopApi.payOrder(order.id, paymentType);
+      setResult(res);
+      onRefresh();
+    } finally { setPaying(false); }
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => setShowModal(true)}
+        className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"
+      >
+        💳 Pay
+      </button>
+
+      {showModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-5 max-w-xs w-full shadow-2xl">
+            {!result ? (
+              <>
+                <h3 className="text-base font-semibold text-slate-800 mb-1">Order #{order.order_number}</h3>
+                <p className="text-2xl font-black text-slate-800 mb-4">
+                  {parseFloat(String(order.total_price)).toLocaleString()} ALL
+                </p>
+                <p className="text-xs font-medium text-slate-500 mb-2">Payment method</p>
+                <div className="flex gap-2 mb-4">
+                  {([['BANKNOTE', '💵 Cash'], ['CARD', '💳 Card']] as const).map(([pt, label]) => (
+                    <button
+                      key={pt}
+                      onClick={() => setPaymentType(pt)}
+                      className={`flex-1 py-2.5 text-sm font-medium rounded-xl border transition-colors ${
+                        paymentType === pt ? 'border-green-500 bg-green-50 text-green-700' : 'border-slate-200 text-slate-500'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setShowModal(false)} className="flex-1 py-2.5 text-sm text-slate-500 border border-slate-200 rounded-xl">Cancel</button>
+                  <button onClick={handlePay} disabled={paying} className="flex-1 py-2.5 text-sm font-semibold bg-green-500 text-white rounded-xl disabled:opacity-50">
+                    {paying ? 'Processing…' : 'Confirm'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="text-center">
+                <div className="text-4xl mb-3">{result.success ? '✅' : '⚠️'}</div>
+                <h3 className="font-semibold text-slate-800 mb-1">
+                  {result.success ? 'Payment recorded' : 'Paid — fiscal failed'}
+                </h3>
+                {result.success && result.invoice && (
+                  <div className="bg-slate-50 rounded-xl p-3 mt-3 text-left text-xs space-y-1">
+                    <p className="text-slate-600">Invoice: <span className="font-mono font-medium">{result.invoice.InvNum}</span></p>
+                    <p className="text-slate-400 break-all">IIC: {result.invoice.IIC}</p>
+                  </div>
+                )}
+                {!result.success && (
+                  <div className="bg-red-50 rounded-xl p-3 mt-3 text-left">
+                    <p className="text-xs text-red-600">{result.fiscal_error}</p>
+                    <p className="text-xs text-slate-400 mt-1">Order marked as paid. Use "Retry fiscal" to try again.</p>
+                  </div>
+                )}
+                <div className="flex gap-2 mt-4">
+                  <button onClick={() => { setShowModal(false); setResult(null); }} className="flex-1 py-2 text-sm text-slate-500 border border-slate-200 rounded-xl">Close</button>
+                  {result.success && (
+                    <button
+                      onClick={() => shopApi.getReceipt(order.id).then(openReceipt)}
+                      className="flex-1 py-2 text-sm font-medium text-teal-600 border border-teal-200 rounded-xl"
+                    >
+                      🖨️ Receipt
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 // ── Order Card ─────────────────────────────────────────────────────────────────
 
 function OrderCard({
   order,
   onStatusChange,
   onPaidChange,
+  onRefresh,
 }: {
   order: ShopOrder;
   onStatusChange: (id: string, s: string) => void;
   onPaidChange: (id: string, isPaid: boolean) => void;
+  onRefresh: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [paidBusy, setPaidBusy] = useState(false);
@@ -56,6 +212,20 @@ function OrderCard({
   async function changeStatus(status: string) {
     if (status === 'picked_up' && order.source === 'manual' && !order.is_paid) {
       alert('Please mark this order as paid before moving to Picked Up.');
+      return;
+    }
+    if (status === 'cancelled' && order.fiscal_status === 'fiscalized' && order.fiscal_fic) {
+      const proceed = confirm(`Cancel order #${order.order_number}?\n\nThis order was fiscalized. An invoice correction will be submitted automatically.`);
+      if (!proceed) return;
+      setBusy(true);
+      try {
+        const corrResult = await shopApi.correctInvoice(order.id);
+        if (!corrResult.success) {
+          const forceProceed = confirm(`Invoice correction failed: ${corrResult.error}\n\nCancel order anyway?`);
+          if (!forceProceed) { setBusy(false); return; }
+        }
+        await onStatusChange(order.id, status);
+      } finally { setBusy(false); }
       return;
     }
     setBusy(true);
@@ -128,7 +298,47 @@ function OrderCard({
 
       {order.notes && <div className="text-xs text-slate-400 italic">Note: {order.notes}</div>}
 
-      {order.source === 'manual' && (order.status === 'in_progress' || order.status === 'done') && (
+      {/* Pay & Fiscalize */}
+      {!order.is_paid && order.status !== 'cancelled' && order.status !== 'picked_up' && (
+        <div className="pt-2 border-t border-slate-100">
+          <PayButton order={order} onRefresh={onRefresh} />
+        </div>
+      )}
+
+      {/* Fiscal status badge */}
+      {order.is_paid && (
+        <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-100">
+          {(!order.fiscal_status || order.fiscal_status === 'not_fiscalized') && (
+            <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">Paid · not fiscalized</span>
+          )}
+          {order.fiscal_status === 'fiscalized' && (
+            <span className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full font-medium">
+              ✓ Fiscalized · {order.fiscal_inv_num}
+            </span>
+          )}
+          {order.fiscal_status === 'failed' && (
+            <>
+              <span className="text-xs bg-red-50 text-red-600 px-2 py-0.5 rounded-full">⚠️ Fiscal failed</span>
+              <button
+                onClick={() => shopApi.retryFiscal(order.id).then(onRefresh)}
+                className="text-xs text-teal-600 hover:text-teal-700 font-medium"
+              >
+                Retry
+              </button>
+            </>
+          )}
+          {order.fiscal_status === 'corrected' && (
+            <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">Corrected</span>
+          )}
+          {order.is_paid && order.paid_at && (
+            <span className="text-xs text-slate-400 ml-auto">
+              {new Date(order.paid_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
+        </div>
+      )}
+
+      {order.source === 'manual' && (order.status === 'in_progress' || order.status === 'done') && !order.is_paid && (
         <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
           <button
             onClick={togglePaid}
@@ -139,11 +349,6 @@ function OrderCard({
           >
             {order.is_paid ? '✓ Paid' : '○ Mark as paid'}
           </button>
-          {order.is_paid && order.paid_at && (
-            <span className="text-xs text-slate-400">
-              {new Date(order.paid_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-            </span>
-          )}
         </div>
       )}
     </div>
@@ -378,7 +583,7 @@ function OrdersTab() {
               <div className="flex flex-col gap-2 overflow-y-auto">
                 {byStatus(col).length === 0
                   ? <div className="text-xs text-slate-300 text-center py-4">Empty</div>
-                  : byStatus(col).map((o) => <OrderCard key={o.id} order={o} onStatusChange={handleStatusChange} onPaidChange={handlePaidChange} />)
+                  : byStatus(col).map((o) => <OrderCard key={o.id} order={o} onStatusChange={handleStatusChange} onPaidChange={handlePaidChange} onRefresh={load} />)
                 }
               </div>
             </div>
@@ -417,6 +622,9 @@ function ItemModal({
   const [stockType, setStockType] = useState<'unlimited' | 'daily' | 'fixed'>(item?.stock_type || 'unlimited');
   const [stockLimit, setStockLimit] = useState(String(item?.stock_limit ?? ''));
   const [stockUsed, setStockUsed] = useState(String(item?.stock_used ?? 0));
+  const [vatRate, setVatRate] = useState(item?.vat_rate || 'VAT_20');
+  const [itemCode, setItemCode] = useState(item?.item_code || '');
+  const [unit, setUnit] = useState(item?.unit || 'XPP');
   const [isActive, setIsActive] = useState(item ? item.is_active === 1 : true);
   const [photo, setPhoto] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -436,6 +644,9 @@ function ItemModal({
       if (stockType !== 'unlimited' && stockLimit) form.append('stock_limit', stockLimit);
       if (item) form.append('stock_used', stockUsed);
       form.append('is_active', isActive ? '1' : '0');
+      form.append('vat_rate', vatRate);
+      form.append('unit', unit);
+      if (itemCode) form.append('item_code', itemCode);
       if (photo) form.append('photo', photo);
 
       if (item) { await shopApi.updateItem(item.id, form); } else { await shopApi.createItem(form); }
@@ -499,6 +710,36 @@ function ItemModal({
               )}
             </div>
           )}
+          {/* Fiscal fields */}
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <label className="text-xs text-slate-500 font-medium">VAT Rate</label>
+              <select value={vatRate} onChange={e => setVatRate(e.target.value)}
+                className="mt-1 w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs bg-white">
+                <option value="VAT_20">20%</option>
+                <option value="VAT_10">10%</option>
+                <option value="VAT_6">6%</option>
+                <option value="VAT_0">0%</option>
+                <option value="EXEMPT">Exempt</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 font-medium">Item code</label>
+              <input value={itemCode} onChange={e => setItemCode(e.target.value)}
+                placeholder="e.g. 879899"
+                className="mt-1 w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs" />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 font-medium">Unit</label>
+              <select value={unit} onChange={e => setUnit(e.target.value)}
+                className="mt-1 w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs bg-white">
+                <option value="XPP">Piece (XPP)</option>
+                <option value="KGM">Kg (KGM)</option>
+                <option value="LTR">Litre (LTR)</option>
+                <option value="MTR">Metre (MTR)</option>
+              </select>
+            </div>
+          </div>
           <div>
             <label className="text-xs text-slate-500 font-medium">Photo</label>
             {item?.photo_url && !photo && (
@@ -906,6 +1147,14 @@ function ConfigTab() {
     catch (e: any) { alert(e.message); }
   }
 
+  async function handleRegisterCashDeposit() {
+    try {
+      const result = await shopApi.registerCashDeposit(cfg.fiscal_initial_cash);
+      if (result.Status === true) alert('Cash deposit registered successfully.');
+      else alert(`Failed: ${result.Error?.ErrorText || JSON.stringify(result)}`);
+    } catch (e: any) { alert(e.message); }
+  }
+
   function downloadQr(id: string, name: string) {
     const canvas = document.getElementById(`qr-${id}`) as HTMLCanvasElement;
     if (!canvas) return;
@@ -1137,6 +1386,90 @@ function ConfigTab() {
       </button>
 
       {/* Table QR modal */}
+      {/* Fiscalization */}
+      <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+        <div>
+          <h4 className="font-medium text-slate-800">Fiscalization</h4>
+          <p className="text-xs text-slate-400 mt-0.5">Albanian e-Fiskalizimi integration</p>
+        </div>
+        <Toggle label="Enable fiscalization" value={cfg.fiscal_enabled} onChange={v => set('fiscal_enabled', v)} />
+        {cfg.fiscal_enabled ? (
+          <>
+            <div className="flex gap-3">
+              {(['test', 'production'] as const).map(env => (
+                <button
+                  key={env}
+                  onClick={() => set('fiscal_environment', env)}
+                  className={`flex-1 py-2 text-xs font-medium rounded-lg border transition-colors ${
+                    (cfg.fiscal_environment || 'test') === env
+                      ? 'border-teal-500 bg-teal-50 text-teal-700'
+                      : 'border-slate-200 text-slate-500'
+                  }`}
+                >
+                  {env === 'test' ? '🧪 Test' : '🏦 Production'}
+                </button>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-slate-600">Username</label>
+                <input value={cfg.fiscal_username || ''} onChange={e => set('fiscal_username', e.target.value)}
+                  className="w-full mt-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600">Password</label>
+                <input type="password" value={cfg.fiscal_password || ''} onChange={e => set('fiscal_password', e.target.value)}
+                  className="w-full mt-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600">NUIS</label>
+                <input value={cfg.fiscal_nuis || ''} onChange={e => set('fiscal_nuis', e.target.value)}
+                  placeholder="e.g. L82210031Q"
+                  className="w-full mt-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600">TCR Code</label>
+                <input value={cfg.fiscal_tcr_code || ''} onChange={e => set('fiscal_tcr_code', e.target.value)}
+                  placeholder="e.g. xv496nk445"
+                  className="w-full mt-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600">Business Unit Code</label>
+                <input value={cfg.fiscal_busun_code || ''} onChange={e => set('fiscal_busun_code', e.target.value)}
+                  className="w-full mt-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600">Software Code</label>
+                <input value={cfg.fiscal_soft_code || ''} onChange={e => set('fiscal_soft_code', e.target.value)}
+                  className="w-full mt-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-slate-600">Default client name</label>
+                <input value={cfg.fiscal_default_client || 'Klient i Pergjithshem'}
+                  onChange={e => set('fiscal_default_client', e.target.value)}
+                  className="w-full mt-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600">Initial cash deposit (ALL)</label>
+                <input type="number" value={cfg.fiscal_initial_cash ?? 0}
+                  onChange={e => set('fiscal_initial_cash', +e.target.value)}
+                  className="w-full mt-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm" />
+              </div>
+            </div>
+            <button
+              onClick={handleRegisterCashDeposit}
+              className="text-xs font-medium px-3 py-2 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50"
+            >
+              Register today's cash deposit ({cfg.fiscal_initial_cash || 0} ALL)
+            </button>
+          </>
+        ) : (
+          <p className="text-xs text-slate-400">Enable fiscalization to configure the Albanian e-Fiskalizimi integration.</p>
+        )}
+      </div>
+
       {showTableQr && cfg.qr_slug && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl text-center">

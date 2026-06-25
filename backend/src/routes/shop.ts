@@ -12,6 +12,7 @@ import { resolveTenantId } from '../middleware/auth.js';
 import { getJwtSecret } from '../lib/jwt.js';
 import { authenticateShopUser, auditLog } from '../middleware/shopAuth.js';
 import { sendWhatsAppMessage } from '../whatsapp/twilio.js';
+import { fiscalizeOrder, correctInvoice, registerCashDeposit, registerTCR } from '../services/fiscalization.js';
 
 export const shopRouter = Router();
 
@@ -93,22 +94,56 @@ shopRouter.put('/config', authenticateShopOrTenant, async (req: any, res: Respon
       address, instagram_url, facebook_url, tiktok_url, website_url, phone,
       manual_orders_enabled,
       qr_ordering_enabled, qr_collect_name, qr_collect_table, qr_slug, qr_welcome_message,
+      fiscal_enabled, fiscal_api_url, fiscal_username, fiscal_password, fiscal_nuis,
+      fiscal_tcr_code, fiscal_busun_code, fiscal_soft_code, fiscal_initial_cash,
+      fiscal_default_client, fiscal_environment,
     } = req.body;
-    const manualEnabled = manual_orders_enabled ? 1 : 0;
-    const qrEnabled     = qr_ordering_enabled  ? 1 : 0;
-    const qrName        = qr_collect_name !== undefined ? (qr_collect_name ? 1 : 0) : 1;
-    const qrTable       = qr_collect_table ? 1 : 0;
-    const slug          = qr_slug ? String(qr_slug).toLowerCase().trim() || null : null;
+    const manualEnabled  = manual_orders_enabled ? 1 : 0;
+    const qrEnabled      = qr_ordering_enabled  ? 1 : 0;
+    const qrName         = qr_collect_name !== undefined ? (qr_collect_name ? 1 : 0) : 1;
+    const qrTable        = qr_collect_table ? 1 : 0;
+    const slug           = qr_slug ? String(qr_slug).toLowerCase().trim() || null : null;
+    const fiscalEnabledV = fiscal_enabled ? 1 : 0;
     const exists = await dbGet(`SELECT id FROM shop_config WHERE tenant_id = ?`, tenantId);
     if (exists) {
       await dbRun(
-        `UPDATE shop_config SET shop_name=?,opening_hours=?,estimated_pickup_minutes=?,pickup_mode=?,agent_personality=?,fallback_message=?,fallback_backup_number=?,fallback_after_attempts=?,manual_orders_enabled=?,address=?,instagram_url=?,facebook_url=?,tiktok_url=?,website_url=?,phone=?,qr_ordering_enabled=?,qr_collect_name=?,qr_collect_table=?,qr_slug=?,qr_welcome_message=?,updated_at=CURRENT_TIMESTAMP WHERE tenant_id=?`,
-        shop_name, opening_hours, estimated_pickup_minutes, pickup_mode, agent_personality, fallback_message, fallback_backup_number, fallback_after_attempts, manualEnabled, address, instagram_url, facebook_url, tiktok_url, website_url, phone, qrEnabled, qrName, qrTable, slug, qr_welcome_message ?? null, tenantId,
+        `UPDATE shop_config SET
+           shop_name=?,opening_hours=?,estimated_pickup_minutes=?,pickup_mode=?,agent_personality=?,
+           fallback_message=?,fallback_backup_number=?,fallback_after_attempts=?,manual_orders_enabled=?,
+           address=?,instagram_url=?,facebook_url=?,tiktok_url=?,website_url=?,phone=?,
+           qr_ordering_enabled=?,qr_collect_name=?,qr_collect_table=?,qr_slug=?,qr_welcome_message=?,
+           fiscal_enabled=?,fiscal_api_url=?,fiscal_username=?,fiscal_password=?,fiscal_nuis=?,
+           fiscal_tcr_code=?,fiscal_busun_code=?,fiscal_soft_code=?,fiscal_initial_cash=?,
+           fiscal_default_client=?,fiscal_environment=?,
+           updated_at=CURRENT_TIMESTAMP
+         WHERE tenant_id=?`,
+        shop_name, opening_hours, estimated_pickup_minutes, pickup_mode, agent_personality,
+        fallback_message, fallback_backup_number, fallback_after_attempts, manualEnabled,
+        address, instagram_url, facebook_url, tiktok_url, website_url, phone,
+        qrEnabled, qrName, qrTable, slug, qr_welcome_message ?? null,
+        fiscalEnabledV, fiscal_api_url ?? null, fiscal_username ?? null, fiscal_password ?? null, fiscal_nuis ?? null,
+        fiscal_tcr_code ?? null, fiscal_busun_code ?? null, fiscal_soft_code ?? null, fiscal_initial_cash ?? null,
+        fiscal_default_client ?? null, fiscal_environment ?? null,
+        tenantId,
       );
     } else {
       await dbRun(
-        `INSERT INTO shop_config (id,tenant_id,shop_name,opening_hours,estimated_pickup_minutes,pickup_mode,agent_personality,fallback_message,fallback_backup_number,fallback_after_attempts,manual_orders_enabled,address,instagram_url,facebook_url,tiktok_url,website_url,phone,qr_ordering_enabled,qr_collect_name,qr_collect_table,qr_slug,qr_welcome_message) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        crypto.randomUUID(), tenantId, shop_name, opening_hours, estimated_pickup_minutes, pickup_mode, agent_personality, fallback_message, fallback_backup_number, fallback_after_attempts, manualEnabled, address, instagram_url, facebook_url, tiktok_url, website_url, phone, qrEnabled, qrName, qrTable, slug, qr_welcome_message ?? null,
+        `INSERT INTO shop_config
+           (id,tenant_id,shop_name,opening_hours,estimated_pickup_minutes,pickup_mode,agent_personality,
+            fallback_message,fallback_backup_number,fallback_after_attempts,manual_orders_enabled,
+            address,instagram_url,facebook_url,tiktok_url,website_url,phone,
+            qr_ordering_enabled,qr_collect_name,qr_collect_table,qr_slug,qr_welcome_message,
+            fiscal_enabled,fiscal_api_url,fiscal_username,fiscal_password,fiscal_nuis,
+            fiscal_tcr_code,fiscal_busun_code,fiscal_soft_code,fiscal_initial_cash,
+            fiscal_default_client,fiscal_environment)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        crypto.randomUUID(), tenantId, shop_name, opening_hours, estimated_pickup_minutes, pickup_mode, agent_personality,
+        fallback_message, fallback_backup_number, fallback_after_attempts, manualEnabled,
+        address, instagram_url, facebook_url, tiktok_url, website_url, phone,
+        qrEnabled, qrName, qrTable, slug, qr_welcome_message ?? null,
+        fiscalEnabledV, fiscal_api_url ?? null, fiscal_username ?? null, fiscal_password ?? null, fiscal_nuis ?? null,
+        fiscal_tcr_code ?? null, fiscal_busun_code ?? null, fiscal_soft_code ?? null, fiscal_initial_cash ?? null,
+        fiscal_default_client ?? null, fiscal_environment ?? null,
       );
     }
     res.json({ success: true });
@@ -175,13 +210,13 @@ shopRouter.get('/items', authenticateShopOrTenant, async (req: any, res: Respons
 shopRouter.post('/items', authenticateShopOrTenant, upload.single('photo'), async (req: any, res: Response) => {
   try {
     const tenantId = resolveTenantId(req);
-    const { name, description, price, currency, category_id, stock_type, stock_limit, sort_order } = req.body;
+    const { name, description, price, currency, category_id, stock_type, stock_limit, sort_order, vat_rate, item_code, unit } = req.body;
     const id = crypto.randomUUID();
     const photo_filename = req.file?.filename || null;
     const photo_url = photo_filename ? `${baseUrl()}/uploads/shop/${photo_filename}` : null;
     await dbRun(
-      `INSERT INTO shop_menu_items (id,tenant_id,category_id,name,description,price,currency,photo_url,photo_filename,stock_type,stock_limit,sort_order) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-      id, tenantId, category_id || null, name, description, parseFloat(price), currency || 'ALL', photo_url, photo_filename, stock_type || 'unlimited', stock_limit ? parseInt(stock_limit) : null, sort_order ?? 0,
+      `INSERT INTO shop_menu_items (id,tenant_id,category_id,name,description,price,currency,photo_url,photo_filename,stock_type,stock_limit,sort_order,vat_rate,item_code,unit) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      id, tenantId, category_id || null, name, description, parseFloat(price), currency || 'ALL', photo_url, photo_filename, stock_type || 'unlimited', stock_limit ? parseInt(stock_limit) : null, sort_order ?? 0, vat_rate || 'VAT_20', item_code || null, unit || 'XPP',
     );
     res.json({ success: true, data: { id, photo_url } });
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
@@ -201,14 +236,15 @@ shopRouter.put('/items/:id', authenticateShopOrTenant, upload.single('photo'), a
       photo_url = `${baseUrl()}/uploads/shop/${photo_filename}`;
     }
 
-    const { name, description, price, currency, category_id, stock_type, stock_limit, stock_used, is_active, sort_order } = req.body;
+    const { name, description, price, currency, category_id, stock_type, stock_limit, stock_used, is_active, sort_order, vat_rate, item_code, unit } = req.body;
     await dbRun(
-      `UPDATE shop_menu_items SET name=?,description=?,price=?,currency=?,category_id=?,stock_type=?,stock_limit=?,stock_used=?,is_active=?,sort_order=?,photo_url=COALESCE(?,photo_url),photo_filename=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND tenant_id=?`,
+      `UPDATE shop_menu_items SET name=?,description=?,price=?,currency=?,category_id=?,stock_type=?,stock_limit=?,stock_used=?,is_active=?,sort_order=?,vat_rate=?,item_code=?,unit=?,photo_url=COALESCE(?,photo_url),photo_filename=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND tenant_id=?`,
       name, description, parseFloat(price), currency || 'ALL', category_id || null,
       stock_type || 'unlimited', stock_limit !== undefined ? parseInt(stock_limit) : null,
       stock_used !== undefined ? parseInt(stock_used) : undefined,
       is_active !== undefined ? (is_active ? 1 : 0) : 1,
       sort_order ?? 0,
+      vat_rate || 'VAT_20', item_code || null, unit || 'XPP',
       photo_url, photo_filename,
       req.params.id, tenantId,
     );
@@ -787,7 +823,7 @@ shopRouter.get('/users', authenticateShopOrTenant, requireShopAdmin, async (req:
   try {
     const tenantId = resolveTenantId(req);
     const rows = await dbAll(
-      `SELECT id, username, name, surname, tax_id, operator_id, role, is_active, created_at FROM shop_users WHERE tenant_id = ? ORDER BY created_at DESC`,
+      `SELECT id, username, name, surname, tax_id, operator_id, fiscal_operator_code, role, is_active, created_at FROM shop_users WHERE tenant_id = ? ORDER BY created_at DESC`,
       tenantId,
     );
     res.json({ success: true, data: rows });
@@ -799,7 +835,7 @@ shopRouter.post('/users', authenticateShopOrTenant, requireShopAdmin, async (req
     const tenantId = resolveTenantId(req);
     const actorName = req.shopUser ? `${req.shopUser.name} ${req.shopUser.surname}` : 'Admin';
     const actorId   = req.shopUser?.userId || null;
-    const { username, password, name, surname, tax_id, operator_id, role } = req.body;
+    const { username, password, name, surname, tax_id, operator_id, fiscal_operator_code, role } = req.body;
 
     if (!username || !password || !name || !surname || !role) {
       return res.status(400).json({ success: false, error: 'username, password, name, surname and role are required' });
@@ -815,9 +851,9 @@ shopRouter.post('/users', authenticateShopOrTenant, requireShopAdmin, async (req
     const id = crypto.randomUUID();
     try {
       await dbRun(
-        `INSERT INTO shop_users (id, tenant_id, username, password_hash, name, surname, tax_id, operator_id, role) VALUES (?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO shop_users (id, tenant_id, username, password_hash, name, surname, tax_id, operator_id, fiscal_operator_code, role) VALUES (?,?,?,?,?,?,?,?,?,?)`,
         id, tenantId, String(username).toLowerCase().trim(), password_hash,
-        name, surname, tax_id || null, operator_id || null, role,
+        name, surname, tax_id || null, operator_id || null, fiscal_operator_code || null, role,
       );
     } catch (err: any) {
       if (err.message?.includes('UNIQUE') || err.code === '23505') {
@@ -835,7 +871,7 @@ shopRouter.patch('/users/:id', authenticateShopOrTenant, requireShopAdmin, async
     const tenantId = resolveTenantId(req);
     const actorName = req.shopUser ? `${req.shopUser.name} ${req.shopUser.surname}` : 'Admin';
     const actorId   = req.shopUser?.userId || null;
-    const { name, surname, tax_id, operator_id, role, is_active, password } = req.body;
+    const { name, surname, tax_id, operator_id, fiscal_operator_code, role, is_active, password } = req.body;
 
     const current = await dbGet(`SELECT role, is_active FROM shop_users WHERE id = ? AND tenant_id = ?`, req.params.id, tenantId);
     if (!current) return res.status(404).json({ success: false, error: 'User not found' });
@@ -845,15 +881,16 @@ shopRouter.patch('/users/:id', authenticateShopOrTenant, requireShopAdmin, async
     const isActivePg    = is_active !== undefined ? (is_active ? 1 : 0) : null;
 
     const sets: string[] = [
-      'name        = COALESCE(?, name)',
-      'surname     = COALESCE(?, surname)',
-      'tax_id      = COALESCE(?, tax_id)',
-      'operator_id = COALESCE(?, operator_id)',
-      'role        = COALESCE(?, role)',
-      'is_active   = COALESCE(?, is_active)',
-      'updated_at  = CURRENT_TIMESTAMP',
+      'name                 = COALESCE(?, name)',
+      'surname              = COALESCE(?, surname)',
+      'tax_id               = COALESCE(?, tax_id)',
+      'operator_id          = COALESCE(?, operator_id)',
+      'fiscal_operator_code = COALESCE(?, fiscal_operator_code)',
+      'role                 = COALESCE(?, role)',
+      'is_active            = COALESCE(?, is_active)',
+      'updated_at           = CURRENT_TIMESTAMP',
     ];
-    const params: any[] = [name ?? null, surname ?? null, tax_id ?? null, operator_id ?? null, role ?? null, isActivePg];
+    const params: any[] = [name ?? null, surname ?? null, tax_id ?? null, operator_id ?? null, fiscal_operator_code ?? null, role ?? null, isActivePg];
 
     let bumpSession = roleChanged || activeChanged;
 
@@ -1138,5 +1175,131 @@ shopRouter.post('/public/:slug/order', async (req: any, res: Response) => {
 
     console.log(`[Shop QR] Order #${orderNumber} from ${customer_name || 'Walk-in'}${table_name ? ` @ ${table_name}` : ''}`);
     res.json({ success: true, data: { order_id: orderId, order_number: orderNumber, total, customer_name: customer_name || 'Walk-in', table_name: table_name || null } });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ── Fiscalization ──────────────────────────────────────────────────────────────
+
+// POST /shop/orders/:id/pay — Pay & Fiscalize
+shopRouter.post('/orders/:id/pay', authenticateShopOrTenant, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const { payment_type = 'BANKNOTE' } = req.body;
+
+    const operatorCode = req.shopUser?.fiscal_operator_code
+      || (req.shopUser?.userId
+        ? (await dbGet('SELECT fiscal_operator_code FROM shop_users WHERE id=?', req.shopUser.userId))?.fiscal_operator_code
+        : null)
+      || 'default';
+
+    const cfg = await dbGet('SELECT fiscal_enabled FROM shop_config WHERE tenant_id=?', tenantId);
+    if (!cfg?.fiscal_enabled) {
+      await dbRun(
+        `UPDATE shop_orders SET is_paid=1, paid_at=CURRENT_TIMESTAMP, payment_type=?, status='done', done_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=? AND tenant_id=?`,
+        payment_type, req.params.id, tenantId,
+      );
+      return res.json({ success: true, fiscalized: false });
+    }
+
+    const result = await fiscalizeOrder(req.params.id, tenantId, operatorCode, payment_type);
+
+    await auditLog(
+      tenantId,
+      req.shopUser?.userId || null,
+      req.shopUser ? `${req.shopUser.name} ${req.shopUser.surname}` : 'Admin',
+      result.success ? 'order.fiscalized' : 'order.fiscal_failed',
+      'order', req.params.id,
+      { payment_type, fiscal_inv_num: result.data?.Invoice?.InvNum },
+    );
+
+    res.json({
+      success:      result.success,
+      fiscalized:   result.success,
+      fiscal_error: result.error || null,
+      invoice:      result.data?.Invoice || null,
+      verify_url:   result.data?.VerifyInvoice || null,
+    });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// POST /shop/orders/:id/retry-fiscal
+shopRouter.post('/orders/:id/retry-fiscal', authenticateShopOrTenant, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const operatorCode = req.shopUser?.fiscal_operator_code || 'default';
+    const order = await dbGet('SELECT payment_type FROM shop_orders WHERE id=? AND tenant_id=?', req.params.id, tenantId);
+    const result = await fiscalizeOrder(req.params.id, tenantId, operatorCode, order?.payment_type || 'BANKNOTE');
+    res.json({ success: result.success, fiscal_error: result.error || null, invoice: result.data?.Invoice || null });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// POST /shop/orders/:id/correct
+shopRouter.post('/orders/:id/correct', authenticateShopOrTenant, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const operatorCode = req.shopUser?.fiscal_operator_code || 'default';
+    const result = await correctInvoice(req.params.id, tenantId, operatorCode);
+    res.json(result);
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// POST /shop/fiscal/cash-deposit
+shopRouter.post('/fiscal/cash-deposit', authenticateShopOrTenant, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const { amount, operation = 'INITIAL' } = req.body;
+    const cfg = await dbGet('SELECT fiscal_initial_cash FROM shop_config WHERE tenant_id=?', tenantId);
+    const cashAmount = amount ?? cfg?.fiscal_initial_cash ?? 0;
+    const result = await registerCashDeposit(tenantId, cashAmount, operation);
+    res.json(result);
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// POST /shop/fiscal/register-tcr (main-tenant admin only)
+shopRouter.post('/fiscal/register-tcr', async (req: any, res: Response) => {
+  try {
+    const auth = req.headers.authorization;
+    if (!auth?.startsWith('Bearer ')) return res.status(401).json({ success: false, error: 'Unauthorised' });
+    const jwt = await import('jsonwebtoken');
+    const { getJwtSecret } = await import('../lib/jwt.js');
+    const decoded: any = jwt.default.verify(auth.slice(7), getJwtSecret());
+    const result = await registerTCR(decoded.tenantId);
+    res.json(result);
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// GET /shop/orders/:id/receipt
+shopRouter.get('/orders/:id/receipt', authenticateShopOrTenant, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const order = await dbGet(
+      `SELECT so.*, sc.shop_name, sc.shop_logo_url, sc.fiscal_nuis
+       FROM shop_orders so
+       JOIN shop_config sc ON sc.tenant_id = so.tenant_id
+       WHERE so.id = ? AND so.tenant_id = ?`,
+      req.params.id, tenantId,
+    );
+    if (!order) return res.status(404).json({ success: false, error: 'Order not found' });
+    const items = await dbAll(`SELECT * FROM shop_order_items WHERE order_id = ? ORDER BY id`, req.params.id);
+    res.json({
+      success: true,
+      data: {
+        order_number:      order.order_number,
+        order_date:        order.created_at,
+        shop_name:         order.shop_name,
+        shop_logo_url:     order.shop_logo_url,
+        fiscal_nuis:       order.fiscal_nuis,
+        pickup_name:       order.pickup_name,
+        table_name:        order.table_name,
+        items:             items.map((i: any) => ({ name: i.item_name, qty: i.quantity, price: i.item_price, sub: i.subtotal })),
+        total:             order.total_price,
+        payment_type:      order.payment_type,
+        fiscal_inv_num:    order.fiscal_inv_num,
+        fiscal_iic:        order.fiscal_iic,
+        fiscal_verify_url: order.fiscal_verify_url,
+        fiscal_status:     order.fiscal_status,
+        is_paid:           order.is_paid,
+      },
+    });
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
 });

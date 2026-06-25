@@ -18,6 +18,23 @@ function token() {
   return localStorage.getItem('bookingai_token') || '';
 }
 
+async function rawReq(path: string, opts: RequestInit = {}): Promise<any> {
+  const isForm = opts.body instanceof FormData;
+  let url = `${BASE}${path}`;
+  if (_viewTenantId) {
+    url += (url.includes('?') ? '&' : '?') + `tenantId=${encodeURIComponent(_viewTenantId)}`;
+  }
+  const res = await fetch(url, {
+    ...opts,
+    headers: {
+      ...(!isForm ? { 'Content-Type': 'application/json' } : {}),
+      Authorization: `Bearer ${token()}`,
+      ...(opts.headers as object ?? {}),
+    },
+  });
+  try { return await res.json(); } catch { return { success: false, error: `Server error ${res.status}` }; }
+}
+
 async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const isForm = opts.body instanceof FormData;
   let url = `${BASE}${path}`;
@@ -101,6 +118,18 @@ export const shopApi = {
     req<any[]>('/shop/tables/bulk', { method: 'POST', body: JSON.stringify({ count, prefix }) }),
   updateTable:      (id: string, data: any)   => req<void>(`/shop/tables/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteTable:      (id: string)              => req<void>(`/shop/tables/${id}`, { method: 'DELETE' }),
+
+  // Fiscalization (rawReq — returns full JSON including success flag)
+  payOrder:            (orderId: string, paymentType: 'BANKNOTE' | 'CARD') =>
+    rawReq(`/shop/orders/${orderId}/pay`, { method: 'POST', body: JSON.stringify({ payment_type: paymentType }) }),
+  retryFiscal:         (orderId: string) =>
+    rawReq(`/shop/orders/${orderId}/retry-fiscal`, { method: 'POST' }),
+  correctInvoice:      (orderId: string) =>
+    rawReq(`/shop/orders/${orderId}/correct`, { method: 'POST' }),
+  registerCashDeposit: (amount?: number) =>
+    rawReq('/shop/fiscal/cash-deposit', { method: 'POST', body: JSON.stringify({ amount }) }),
+  getReceipt:          (orderId: string) =>
+    req<any>(`/shop/orders/${orderId}/receipt`),
 
   // Logo upload (admin only)
   uploadLogo: (file: File) => {

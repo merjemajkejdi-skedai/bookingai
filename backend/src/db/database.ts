@@ -500,6 +500,17 @@ const SCHEMA = `
     shop_logo_url TEXT,
     shop_logo_filename TEXT,
     qr_welcome_message TEXT DEFAULT 'Welcome! Please enter your name to start ordering.',
+    fiscal_enabled INTEGER DEFAULT 0,
+    fiscal_api_url TEXT DEFAULT 'https://efiskalizimi-app-test.tatime.gov.al',
+    fiscal_username TEXT,
+    fiscal_password TEXT,
+    fiscal_nuis TEXT,
+    fiscal_tcr_code TEXT,
+    fiscal_busun_code TEXT,
+    fiscal_soft_code TEXT,
+    fiscal_initial_cash REAL DEFAULT 0,
+    fiscal_default_client TEXT DEFAULT 'Klient i Pergjithshem',
+    fiscal_environment TEXT DEFAULT 'test',
     created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
   );
@@ -528,6 +539,9 @@ const SCHEMA = `
     stock_last_reset TEXT,
     is_active INTEGER DEFAULT 1,
     sort_order INTEGER DEFAULT 0,
+    vat_rate TEXT DEFAULT 'VAT_20',
+    item_code TEXT,
+    unit TEXT DEFAULT 'XPP',
     created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
   );
@@ -547,6 +561,15 @@ const SCHEMA = `
     paid_at TEXT,
     table_name TEXT,
     qr_session TEXT,
+    payment_type TEXT DEFAULT 'BANKNOTE',
+    fiscal_status TEXT DEFAULT 'not_fiscalized',
+    fiscal_iic TEXT,
+    fiscal_fic TEXT,
+    fiscal_inv_num TEXT,
+    fiscal_verify_url TEXT,
+    fiscal_error TEXT,
+    fiscal_token TEXT,
+    fiscal_token_exp TEXT,
     created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     in_progress_at TEXT,
@@ -611,6 +634,7 @@ const SCHEMA = `
     role           TEXT NOT NULL DEFAULT 'operator',
     is_active      INTEGER DEFAULT 1,
     session_version INTEGER DEFAULT 1,
+    fiscal_operator_code TEXT,
     created_at     TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     updated_at     TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     UNIQUE(tenant_id, username)
@@ -790,6 +814,31 @@ export async function runMigrations() {
       // shop_audit_001 — audit trail for order and user actions
       `CREATE TABLE IF NOT EXISTS shop_audit_log (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, user_id TEXT, user_name TEXT, action TEXT NOT NULL, entity_type TEXT, entity_id TEXT, details TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
       `CREATE INDEX IF NOT EXISTS idx_shop_audit_tenant ON shop_audit_log(tenant_id, created_at)`,
+      // shop_fiscal_001 — Albanian e-Fiskalizimi integration fields
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS fiscal_enabled INTEGER DEFAULT 0`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS fiscal_api_url TEXT DEFAULT 'https://efiskalizimi-app-test.tatime.gov.al'`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS fiscal_username TEXT`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS fiscal_password TEXT`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS fiscal_nuis TEXT`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS fiscal_tcr_code TEXT`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS fiscal_busun_code TEXT`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS fiscal_soft_code TEXT`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS fiscal_initial_cash REAL DEFAULT 0`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS fiscal_default_client TEXT DEFAULT 'Klient i Pergjithshem'`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS fiscal_environment TEXT DEFAULT 'test'`,
+      `ALTER TABLE shop_menu_items ADD COLUMN IF NOT EXISTS vat_rate TEXT DEFAULT 'VAT_20'`,
+      `ALTER TABLE shop_menu_items ADD COLUMN IF NOT EXISTS item_code TEXT`,
+      `ALTER TABLE shop_menu_items ADD COLUMN IF NOT EXISTS unit TEXT DEFAULT 'XPP'`,
+      `ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS payment_type TEXT DEFAULT 'BANKNOTE'`,
+      `ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS fiscal_status TEXT DEFAULT 'not_fiscalized'`,
+      `ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS fiscal_iic TEXT`,
+      `ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS fiscal_fic TEXT`,
+      `ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS fiscal_inv_num TEXT`,
+      `ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS fiscal_verify_url TEXT`,
+      `ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS fiscal_error TEXT`,
+      `ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS fiscal_token TEXT`,
+      `ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS fiscal_token_exp TEXT`,
+      `ALTER TABLE shop_users ADD COLUMN IF NOT EXISTS fiscal_operator_code TEXT`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -1036,6 +1085,67 @@ export async function runMigrations() {
     .all().map((r: any) => r.name as string);
   if (!shopConvCols.includes('consecutive_errors'))
     exec('ALTER TABLE shop_conversations ADD COLUMN consecutive_errors INTEGER DEFAULT 0');
+
+  // shop_fiscal_001 — fiscal columns on shop tables
+  const shopConfigFiscalCols = prepare("SELECT name FROM pragma_table_info('shop_config')")
+    .all().map((r: any) => r.name as string);
+  if (!shopConfigFiscalCols.includes('fiscal_enabled'))
+    exec('ALTER TABLE shop_config ADD COLUMN fiscal_enabled INTEGER DEFAULT 0');
+  if (!shopConfigFiscalCols.includes('fiscal_api_url'))
+    exec("ALTER TABLE shop_config ADD COLUMN fiscal_api_url TEXT DEFAULT 'https://efiskalizimi-app-test.tatime.gov.al'");
+  if (!shopConfigFiscalCols.includes('fiscal_username'))
+    exec('ALTER TABLE shop_config ADD COLUMN fiscal_username TEXT');
+  if (!shopConfigFiscalCols.includes('fiscal_password'))
+    exec('ALTER TABLE shop_config ADD COLUMN fiscal_password TEXT');
+  if (!shopConfigFiscalCols.includes('fiscal_nuis'))
+    exec('ALTER TABLE shop_config ADD COLUMN fiscal_nuis TEXT');
+  if (!shopConfigFiscalCols.includes('fiscal_tcr_code'))
+    exec('ALTER TABLE shop_config ADD COLUMN fiscal_tcr_code TEXT');
+  if (!shopConfigFiscalCols.includes('fiscal_busun_code'))
+    exec('ALTER TABLE shop_config ADD COLUMN fiscal_busun_code TEXT');
+  if (!shopConfigFiscalCols.includes('fiscal_soft_code'))
+    exec('ALTER TABLE shop_config ADD COLUMN fiscal_soft_code TEXT');
+  if (!shopConfigFiscalCols.includes('fiscal_initial_cash'))
+    exec('ALTER TABLE shop_config ADD COLUMN fiscal_initial_cash REAL DEFAULT 0');
+  if (!shopConfigFiscalCols.includes('fiscal_default_client'))
+    exec("ALTER TABLE shop_config ADD COLUMN fiscal_default_client TEXT DEFAULT 'Klient i Pergjithshem'");
+  if (!shopConfigFiscalCols.includes('fiscal_environment'))
+    exec("ALTER TABLE shop_config ADD COLUMN fiscal_environment TEXT DEFAULT 'test'");
+
+  const shopItemFiscalCols = prepare("SELECT name FROM pragma_table_info('shop_menu_items')")
+    .all().map((r: any) => r.name as string);
+  if (!shopItemFiscalCols.includes('vat_rate'))
+    exec("ALTER TABLE shop_menu_items ADD COLUMN vat_rate TEXT DEFAULT 'VAT_20'");
+  if (!shopItemFiscalCols.includes('item_code'))
+    exec('ALTER TABLE shop_menu_items ADD COLUMN item_code TEXT');
+  if (!shopItemFiscalCols.includes('unit'))
+    exec("ALTER TABLE shop_menu_items ADD COLUMN unit TEXT DEFAULT 'XPP'");
+
+  const shopOrderFiscalCols = prepare("SELECT name FROM pragma_table_info('shop_orders')")
+    .all().map((r: any) => r.name as string);
+  if (!shopOrderFiscalCols.includes('payment_type'))
+    exec("ALTER TABLE shop_orders ADD COLUMN payment_type TEXT DEFAULT 'BANKNOTE'");
+  if (!shopOrderFiscalCols.includes('fiscal_status'))
+    exec("ALTER TABLE shop_orders ADD COLUMN fiscal_status TEXT DEFAULT 'not_fiscalized'");
+  if (!shopOrderFiscalCols.includes('fiscal_iic'))
+    exec('ALTER TABLE shop_orders ADD COLUMN fiscal_iic TEXT');
+  if (!shopOrderFiscalCols.includes('fiscal_fic'))
+    exec('ALTER TABLE shop_orders ADD COLUMN fiscal_fic TEXT');
+  if (!shopOrderFiscalCols.includes('fiscal_inv_num'))
+    exec('ALTER TABLE shop_orders ADD COLUMN fiscal_inv_num TEXT');
+  if (!shopOrderFiscalCols.includes('fiscal_verify_url'))
+    exec('ALTER TABLE shop_orders ADD COLUMN fiscal_verify_url TEXT');
+  if (!shopOrderFiscalCols.includes('fiscal_error'))
+    exec('ALTER TABLE shop_orders ADD COLUMN fiscal_error TEXT');
+  if (!shopOrderFiscalCols.includes('fiscal_token'))
+    exec('ALTER TABLE shop_orders ADD COLUMN fiscal_token TEXT');
+  if (!shopOrderFiscalCols.includes('fiscal_token_exp'))
+    exec('ALTER TABLE shop_orders ADD COLUMN fiscal_token_exp TEXT');
+
+  const shopUserFiscalCols = prepare("SELECT name FROM pragma_table_info('shop_users')")
+    .all().map((r: any) => r.name as string);
+  if (!shopUserFiscalCols.includes('fiscal_operator_code'))
+    exec('ALTER TABLE shop_users ADD COLUMN fiscal_operator_code TEXT');
 
   console.log('✅ SQLite migrations complete');
 }

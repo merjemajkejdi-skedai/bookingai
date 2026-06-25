@@ -13,7 +13,7 @@ const ROLE_COLORS: Record<string, string> = {
   operator:   'bg-slate-100 text-slate-600',
 };
 
-const emptyForm = { username: '', password: '', name: '', surname: '', tax_id: '', operator_id: '', role: 'operator' };
+const emptyForm = { username: '', password: '', name: '', surname: '', tax_id: '', operator_id: '', fiscal_operator_code: '', role: 'operator' };
 
 export function ShopUsers() {
   const [users, setUsers]       = useState<any[]>([]);
@@ -47,7 +47,7 @@ export function ShopUsers() {
 
   function openEdit(user: any) {
     setEditUser(user);
-    setForm({ username: user.username, password: '', name: user.name, surname: user.surname, tax_id: user.tax_id || '', operator_id: user.operator_id || '', role: user.role });
+    setForm({ username: user.username, password: '', name: user.name, surname: user.surname, tax_id: user.tax_id || '', operator_id: user.operator_id || '', fiscal_operator_code: user.fiscal_operator_code || '', role: user.role });
     setError('');
     setShowForm(true);
   }
@@ -57,18 +57,19 @@ export function ShopUsers() {
     setSaving(true);
     try {
       if (editUser) {
-        const patch: any = { name: form.name, surname: form.surname, tax_id: form.tax_id || null, operator_id: form.operator_id || null, role: form.role };
+        const patch: any = { name: form.name, surname: form.surname, tax_id: form.tax_id || null, operator_id: form.operator_id || null, fiscal_operator_code: form.fiscal_operator_code || null, role: form.role };
         if (form.password) patch.password = form.password;
         await shopApi.updateUser(editUser.id, patch);
       } else {
         await shopApi.createUser({
-          username:    form.username,
-          password:    form.password,
-          name:        form.name,
-          surname:     form.surname,
-          tax_id:      form.tax_id || null,
-          operator_id: form.operator_id || null,
-          role:        form.role,
+          username:             form.username,
+          password:             form.password,
+          name:                 form.name,
+          surname:              form.surname,
+          tax_id:               form.tax_id || null,
+          operator_id:          form.operator_id || null,
+          fiscal_operator_code: form.fiscal_operator_code || null,
+          role:                 form.role,
         });
       }
       setShowForm(false);
@@ -221,6 +222,13 @@ export function ShopUsers() {
                     placeholder="e.g. OP001"
                     className="w-full mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm" />
                 </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600">Fiscal operator code</label>
+                <input value={form.fiscal_operator_code} onChange={e => setForm(f => ({ ...f, fiscal_operator_code: e.target.value }))}
+                  placeholder="e.g. dr959ez502"
+                  className="w-full mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+                <p className="text-xs text-slate-400 mt-0.5">Required for fiscalization. Get this from your fiscal vendor.</p>
               </div>
             </div>
             <div className="flex gap-2 justify-end px-5 pb-5">

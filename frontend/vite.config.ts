@@ -36,6 +36,7 @@ export default defineConfig({
       '/shop/users':        { target: 'http://localhost:3001', changeOrigin: true },
       '/shop/audit-log':    { target: 'http://localhost:3001', changeOrigin: true },
       '/shop/tables':       { target: 'http://localhost:3001', changeOrigin: true },
+      '/shop/fiscal':       { target: 'http://localhost:3001', changeOrigin: true },
     }
   }
 })
