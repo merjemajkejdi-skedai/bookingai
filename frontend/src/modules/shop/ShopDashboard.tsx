@@ -200,11 +200,13 @@ function OrderCard({
   onStatusChange,
   onPaidChange,
   onRefresh,
+  shopConfig,
 }: {
   order: ShopOrder;
   onStatusChange: (id: string, s: string) => void;
   onPaidChange: (id: string, isPaid: boolean) => void;
   onRefresh: () => void;
+  shopConfig?: any;
 }) {
   const [busy, setBusy] = useState(false);
   const [paidBusy, setPaidBusy] = useState(false);
@@ -299,7 +301,7 @@ function OrderCard({
       {order.notes && <div className="text-xs text-slate-400 italic">Note: {order.notes}</div>}
 
       {/* Pay & Fiscalize */}
-      {!order.is_paid && order.status !== 'cancelled' && order.status !== 'picked_up' && (
+      {shopConfig?.fiscal_enabled && !order.is_paid && order.status !== 'cancelled' && order.status !== 'picked_up' && (
         <div className="pt-2 border-t border-slate-100">
           <PayButton order={order} onRefresh={onRefresh} />
         </div>
@@ -338,7 +340,7 @@ function OrderCard({
         </div>
       )}
 
-      {order.source === 'manual' && (order.status === 'in_progress' || order.status === 'done') && !order.is_paid && (
+      {shopConfig?.fiscal_enabled && order.source === 'manual' && (order.status === 'in_progress' || order.status === 'done') && !order.is_paid && (
         <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
           <button
             onClick={togglePaid}
@@ -765,7 +767,7 @@ function OrdersTab() {
               <div className="flex flex-col gap-2 overflow-y-auto">
                 {byStatus(col).length === 0
                   ? <div className="text-xs text-slate-300 text-center py-4">Empty</div>
-                  : byStatus(col).map((o) => <OrderCard key={o.id} order={o} onStatusChange={handleStatusChange} onPaidChange={handlePaidChange} onRefresh={load} />)
+                  : byStatus(col).map((o) => <OrderCard key={o.id} order={o} onStatusChange={handleStatusChange} onPaidChange={handlePaidChange} onRefresh={load} shopConfig={shopConfig} />)
                 }
               </div>
             </div>
