@@ -3,8 +3,12 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
+import { hash as bcryptHash, compare as bcryptCompare } from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
-import { requireAuth, resolveTenantId } from '../middleware/auth.js';
+import { resolveTenantId } from '../middleware/auth.js';
+import { getJwtSecret } from '../lib/jwt.js';
+import { authenticateShopUser, auditLog } from '../middleware/shopAuth.js';
 import { sendWhatsAppMessage } from '../whatsapp/twilio.js';
 
 export const shopRouter = Router();
@@ -12,6 +16,39 @@ export const shopRouter = Router();
 async function dbAll(sql: string, ...p: unknown[]) { return (isPg ? query(sql, p) : prepare(sql).all(...p)) as any[]; }
 async function dbGet(sql: string, ...p: unknown[]) { return (isPg ? queryOne(sql, p) : prepare(sql).get(...p)) as any; }
 async function dbRun(sql: string, ...p: unknown[]) { if (isPg) return queryRun(sql, p); prepare(sql).run(...p); }
+
+// Accepts either a main-tenant token (shop_owner / super_admin) or a shop sub-user token.
+async function authenticateShopOrTenant(req: any, res: any, next: any) {
+  const auth = req.headers.authorization;
+  if (!auth?.startsWith('Bearer ')) return res.status(401).json({ success: false, error: 'Unauthorised' });
+  const token = auth.slice(7);
+  try {
+    const decoded = jwt.verify(token, getJwtSecret()) as any;
+    if (decoded.type === 'shop_user') {
+      const user = await dbGet(`SELECT id, tenant_id, is_active, session_version FROM shop_users WHERE id = ?`, decoded.userId);
+      if (!user) return res.status(401).json({ success: false, error: 'User not found' });
+      if (!user.is_active) return res.status(401).json({ success: false, error: 'Account deactivated' });
+      if (Number(user.session_version) !== Number(decoded.sessionVersion)) {
+        return res.status(401).json({ success: false, error: 'Session expired — please log in again' });
+      }
+      req.shopUser = decoded;
+      // Compatibility shim so resolveTenantId() still works
+      req.user = { userId: decoded.userId, email: decoded.username, role: 'shop_owner' as const, tenantId: decoded.tenantId };
+    } else {
+      req.user = decoded;
+    }
+    next();
+  } catch {
+    return res.status(401).json({ success: false, error: 'Invalid token' });
+  }
+}
+
+// Passes if the caller is a main-tenant admin OR a shop sub-user with admin role.
+function requireShopAdmin(req: any, res: any, next: any) {
+  if (!req.shopUser) return next(); // main-tenant admin always passes
+  if (req.shopUser.role === 'admin') return next();
+  return res.status(403).json({ success: false, error: 'Admin role required' });
+}
 
 const UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'shop');
 
@@ -32,7 +69,7 @@ function baseUrl(): string {
 
 // ── Config ─────────────────────────────────────────────────────────────────────
 
-shopRouter.get('/config', requireAuth, async (req: any, res: Response) => {
+shopRouter.get('/config', authenticateShopOrTenant, async (req: any, res: Response) => {
   try {
     const tenantId = resolveTenantId(req);
     let cfg = await dbGet(`SELECT * FROM shop_config WHERE tenant_id = ?`, tenantId);
@@ -45,7 +82,7 @@ shopRouter.get('/config', requireAuth, async (req: any, res: Response) => {
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
 });
 
-shopRouter.put('/config', requireAuth, async (req: any, res: Response) => {
+shopRouter.put('/config', authenticateShopOrTenant, async (req: any, res: Response) => {
   try {
     const tenantId = resolveTenantId(req);
     const {
@@ -73,14 +110,14 @@ shopRouter.put('/config', requireAuth, async (req: any, res: Response) => {
 
 // ── Categories ─────────────────────────────────────────────────────────────────
 
-shopRouter.get('/categories', requireAuth, async (req: any, res: Response) => {
+shopRouter.get('/categories', authenticateShopOrTenant, async (req: any, res: Response) => {
   try {
     const cats = await dbAll(`SELECT * FROM shop_menu_categories WHERE tenant_id = ? ORDER BY sort_order ASC`, resolveTenantId(req));
     res.json({ success: true, data: cats });
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
 });
 
-shopRouter.post('/categories', requireAuth, async (req: any, res: Response) => {
+shopRouter.post('/categories', authenticateShopOrTenant, async (req: any, res: Response) => {
   try {
     const tenantId = resolveTenantId(req);
     const { name, description, sort_order } = req.body;
@@ -90,7 +127,7 @@ shopRouter.post('/categories', requireAuth, async (req: any, res: Response) => {
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
 });
 
-shopRouter.put('/categories/:id', requireAuth, async (req: any, res: Response) => {
+shopRouter.put('/categories/:id', authenticateShopOrTenant, async (req: any, res: Response) => {
   try {
     const { name, description, sort_order, is_active } = req.body;
     await dbRun(
@@ -101,7 +138,7 @@ shopRouter.put('/categories/:id', requireAuth, async (req: any, res: Response) =
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
 });
 
-shopRouter.delete('/categories/:id', requireAuth, async (req: any, res: Response) => {
+shopRouter.delete('/categories/:id', authenticateShopOrTenant, async (req: any, res: Response) => {
   try {
     await dbRun(`DELETE FROM shop_menu_categories WHERE id=? AND tenant_id=?`, req.params.id, resolveTenantId(req));
     res.json({ success: true });
@@ -110,7 +147,7 @@ shopRouter.delete('/categories/:id', requireAuth, async (req: any, res: Response
 
 // ── Items ──────────────────────────────────────────────────────────────────────
 
-shopRouter.get('/items', requireAuth, async (req: any, res: Response) => {
+shopRouter.get('/items', authenticateShopOrTenant, async (req: any, res: Response) => {
   try {
     const tenantId = resolveTenantId(req);
     const { category_id } = req.query as { category_id?: string };
@@ -123,7 +160,7 @@ shopRouter.get('/items', requireAuth, async (req: any, res: Response) => {
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
 });
 
-shopRouter.post('/items', requireAuth, upload.single('photo'), async (req: any, res: Response) => {
+shopRouter.post('/items', authenticateShopOrTenant, upload.single('photo'), async (req: any, res: Response) => {
   try {
     const tenantId = resolveTenantId(req);
     const { name, description, price, currency, category_id, stock_type, stock_limit, sort_order } = req.body;
@@ -138,7 +175,7 @@ shopRouter.post('/items', requireAuth, upload.single('photo'), async (req: any, 
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
 });
 
-shopRouter.put('/items/:id', requireAuth, upload.single('photo'), async (req: any, res: Response) => {
+shopRouter.put('/items/:id', authenticateShopOrTenant, upload.single('photo'), async (req: any, res: Response) => {
   try {
     const tenantId = resolveTenantId(req);
     const existing = await dbGet(`SELECT photo_filename FROM shop_menu_items WHERE id=? AND tenant_id=?`, req.params.id, tenantId);
@@ -167,7 +204,7 @@ shopRouter.put('/items/:id', requireAuth, upload.single('photo'), async (req: an
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
 });
 
-shopRouter.delete('/items/:id', requireAuth, async (req: any, res: Response) => {
+shopRouter.delete('/items/:id', authenticateShopOrTenant, async (req: any, res: Response) => {
   try {
     const tenantId = resolveTenantId(req);
     const item = await dbGet(`SELECT photo_filename FROM shop_menu_items WHERE id=? AND tenant_id=?`, req.params.id, tenantId);
@@ -182,7 +219,7 @@ shopRouter.delete('/items/:id', requireAuth, async (req: any, res: Response) => 
 
 // ── Orders ─────────────────────────────────────────────────────────────────────
 
-shopRouter.get('/orders', requireAuth, async (req: any, res: Response) => {
+shopRouter.get('/orders', authenticateShopOrTenant, async (req: any, res: Response) => {
   try {
     const tenantId = resolveTenantId(req);
     console.log('[Shop] GET /shop/orders tenantId:', tenantId);
@@ -206,12 +243,13 @@ shopRouter.get('/orders', requireAuth, async (req: any, res: Response) => {
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
 });
 
-shopRouter.patch('/orders/:id', requireAuth, async (req: any, res: Response) => {
+shopRouter.patch('/orders/:id', authenticateShopOrTenant, async (req: any, res: Response) => {
   try {
     const tenantId = resolveTenantId(req);
     const { status, is_paid } = req.body as { status?: string; is_paid?: boolean };
     const order = await dbGet(`SELECT * FROM shop_orders WHERE id=? AND tenant_id=?`, req.params.id, tenantId);
     if (!order) return res.status(404).json({ success: false, error: 'Not found' });
+    const prevStatus = order.status;
 
     // Block unpaid manual orders from moving to Picked Up
     if (status === 'picked_up' && order.source === 'manual' && !order.is_paid) {
@@ -261,6 +299,11 @@ shopRouter.patch('/orders/:id', requireAuth, async (req: any, res: Response) => 
           await dbRun(restoreSql, oi.quantity, oi.item_id);
         }
       }
+
+      const actorName = req.shopUser ? `${req.shopUser.name} ${req.shopUser.surname}` : 'Admin';
+      await auditLog(tenantId, req.shopUser?.userId || null, actorName, 'order.status_changed', 'order', req.params.id, {
+        from: prevStatus, to: status, order_number: order.order_number,
+      });
     }
 
     res.json({ success: true });
@@ -269,7 +312,7 @@ shopRouter.patch('/orders/:id', requireAuth, async (req: any, res: Response) => 
 
 // ── Manual Order Creation ──────────────────────────────────────────────────────
 
-shopRouter.post('/orders/manual', requireAuth, async (req: any, res: Response) => {
+shopRouter.post('/orders/manual', authenticateShopOrTenant, async (req: any, res: Response) => {
   try {
     const tenantId = resolveTenantId(req);
 
@@ -352,6 +395,10 @@ shopRouter.post('/orders/manual', requireAuth, async (req: any, res: Response) =
       );
     }
 
+    const actorName = req.shopUser ? `${req.shopUser.name} ${req.shopUser.surname}` : 'Admin';
+    await auditLog(tenantId, req.shopUser?.userId || null, actorName, 'order.created_manual', 'order', orderId, {
+      order_number: orderNumber, total,
+    });
     console.log(`[Shop] Manual order #${orderNumber} created by staff`);
     res.json({ success: true, data: { order_id: orderId, order_number: orderNumber, total, status: 'in_progress' } });
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
@@ -359,14 +406,14 @@ shopRouter.post('/orders/manual', requireAuth, async (req: any, res: Response) =
 
 // ── FAQ ────────────────────────────────────────────────────────────────────────
 
-shopRouter.get('/faq', requireAuth, async (req: any, res: Response) => {
+shopRouter.get('/faq', authenticateShopOrTenant, async (req: any, res: Response) => {
   try {
     const rows = await dbAll(`SELECT * FROM shop_faq WHERE tenant_id=? ORDER BY sort_order ASC`, resolveTenantId(req));
     res.json({ success: true, data: rows });
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
 });
 
-shopRouter.post('/faq', requireAuth, async (req: any, res: Response) => {
+shopRouter.post('/faq', authenticateShopOrTenant, async (req: any, res: Response) => {
   try {
     const tenantId = resolveTenantId(req);
     const { question, answer, sort_order } = req.body;
@@ -376,7 +423,7 @@ shopRouter.post('/faq', requireAuth, async (req: any, res: Response) => {
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
 });
 
-shopRouter.put('/faq/:id', requireAuth, async (req: any, res: Response) => {
+shopRouter.put('/faq/:id', authenticateShopOrTenant, async (req: any, res: Response) => {
   try {
     const { question, answer, sort_order } = req.body;
     await dbRun(`UPDATE shop_faq SET question=?,answer=?,sort_order=? WHERE id=? AND tenant_id=?`, question, answer, sort_order ?? 0, req.params.id, resolveTenantId(req));
@@ -384,7 +431,7 @@ shopRouter.put('/faq/:id', requireAuth, async (req: any, res: Response) => {
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
 });
 
-shopRouter.delete('/faq/:id', requireAuth, async (req: any, res: Response) => {
+shopRouter.delete('/faq/:id', authenticateShopOrTenant, async (req: any, res: Response) => {
   try {
     await dbRun(`DELETE FROM shop_faq WHERE id=? AND tenant_id=?`, req.params.id, resolveTenantId(req));
     res.json({ success: true });
@@ -393,7 +440,7 @@ shopRouter.delete('/faq/:id', requireAuth, async (req: any, res: Response) => {
 
 // ── Conversations ──────────────────────────────────────────────────────────────
 
-shopRouter.get('/conversations', requireAuth, async (req: any, res: Response) => {
+shopRouter.get('/conversations', authenticateShopOrTenant, async (req: any, res: Response) => {
   try {
     const tenantId = resolveTenantId(req);
     console.log('[Shop] GET /shop/conversations tenantId:', tenantId);
@@ -406,7 +453,7 @@ shopRouter.get('/conversations', requireAuth, async (req: any, res: Response) =>
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
 });
 
-shopRouter.get('/conversations/:phone', requireAuth, async (req: any, res: Response) => {
+shopRouter.get('/conversations/:phone', authenticateShopOrTenant, async (req: any, res: Response) => {
   try {
     const phone = decodeURIComponent(req.params.phone);
     const conv = await dbGet(`SELECT * FROM shop_conversations WHERE tenant_id=? AND guest_phone=?`, resolveTenantId(req), phone);
@@ -416,7 +463,7 @@ shopRouter.get('/conversations/:phone', requireAuth, async (req: any, res: Respo
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
 });
 
-shopRouter.delete('/conversations/:phone', requireAuth, async (req: any, res: Response) => {
+shopRouter.delete('/conversations/:phone', authenticateShopOrTenant, async (req: any, res: Response) => {
   try {
     const phone = decodeURIComponent(req.params.phone);
     const now = new Date().toISOString();
@@ -429,7 +476,7 @@ shopRouter.delete('/conversations/:phone', requireAuth, async (req: any, res: Re
 });
 
 // Clear all conversations for this tenant (admin convenience — resets all AI memory)
-shopRouter.delete('/conversations', requireAuth, async (req: any, res: Response) => {
+shopRouter.delete('/conversations', authenticateShopOrTenant, async (req: any, res: Response) => {
   try {
     const now = new Date().toISOString();
     await dbRun(
@@ -462,7 +509,7 @@ function shopDateFilter(period: string, alias = 'so'): string {
   }
 }
 
-shopRouter.get('/reports/summary', requireAuth, async (req: any, res: Response) => {
+shopRouter.get('/reports/summary', authenticateShopOrTenant, async (req: any, res: Response) => {
   try {
     const tenantId = resolveTenantId(req);
     const period = String(req.query.period || '30d');
@@ -522,7 +569,7 @@ shopRouter.get('/reports/summary', requireAuth, async (req: any, res: Response) 
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
 });
 
-shopRouter.get('/reports/breakdown', requireAuth, async (req: any, res: Response) => {
+shopRouter.get('/reports/breakdown', authenticateShopOrTenant, async (req: any, res: Response) => {
   try {
     const tenantId = resolveTenantId(req);
     const period = String(req.query.period || '30d');
@@ -658,7 +705,7 @@ shopRouter.get('/reports/breakdown', requireAuth, async (req: any, res: Response
 
 // ── Analytics ──────────────────────────────────────────────────────────────────
 
-shopRouter.get('/analytics', requireAuth, async (req: any, res: Response) => {
+shopRouter.get('/analytics', authenticateShopOrTenant, async (req: any, res: Response) => {
   try {
     const tenantId = resolveTenantId(req);
     const days = Math.min(parseInt(String(req.query.days || '7')), 90);
@@ -666,6 +713,175 @@ shopRouter.get('/analytics', requireAuth, async (req: any, res: Response) => {
       ? `SELECT order_date, COUNT(*) AS total_orders, SUM(total_price) AS revenue FROM shop_orders WHERE tenant_id=? AND status != 'cancelled' AND order_date >= CURRENT_DATE - INTERVAL '${days} days' GROUP BY order_date ORDER BY order_date DESC`
       : `SELECT order_date, COUNT(*) AS total_orders, SUM(total_price) AS revenue FROM shop_orders WHERE tenant_id=? AND status != 'cancelled' AND order_date >= date('now','-${days} days') GROUP BY order_date ORDER BY order_date DESC`;
     const rows = await dbAll(sql, tenantId);
+    res.json({ success: true, data: rows });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ── Auth ───────────────────────────────────────────────────────────────────────
+
+shopRouter.post('/auth/login', async (req: any, res: Response) => {
+  try {
+    const { username, password, tenant_id } = req.body;
+    if (!username || !password || !tenant_id) {
+      return res.status(400).json({ success: false, error: 'username, password and tenant_id required' });
+    }
+    const user = await dbGet(
+      `SELECT * FROM shop_users WHERE tenant_id = ? AND username = ? AND is_active = 1`,
+      tenant_id, String(username).toLowerCase().trim(),
+    );
+    if (!user) return res.status(401).json({ success: false, error: 'Invalid username or password' });
+    const valid = await bcryptCompare(String(password), user.password_hash);
+    if (!valid) return res.status(401).json({ success: false, error: 'Invalid username or password' });
+
+    const token = jwt.sign(
+      {
+        userId:         user.id,
+        tenantId:       user.tenant_id,
+        username:       user.username,
+        name:           user.name,
+        surname:        user.surname,
+        role:           user.role,
+        sessionVersion: user.session_version,
+        type:           'shop_user',
+      },
+      getJwtSecret(),
+      { expiresIn: '30d' },
+    );
+    await auditLog(user.tenant_id, user.id, `${user.name} ${user.surname}`, 'auth.login', null, null);
+    res.json({
+      success: true,
+      data: {
+        token,
+        user: {
+          id:          user.id,
+          username:    user.username,
+          name:        user.name,
+          surname:     user.surname,
+          role:        user.role,
+          operator_id: user.operator_id,
+        },
+      },
+    });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.get('/auth/me', authenticateShopUser, (req: any, res: Response) => {
+  res.json({ success: true, data: req.shopUser });
+});
+
+// ── User Management (admin only) ───────────────────────────────────────────────
+
+shopRouter.get('/users', authenticateShopOrTenant, requireShopAdmin, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const rows = await dbAll(
+      `SELECT id, username, name, surname, tax_id, operator_id, role, is_active, created_at FROM shop_users WHERE tenant_id = ? ORDER BY created_at DESC`,
+      tenantId,
+    );
+    res.json({ success: true, data: rows });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.post('/users', authenticateShopOrTenant, requireShopAdmin, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const actorName = req.shopUser ? `${req.shopUser.name} ${req.shopUser.surname}` : 'Admin';
+    const actorId   = req.shopUser?.userId || null;
+    const { username, password, name, surname, tax_id, operator_id, role } = req.body;
+
+    if (!username || !password || !name || !surname || !role) {
+      return res.status(400).json({ success: false, error: 'username, password, name, surname and role are required' });
+    }
+    if (!['operator', 'supervisor', 'admin'].includes(role)) {
+      return res.status(400).json({ success: false, error: 'Invalid role' });
+    }
+    if (String(password).length < 6) {
+      return res.status(400).json({ success: false, error: 'Password must be at least 6 characters' });
+    }
+
+    const password_hash = await bcryptHash(String(password), 10);
+    const id = crypto.randomUUID();
+    try {
+      await dbRun(
+        `INSERT INTO shop_users (id, tenant_id, username, password_hash, name, surname, tax_id, operator_id, role) VALUES (?,?,?,?,?,?,?,?,?)`,
+        id, tenantId, String(username).toLowerCase().trim(), password_hash,
+        name, surname, tax_id || null, operator_id || null, role,
+      );
+    } catch (err: any) {
+      if (err.message?.includes('UNIQUE') || err.code === '23505') {
+        return res.status(400).json({ success: false, error: 'Username already exists' });
+      }
+      throw err;
+    }
+    await auditLog(tenantId, actorId, actorName, 'user.created', 'user', id, { username, role, name, surname });
+    res.json({ success: true, data: { id, username: String(username).toLowerCase().trim(), name, surname, role } });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.patch('/users/:id', authenticateShopOrTenant, requireShopAdmin, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const actorName = req.shopUser ? `${req.shopUser.name} ${req.shopUser.surname}` : 'Admin';
+    const actorId   = req.shopUser?.userId || null;
+    const { name, surname, tax_id, operator_id, role, is_active, password } = req.body;
+
+    const current = await dbGet(`SELECT role, is_active FROM shop_users WHERE id = ? AND tenant_id = ?`, req.params.id, tenantId);
+    if (!current) return res.status(404).json({ success: false, error: 'User not found' });
+
+    const roleChanged   = role && role !== current.role;
+    const activeChanged = is_active !== undefined && Boolean(is_active) !== Boolean(current.is_active);
+    const isActivePg    = is_active !== undefined ? (is_active ? 1 : 0) : null;
+
+    const sets: string[] = [
+      'name        = COALESCE(?, name)',
+      'surname     = COALESCE(?, surname)',
+      'tax_id      = COALESCE(?, tax_id)',
+      'operator_id = COALESCE(?, operator_id)',
+      'role        = COALESCE(?, role)',
+      'is_active   = COALESCE(?, is_active)',
+      'updated_at  = CURRENT_TIMESTAMP',
+    ];
+    const params: any[] = [name ?? null, surname ?? null, tax_id ?? null, operator_id ?? null, role ?? null, isActivePg];
+
+    let bumpSession = roleChanged || activeChanged;
+
+    if (password) {
+      if (String(password).length < 6) return res.status(400).json({ success: false, error: 'Password must be at least 6 characters' });
+      const hash = await bcryptHash(String(password), 10);
+      sets.push('password_hash = ?');
+      params.push(hash);
+      bumpSession = true;
+    }
+    if (bumpSession) sets.push('session_version = session_version + 1');
+
+    params.push(req.params.id, tenantId);
+    await dbRun(`UPDATE shop_users SET ${sets.join(', ')} WHERE id = ? AND tenant_id = ?`, ...params);
+    await auditLog(tenantId, actorId, actorName, 'user.updated', 'user', req.params.id, { role, is_active, role_changed: roleChanged });
+    res.json({ success: true });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.delete('/users/:id', authenticateShopOrTenant, requireShopAdmin, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const actorId  = req.shopUser?.userId || null;
+    if (req.params.id === actorId) {
+      return res.status(400).json({ success: false, error: 'Cannot delete your own account' });
+    }
+    await dbRun(`DELETE FROM shop_users WHERE id = ? AND tenant_id = ?`, req.params.id, tenantId);
+    res.json({ success: true });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ── Audit Log ──────────────────────────────────────────────────────────────────
+
+shopRouter.get('/audit-log', authenticateShopOrTenant, requireShopAdmin, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const rows = await dbAll(
+      `SELECT * FROM shop_audit_log WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 200`,
+      tenantId,
+    );
     res.json({ success: true, data: rows });
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
 });

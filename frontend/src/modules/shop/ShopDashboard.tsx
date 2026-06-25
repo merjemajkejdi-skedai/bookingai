@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ShoppingBag, Package, MessageSquare, HelpCircle, Settings, Plus, Trash2, Pencil, X, Check, RefreshCw, LogOut, BarChart2 } from 'lucide-react';
+import { ShoppingBag, Package, MessageSquare, HelpCircle, Settings, Plus, Trash2, Pencil, X, Check, RefreshCw, LogOut, BarChart2, Users } from 'lucide-react';
 import { shopApi, setViewTenantId } from './api';
 import type { ShopOrder, ShopItem, ShopCategory, ShopFaq, ShopConversation, ShopConfig } from './types';
 import { ShopReports } from './ShopReports';
+import { ShopUsers } from './ShopUsers';
+import { getStoredUser } from '../../shared/lib/auth';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -947,25 +949,124 @@ function Field({ label, value, onChange, placeholder }: { label: string; value: 
 
 // ── Root ───────────────────────────────────────────────────────────────────────
 
-type Tab = 'orders' | 'menu' | 'conversations' | 'faq' | 'config' | 'reports';
+type Tab = 'orders' | 'menu' | 'conversations' | 'faq' | 'config' | 'reports' | 'users';
 
-const TABS: Array<{ id: Tab; label: string; icon: React.ReactNode }> = [
-  { id: 'orders',        label: 'Orders',        icon: <ShoppingBag size={16} /> },
-  { id: 'menu',          label: 'Menu',          icon: <Package size={16} /> },
-  { id: 'conversations', label: 'Chats',         icon: <MessageSquare size={16} /> },
-  { id: 'faq',           label: 'FAQ',           icon: <HelpCircle size={16} /> },
-  { id: 'reports',       label: 'Reports',       icon: <BarChart2 size={16} /> },
-  { id: 'config',        label: 'Settings',      icon: <Settings size={16} /> },
+interface TabDef { id: Tab; label: string; icon: React.ReactNode; roles: string[] }
+
+const TABS: TabDef[] = [
+  { id: 'orders',        label: 'Orders',   icon: <ShoppingBag size={16} />, roles: ['operator','supervisor','admin'] },
+  { id: 'conversations', label: 'Chats',    icon: <MessageSquare size={16} />, roles: ['operator','supervisor','admin'] },
+  { id: 'menu',          label: 'Menu',     icon: <Package size={16} />, roles: ['supervisor','admin'] },
+  { id: 'faq',           label: 'FAQ',      icon: <HelpCircle size={16} />, roles: ['supervisor','admin'] },
+  { id: 'reports',       label: 'Reports',  icon: <BarChart2 size={16} />, roles: ['admin'] },
+  { id: 'config',        label: 'Settings', icon: <Settings size={16} />, roles: ['admin'] },
+  { id: 'users',         label: 'Users',    icon: <Users size={16} />, roles: ['admin'] },
 ];
 
+// ── Staff Login Modal ──────────────────────────────────────────────────────────
+
+function StaffLoginModal({ tenantId, onLogin, onClose }: {
+  tenantId: string;
+  onLogin: (user: any, token: string) => void;
+  onClose: () => void;
+}) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy]         = useState(false);
+  const [error, setError]       = useState('');
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!username || !password) return;
+    setBusy(true); setError('');
+    try {
+      const result = await shopApi.shopLogin(username.trim().toLowerCase(), password, tenantId);
+      localStorage.setItem('shopUserToken', result.token);
+      localStorage.setItem('shopUser', JSON.stringify(result.user));
+      onLogin(result.user, result.token);
+    } catch (e: any) {
+      setError(e.message || 'Login failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <h2 className="text-base font-semibold text-slate-800">Staff sign in</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button>
+        </div>
+        <form onSubmit={submit} className="p-5 space-y-3">
+          {error && <p className="text-xs text-red-500 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+          <div>
+            <label className="text-xs font-medium text-slate-600">Username</label>
+            <input
+              autoFocus
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+              placeholder="e.g. artan.hoxha"
+              className="w-full mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-600">Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              className="w-full mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={!username || !password || busy}
+            className="w-full py-2.5 bg-brand-500 hover:bg-brand-600 text-white text-sm font-medium rounded-lg disabled:opacity-40 transition-colors"
+          >
+            {busy ? 'Signing in…' : 'Sign in'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── Root ───────────────────────────────────────────────────────────────────────
+
 export function ShopDashboard({ onLogout, tenantId }: { onLogout: () => void; tenantId?: string }) {
-  const [tab, setTab] = useState<Tab>('orders');
+  const [tab, setTab]               = useState<Tab>('orders');
+  const [showStaffLogin, setShowStaffLogin] = useState(false);
+
+  // Shop sub-user state
+  const [shopUser, setShopUser] = useState<any>(() => {
+    try { return JSON.parse(localStorage.getItem('shopUser') || 'null'); } catch { return null; }
+  });
+  const role = (shopUser?.role as string) || 'admin';
+
+  // Tenant ID for staff login: prop (super_admin) takes priority, then stored user's tenant
+  const storedMainUser = getStoredUser();
+  const loginTenantId = tenantId || storedMainUser?.tenantId || '';
+
+  // Filter tabs by role
+  const visibleTabs = TABS.filter(t => t.roles.includes(role));
+
+  // When role changes (login/logout), make sure current tab is still accessible
+  useEffect(() => {
+    if (!visibleTabs.find(t => t.id === tab)) setTab('orders');
+  }, [role]);
 
   // When super_admin views a specific shop, inject tenantId into all API requests
   useEffect(() => {
     setViewTenantId(tenantId ?? null);
     return () => setViewTenantId(null);
   }, [tenantId]);
+
+  function signOutStaff() {
+    localStorage.removeItem('shopUserToken');
+    localStorage.removeItem('shopUser');
+    setShopUser(null);
+  }
 
   return (
     <div className="flex flex-col h-full bg-slate-50">
@@ -975,7 +1076,7 @@ export function ShopDashboard({ onLogout, tenantId }: { onLogout: () => void; te
           <ShoppingBag size={18} className="text-brand-600" />
           <span className="font-semibold text-slate-800 text-sm">Shop</span>
         </div>
-        {TABS.map(t => (
+        {visibleTabs.map(t => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
@@ -989,20 +1090,55 @@ export function ShopDashboard({ onLogout, tenantId }: { onLogout: () => void; te
             {t.label}
           </button>
         ))}
-        <button onClick={onLogout} className="ml-auto flex items-center gap-1 text-xs text-slate-400 hover:text-slate-700 transition-colors py-3 px-2">
-          <LogOut size={14} /> Sign out
-        </button>
+
+        {/* Right side: staff user info OR staff sign-in link + main logout */}
+        <div className="ml-auto flex items-center gap-3">
+          {shopUser ? (
+            <>
+              <span className="text-sm font-medium text-slate-700">{shopUser.name} {shopUser.surname}</span>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                role === 'admin'      ? 'bg-purple-50 text-purple-700' :
+                role === 'supervisor' ? 'bg-blue-50 text-blue-700' :
+                                        'bg-slate-100 text-slate-600'
+              }`}>
+                {role.charAt(0).toUpperCase() + role.slice(1)}
+              </span>
+              <button onClick={signOutStaff} className="text-xs text-slate-400 hover:text-slate-700 transition-colors">
+                Sign out staff
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setShowStaffLogin(true)}
+              className="text-xs text-brand-600 hover:text-brand-700 font-medium transition-colors"
+            >
+              Staff sign in
+            </button>
+          )}
+          <button onClick={onLogout} className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-700 transition-colors py-3 px-1">
+            <LogOut size={14} />
+          </button>
+        </div>
       </div>
 
       {/* Body */}
       <div className="flex-1 overflow-hidden p-4">
         {tab === 'orders'        && <OrdersTab />}
-        {tab === 'menu'          && <MenuTab />}
         {tab === 'conversations' && <ConversationsTab />}
+        {tab === 'menu'          && <MenuTab />}
         {tab === 'faq'           && <FaqTab />}
         {tab === 'reports'       && <ShopReports />}
         {tab === 'config'        && <ConfigTab />}
+        {tab === 'users'         && <ShopUsers />}
       </div>
+
+      {showStaffLogin && loginTenantId && (
+        <StaffLoginModal
+          tenantId={loginTenantId}
+          onLogin={(user) => { setShopUser(user); setShowStaffLogin(false); }}
+          onClose={() => setShowStaffLogin(false)}
+        />
+      )}
     </div>
   );
 }

@@ -580,6 +580,35 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_shop_orders_date     ON shop_orders(tenant_id, order_date);
   CREATE INDEX IF NOT EXISTS idx_shop_items_tenant    ON shop_menu_items(tenant_id, is_active);
   CREATE INDEX IF NOT EXISTS idx_shop_convs_phone     ON shop_conversations(tenant_id, guest_phone);
+  CREATE TABLE IF NOT EXISTS shop_users (
+    id             TEXT PRIMARY KEY,
+    tenant_id      TEXT NOT NULL,
+    username       TEXT NOT NULL,
+    password_hash  TEXT NOT NULL,
+    name           TEXT NOT NULL,
+    surname        TEXT NOT NULL,
+    tax_id         TEXT,
+    operator_id    TEXT,
+    role           TEXT NOT NULL DEFAULT 'operator',
+    is_active      INTEGER DEFAULT 1,
+    session_version INTEGER DEFAULT 1,
+    created_at     TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at     TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    UNIQUE(tenant_id, username)
+  );
+  CREATE INDEX IF NOT EXISTS idx_shop_users_tenant ON shop_users(tenant_id, is_active);
+  CREATE TABLE IF NOT EXISTS shop_audit_log (
+    id          TEXT PRIMARY KEY,
+    tenant_id   TEXT NOT NULL,
+    user_id     TEXT,
+    user_name   TEXT,
+    action      TEXT NOT NULL,
+    entity_type TEXT,
+    entity_id   TEXT,
+    details     TEXT,
+    created_at  TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE INDEX IF NOT EXISTS idx_shop_audit_tenant ON shop_audit_log(tenant_id, created_at);
 `;
 
 export async function runMigrations() {
@@ -723,6 +752,12 @@ export async function runMigrations() {
       `CREATE INDEX IF NOT EXISTS idx_shop_orders_date   ON shop_orders(tenant_id, order_date)`,
       `CREATE INDEX IF NOT EXISTS idx_shop_items_tenant  ON shop_menu_items(tenant_id, is_active)`,
       `CREATE INDEX IF NOT EXISTS idx_shop_convs_phone   ON shop_conversations(tenant_id, guest_phone)`,
+      // shop_users_001 — staff sub-user accounts with role-based access
+      `CREATE TABLE IF NOT EXISTS shop_users (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, username TEXT NOT NULL, password_hash TEXT NOT NULL, name TEXT NOT NULL, surname TEXT NOT NULL, tax_id TEXT, operator_id TEXT, role TEXT NOT NULL DEFAULT 'operator', is_active INTEGER DEFAULT 1, session_version INTEGER DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(tenant_id, username))`,
+      `CREATE INDEX IF NOT EXISTS idx_shop_users_tenant ON shop_users(tenant_id, is_active)`,
+      // shop_audit_001 — audit trail for order and user actions
+      `CREATE TABLE IF NOT EXISTS shop_audit_log (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, user_id TEXT, user_name TEXT, action TEXT NOT NULL, entity_type TEXT, entity_id TEXT, details TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+      `CREATE INDEX IF NOT EXISTS idx_shop_audit_tenant ON shop_audit_log(tenant_id, created_at)`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));

@@ -2,15 +2,24 @@ import type { ShopConfig, ShopCategory, ShopItem, ShopOrder, ShopFaq, ShopConver
 
 const BASE = (import.meta.env.VITE_API_URL as string) || '';
 
-function token() { return localStorage.getItem('bookingai_token') || ''; }
-
 // When a super_admin views a specific shop, set this so all requests carry ?tenantId=X
 let _viewTenantId: string | null = null;
 export function setViewTenantId(id: string | null) { _viewTenantId = id; }
 
+// Prefer shopUserToken (sub-user JWT) over the main tenant token.
+function token() {
+  const shopToken = localStorage.getItem('shopUserToken');
+  if (shopToken) {
+    try {
+      const payload = JSON.parse(atob(shopToken.split('.')[1]));
+      if (payload.type === 'shop_user') return shopToken;
+    } catch { /* fall through */ }
+  }
+  return localStorage.getItem('bookingai_token') || '';
+}
+
 async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const isForm = opts.body instanceof FormData;
-  // Append tenantId for super_admin viewing a specific shop tenant
   let url = `${BASE}${path}`;
   if (_viewTenantId) {
     url += (url.includes('?') ? '&' : '?') + `tenantId=${encodeURIComponent(_viewTenantId)}`;
@@ -67,4 +76,21 @@ export const shopApi = {
 
   getReportsSummary:   (period: string) => req<any>(`/shop/reports/summary?period=${period}`),
   getReportsBreakdown: (period: string) => req<any>(`/shop/reports/breakdown?period=${period}`),
+
+  // Auth
+  shopLogin: (username: string, password: string, tenantId: string) =>
+    req<{ token: string; user: { id: string; username: string; name: string; surname: string; role: string; operator_id?: string } }>(
+      '/shop/auth/login',
+      { method: 'POST', body: JSON.stringify({ username, password, tenant_id: tenantId }) },
+    ),
+  getShopMe: () => req<any>('/shop/auth/me'),
+
+  // User management (admin only)
+  getUsers:   ()                    => req<any[]>('/shop/users'),
+  createUser: (data: any)           => req<any>('/shop/users', { method: 'POST', body: JSON.stringify(data) }),
+  updateUser: (id: string, data: any) => req<void>(`/shop/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteUser: (id: string)          => req<void>(`/shop/users/${id}`, { method: 'DELETE' }),
+
+  // Audit log (admin only)
+  getAuditLog: () => req<any[]>('/shop/audit-log'),
 };
