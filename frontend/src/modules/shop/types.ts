@@ -10,6 +10,13 @@ export interface ShopConfig {
   fallback_backup_number?: string;
   fallback_after_attempts?: number;
   manual_orders_enabled?: boolean | number;
+  qr_ordering_enabled?: boolean | number;
+  qr_collect_name?: boolean | number;
+  qr_collect_table?: boolean | number;
+  qr_slug?: string;
+  shop_logo_url?: string;
+  shop_logo_filename?: string;
+  qr_welcome_message?: string;
   address?: string;
   instagram_url?: string;
   facebook_url?: string;
@@ -69,7 +76,9 @@ export interface ShopOrder {
   total_price: number;
   currency: string;
   notes?: string;
-  source?: 'whatsapp' | 'manual';
+  source?: 'whatsapp' | 'manual' | 'qr';
+  table_name?: string;
+  qr_session?: string;
   is_paid?: boolean | number;
   paid_at?: string;
   created_at: string;

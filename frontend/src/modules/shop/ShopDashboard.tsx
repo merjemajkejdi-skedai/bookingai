@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
-import { ShoppingBag, Package, MessageSquare, HelpCircle, Settings, Plus, Trash2, Pencil, X, Check, RefreshCw, LogOut, BarChart2, Users } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { ShoppingBag, Package, MessageSquare, HelpCircle, Settings, Plus, Trash2, Pencil, X, Check, RefreshCw, LogOut, BarChart2, Users, QrCode } from 'lucide-react';
+import { QRCodeCanvas } from 'qrcode.react';
 import { shopApi, setViewTenantId } from './api';
 import type { ShopOrder, ShopItem, ShopCategory, ShopFaq, ShopConversation, ShopConfig } from './types';
 import { ShopReports } from './ShopReports';
@@ -82,6 +83,12 @@ function OrderCard({
           )}
           {order.source === 'whatsapp' && (
             <span className="text-xs bg-green-50 text-green-700 px-1.5 py-0.5 rounded font-medium">WhatsApp</span>
+          )}
+          {order.source === 'qr' && (
+            <span className="text-xs bg-orange-50 text-orange-700 px-1.5 py-0.5 rounded font-medium">QR</span>
+          )}
+          {order.table_name && (
+            <span className="text-xs bg-teal-50 text-teal-700 px-1.5 py-0.5 rounded font-medium">📍 {order.table_name}</span>
           )}
         </div>
         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[order.status]}`}>{STATUS_LABELS[order.status]}</span>
@@ -808,24 +815,109 @@ function ConversationsTab() {
 
 // ── Config Tab ─────────────────────────────────────────────────────────────────
 
+function Toggle({ label, desc, value, onChange }: { label: string; desc?: string; value: any; onChange: (v: boolean) => void }) {
+  const on = Boolean(value);
+  return (
+    <div className="flex items-center justify-between py-1">
+      <div>
+        <p className="text-sm font-medium text-slate-700">{label}</p>
+        {desc && <p className="text-xs text-slate-400 mt-0.5">{desc}</p>}
+      </div>
+      <button
+        onClick={() => onChange(!on)}
+        className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${on ? 'bg-teal-500' : 'bg-slate-200'}`}
+      >
+        <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${on ? 'translate-x-6' : 'translate-x-1'}`} />
+      </button>
+    </div>
+  );
+}
+
 function ConfigTab() {
-  const [cfg, setCfg] = useState<Partial<ShopConfig>>({});
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [cfg, setCfg]           = useState<Partial<ShopConfig>>({});
+  const [loading, setLoading]   = useState(true);
+  const [busy, setBusy]         = useState(false);
+  const [saved, setSaved]       = useState(false);
+  const [configError, setConfigError] = useState('');
+  const [tables, setTables]     = useState<any[]>([]);
+  const [newTableName, setNewTableName] = useState('');
+  const [bulkPrefix, setBulkPrefix] = useState('Table');
+  const [bulkCount, setBulkCount]   = useState(10);
+  const [showBulk, setShowBulk]     = useState(false);
+  const [showTableQr, setShowTableQr] = useState<any>(null);
+  const logoRef                 = useRef<HTMLInputElement>(null);
+
+  const origin = window.location.origin;
 
   useEffect(() => {
     shopApi.getConfig().then(c => { setCfg(c); setLoading(false); }).catch(() => setLoading(false));
+    shopApi.getTables().then(setTables).catch(() => {});
   }, []);
 
   function set(key: keyof ShopConfig, value: any) { setCfg(prev => ({ ...prev, [key]: value })); }
 
   async function save() {
-    setBusy(true);
-    try { await shopApi.putConfig(cfg); setSaved(true); setTimeout(() => setSaved(false), 2000); } catch { /* ignore */ } finally { setBusy(false); }
+    setBusy(true); setConfigError('');
+    try {
+      await shopApi.putConfig(cfg);
+      setSaved(true); setTimeout(() => setSaved(false), 2000);
+    } catch (e: any) {
+      setConfigError(e.message || 'Save failed');
+    } finally { setBusy(false); }
+  }
+
+  async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const res = await shopApi.uploadLogo(file);
+      setCfg(prev => ({ ...prev, shop_logo_url: (res as any).logo_url }));
+    } catch (e: any) { alert(e.message); }
+  }
+
+  async function removeLogo() {
+    try { await shopApi.deleteLogo(); setCfg(prev => ({ ...prev, shop_logo_url: undefined, shop_logo_filename: undefined })); }
+    catch (e: any) { alert(e.message); }
+  }
+
+  async function addTable() {
+    if (!newTableName.trim()) return;
+    try {
+      const t = await shopApi.createTable({ name: newTableName.trim(), sort_order: tables.length });
+      setTables(prev => [...prev, t]);
+      setNewTableName('');
+    } catch (e: any) { alert(e.message); }
+  }
+
+  async function bulkGenerate() {
+    try {
+      const created = await shopApi.bulkCreateTables(bulkCount, bulkPrefix);
+      setTables(prev => {
+        const existingIds = new Set(prev.map((t: any) => t.id));
+        return [...prev, ...(created as any[]).filter((t: any) => !existingIds.has(t.id))];
+      });
+      setShowBulk(false);
+    } catch (e: any) { alert(e.message); }
+  }
+
+  async function deleteTable(id: string) {
+    if (!confirm('Delete this table?')) return;
+    try { await shopApi.deleteTable(id); setTables(prev => prev.filter((t: any) => t.id !== id)); }
+    catch (e: any) { alert(e.message); }
+  }
+
+  function downloadQr(id: string, name: string) {
+    const canvas = document.getElementById(`qr-${id}`) as HTMLCanvasElement;
+    if (!canvas) return;
+    const url = canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = url; a.download = `qr-${name.toLowerCase().replace(/\s+/g, '-')}.png`;
+    a.click();
   }
 
   if (loading) return <div className="flex items-center justify-center h-full text-slate-400 text-sm">Loading…</div>;
+
+  const slugUrl = cfg.qr_slug ? `${origin}/shop/${cfg.qr_slug}` : '';
 
   return (
     <div className="max-w-lg space-y-5 overflow-y-auto h-full">
@@ -862,54 +954,34 @@ function ConfigTab() {
           <h4 className="font-medium text-slate-800">Fallback &amp; Error Handling</h4>
           <p className="text-xs text-slate-400 mt-0.5">When orders cannot be processed, guests receive this message instead of a generic error.</p>
         </div>
-
         <div className="space-y-1">
           <label className="text-xs text-slate-500 font-medium">Fallback message</label>
-          <textarea
-            rows={2}
-            value={cfg.fallback_message || ''}
-            onChange={e => set('fallback_message', e.target.value)}
+          <textarea rows={2} value={cfg.fallback_message || ''} onChange={e => set('fallback_message', e.target.value)}
             placeholder="We are temporarily unable to process your order online."
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm resize-none"
-          />
+            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm resize-none" />
           <p className="text-xs text-slate-400">Shown to guest when the AI encounters an error</p>
         </div>
-
         <div className="space-y-1">
           <label className="text-xs text-slate-500 font-medium">Backup WhatsApp number</label>
-          <input
-            type="text"
-            value={cfg.fallback_backup_number || ''}
-            onChange={e => set('fallback_backup_number', e.target.value)}
-            placeholder="+355691234567"
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-          />
+          <input type="text" value={cfg.fallback_backup_number || ''} onChange={e => set('fallback_backup_number', e.target.value)}
+            placeholder="+355691234567" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
           <p className="text-xs text-slate-400">Shared with guest when error threshold is reached. Leave empty to not share.</p>
         </div>
-
         <div className="space-y-1">
           <label className="text-xs text-slate-500 font-medium">Share backup number after</label>
-          <select
-            value={cfg.fallback_after_attempts ?? 1}
-            onChange={e => set('fallback_after_attempts', parseInt(e.target.value))}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
-          >
+          <select value={cfg.fallback_after_attempts ?? 1} onChange={e => set('fallback_after_attempts', parseInt(e.target.value))}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white">
             <option value={1}>1st error (immediately)</option>
             <option value={2}>2nd consecutive error</option>
             <option value={3}>3rd consecutive error</option>
           </select>
-          <p className="text-xs text-slate-400">How many errors in a row before the backup number is shown</p>
         </div>
-
         {cfg.fallback_backup_number && (
           <div className="bg-slate-50 rounded-lg px-3 py-2.5 border border-slate-200">
-            <p className="text-xs font-medium text-slate-600 mb-1">
-              Preview — what guest sees after {cfg.fallback_after_attempts ?? 1} error(s):
-            </p>
+            <p className="text-xs font-medium text-slate-600 mb-1">Preview — after {cfg.fallback_after_attempts ?? 1} error(s):</p>
             <p className="text-xs text-slate-700 whitespace-pre-wrap">
               {cfg.fallback_message || 'We are temporarily unable to process your order online.'}
-              {'\n\nPlease contact us directly on WhatsApp:\n📱 '}
-              {cfg.fallback_backup_number}
+              {'\n\nPlease contact us directly on WhatsApp:\n📱 '}{cfg.fallback_backup_number}
             </p>
           </div>
         )}
@@ -917,23 +989,181 @@ function ConfigTab() {
 
       <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
         <h4 className="font-medium text-slate-800">Order Settings</h4>
-        <div className="flex items-center justify-between py-1">
-          <div>
-            <p className="text-sm font-medium text-slate-700">Manual order creation</p>
-            <p className="text-xs text-slate-400 mt-0.5">Allow staff to create orders directly from the dashboard without a WhatsApp conversation</p>
-          </div>
-          <button
-            onClick={() => set('manual_orders_enabled', !cfg.manual_orders_enabled)}
-            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${cfg.manual_orders_enabled ? 'bg-brand-500' : 'bg-slate-200'}`}
-          >
-            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${cfg.manual_orders_enabled ? 'translate-x-6' : 'translate-x-1'}`} />
-          </button>
-        </div>
+        <Toggle
+          label="Manual order creation"
+          desc="Allow staff to create orders directly from the dashboard"
+          value={cfg.manual_orders_enabled}
+          onChange={v => set('manual_orders_enabled', v)}
+        />
       </div>
+
+      {/* QR Self-Ordering */}
+      <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <QrCode size={16} className="text-teal-600" />
+          <h4 className="font-medium text-slate-800">QR Self-Ordering</h4>
+        </div>
+        <Toggle
+          label="Enable QR ordering"
+          desc="Let customers scan a QR code to order directly from their phone"
+          value={cfg.qr_ordering_enabled}
+          onChange={v => set('qr_ordering_enabled', v)}
+        />
+
+        {cfg.qr_ordering_enabled ? (
+          <>
+            <div>
+              <label className="text-xs text-slate-500 font-medium">Shop URL slug *</label>
+              <div className="flex items-center gap-1 mt-1">
+                <span className="text-xs text-slate-400 whitespace-nowrap">{origin}/shop/</span>
+                <input
+                  value={cfg.qr_slug || ''}
+                  onChange={e => set('qr_slug', e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-'))}
+                  placeholder="my-shop-name"
+                  className="flex-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm min-w-0"
+                />
+              </div>
+              <p className="text-xs text-slate-400 mt-1">Used in QR codes and the ordering URL. Cannot be changed after sharing.</p>
+            </div>
+
+            <Toggle label="Ask customer for name" value={cfg.qr_collect_name ?? 1} onChange={v => set('qr_collect_name', v)} />
+            <Toggle label="Enable table QR codes" value={cfg.qr_collect_table} onChange={v => set('qr_collect_table', v)} />
+
+            <div>
+              <label className="text-xs text-slate-500 font-medium">Welcome message</label>
+              <textarea rows={2} value={cfg.qr_welcome_message || ''} onChange={e => set('qr_welcome_message', e.target.value)}
+                placeholder="Welcome! Please enter your name to start ordering."
+                className="w-full mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm resize-none" />
+            </div>
+
+            {/* Logo upload */}
+            <div>
+              <label className="text-xs text-slate-500 font-medium">Shop logo (shown on ordering page)</label>
+              {cfg.shop_logo_url ? (
+                <div className="flex items-center gap-3 mt-1 bg-slate-50 rounded-lg px-3 py-2 border border-slate-200">
+                  <img src={cfg.shop_logo_url} alt="Logo" className="h-10 object-contain" />
+                  <button onClick={removeLogo} className="text-xs text-red-400 hover:text-red-600 ml-auto">Remove</button>
+                </div>
+              ) : (
+                <div onClick={() => logoRef.current?.click()}
+                  className="mt-1 border-2 border-dashed border-slate-200 rounded-lg p-4 text-center cursor-pointer hover:border-teal-400 transition-colors">
+                  <p className="text-xs text-slate-400">Click to upload logo · PNG, JPG, WebP · max 5 MB</p>
+                </div>
+              )}
+              <input ref={logoRef} type="file" accept=".png,.jpg,.jpeg,.webp" className="hidden" onChange={handleLogoUpload} />
+            </div>
+
+            {/* QR code display */}
+            {cfg.qr_slug && (
+              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                <p className="text-xs font-medium text-slate-600 mb-3">Shop QR Code</p>
+                <div className="flex items-start gap-4">
+                  <QRCodeCanvas id="qr-shop" value={slugUrl} size={100} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-slate-500 break-all mb-2">{slugUrl}</p>
+                    <button onClick={() => downloadQr('shop', cfg.qr_slug!)}
+                      className="text-xs font-medium text-teal-600 hover:text-teal-700">
+                      ↓ Download PNG
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="text-xs text-slate-400">Enable QR ordering to configure the self-service menu and generate QR codes.</p>
+        )}
+      </div>
+
+      {/* Tables section */}
+      {cfg.qr_ordering_enabled && cfg.qr_collect_table && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <h4 className="font-medium text-slate-800">Tables</h4>
+            <div className="flex gap-3">
+              <button onClick={() => setShowBulk(b => !b)} className="text-xs text-slate-500 hover:text-slate-700">Bulk generate</button>
+              <button onClick={() => setNewTableName('+')} className="text-xs font-medium text-teal-600 hover:text-teal-700">+ Add table</button>
+            </div>
+          </div>
+
+          {showBulk && (
+            <div className="bg-slate-50 rounded-xl p-3 border border-slate-200">
+              <p className="text-xs font-medium text-slate-600 mb-2">Bulk generate tables</p>
+              <div className="flex items-center gap-2">
+                <input value={bulkPrefix} onChange={e => setBulkPrefix(e.target.value)} placeholder="Prefix"
+                  className="flex-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm" />
+                <input type="number" value={bulkCount} onChange={e => setBulkCount(+e.target.value)} min={1} max={100}
+                  className="w-20 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm" />
+                <button onClick={bulkGenerate}
+                  className="text-xs font-medium px-3 py-1.5 bg-teal-500 text-white rounded-lg hover:bg-teal-600">
+                  Generate
+                </button>
+              </div>
+            </div>
+          )}
+
+          {newTableName !== '' && (
+            <div className="flex items-center gap-2">
+              <input
+                autoFocus
+                value={newTableName === '+' ? '' : newTableName}
+                onChange={e => setNewTableName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') addTable(); if (e.key === 'Escape') setNewTableName(''); }}
+                placeholder="Table name"
+                className="flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm"
+              />
+              <button onClick={addTable} className="text-xs font-medium px-3 py-1.5 bg-teal-500 text-white rounded-lg">Add</button>
+              <button onClick={() => setNewTableName('')} className="text-xs text-slate-400 hover:text-slate-600">Cancel</button>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            {tables.map((table: any) => (
+              <div key={table.id} className="flex items-center gap-3 bg-slate-50 rounded-lg border border-slate-200 px-3 py-2">
+                <span className="text-sm font-medium text-slate-700 flex-1">{table.name}</span>
+                <button onClick={() => setShowTableQr(table)} className="text-xs text-teal-600 hover:text-teal-700">Show QR</button>
+                <button onClick={() => deleteTable(table.id)} className="text-xs text-red-400 hover:text-red-600">Delete</button>
+              </div>
+            ))}
+            {tables.length === 0 && <p className="text-xs text-slate-400 text-center py-4">No tables yet. Add tables above.</p>}
+          </div>
+        </div>
+      )}
+
+      {configError && <p className="text-xs text-red-500">{configError}</p>}
 
       <button onClick={save} disabled={busy} className="px-5 py-2 bg-brand-600 text-white rounded-lg text-sm hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2">
         {busy ? 'Saving…' : saved ? <><Check size={14} /> Saved!</> : 'Save Settings'}
       </button>
+
+      {/* Table QR modal */}
+      {showTableQr && cfg.qr_slug && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl text-center">
+            <h3 className="text-base font-semibold text-slate-800 mb-1">{showTableQr.name}</h3>
+            <p className="text-xs text-slate-400 mb-4 break-all">
+              {origin}/shop/{cfg.qr_slug}/table/{showTableQr.id}
+            </p>
+            <div className="flex justify-center mb-4">
+              <QRCodeCanvas
+                id={`qr-${showTableQr.id}`}
+                value={`${origin}/shop/${cfg.qr_slug}/table/${showTableQr.id}`}
+                size={180}
+              />
+            </div>
+            <div className="flex gap-2 justify-center">
+              <button onClick={() => downloadQr(showTableQr.id, showTableQr.name)}
+                className="text-sm font-medium px-4 py-2 bg-teal-500 text-white rounded-lg hover:bg-teal-600">
+                ↓ Download PNG
+              </button>
+              <button onClick={() => setShowTableQr(null)}
+                className="text-sm px-4 py-2 text-slate-500 hover:bg-slate-50 rounded-lg">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

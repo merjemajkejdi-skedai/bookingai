@@ -493,6 +493,13 @@ const SCHEMA = `
     tiktok_url TEXT,
     website_url TEXT,
     phone TEXT,
+    qr_ordering_enabled INTEGER DEFAULT 0,
+    qr_collect_name INTEGER DEFAULT 1,
+    qr_collect_table INTEGER DEFAULT 0,
+    qr_slug TEXT UNIQUE,
+    shop_logo_url TEXT,
+    shop_logo_filename TEXT,
+    qr_welcome_message TEXT DEFAULT 'Welcome! Please enter your name to start ordering.',
     created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
   );
@@ -538,6 +545,8 @@ const SCHEMA = `
     source TEXT DEFAULT 'whatsapp',
     is_paid INTEGER DEFAULT 0,
     paid_at TEXT,
+    table_name TEXT,
+    qr_session TEXT,
     created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     in_progress_at TEXT,
@@ -545,6 +554,16 @@ const SCHEMA = `
     picked_up_at TEXT,
     cancelled_at TEXT
   );
+  CREATE TABLE IF NOT EXISTS shop_tables (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    sort_order INTEGER DEFAULT 0,
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    UNIQUE(tenant_id, name)
+  );
+  CREATE INDEX IF NOT EXISTS idx_shop_tables_tenant ON shop_tables(tenant_id, is_active, sort_order);
   CREATE UNIQUE INDEX IF NOT EXISTS idx_shop_orders_unique ON shop_orders(tenant_id, order_date, order_number);
   CREATE TABLE IF NOT EXISTS shop_order_items (
     id TEXT PRIMARY KEY,
@@ -752,6 +771,19 @@ export async function runMigrations() {
       `CREATE INDEX IF NOT EXISTS idx_shop_orders_date   ON shop_orders(tenant_id, order_date)`,
       `CREATE INDEX IF NOT EXISTS idx_shop_items_tenant  ON shop_menu_items(tenant_id, is_active)`,
       `CREATE INDEX IF NOT EXISTS idx_shop_convs_phone   ON shop_conversations(tenant_id, guest_phone)`,
+      // shop_qr_001 — QR self-ordering fields
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS qr_ordering_enabled INTEGER DEFAULT 0`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS qr_collect_name INTEGER DEFAULT 1`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS qr_collect_table INTEGER DEFAULT 0`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS qr_slug TEXT`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS shop_logo_url TEXT`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS shop_logo_filename TEXT`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS qr_welcome_message TEXT DEFAULT 'Welcome! Please enter your name to start ordering.'`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_shop_config_slug ON shop_config(qr_slug) WHERE qr_slug IS NOT NULL`,
+      `CREATE TABLE IF NOT EXISTS shop_tables (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, name TEXT NOT NULL, sort_order INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(tenant_id, name))`,
+      `CREATE INDEX IF NOT EXISTS idx_shop_tables_tenant ON shop_tables(tenant_id, is_active, sort_order)`,
+      `ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS table_name TEXT`,
+      `ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS qr_session TEXT`,
       // shop_users_001 — staff sub-user accounts with role-based access
       `CREATE TABLE IF NOT EXISTS shop_users (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, username TEXT NOT NULL, password_hash TEXT NOT NULL, name TEXT NOT NULL, surname TEXT NOT NULL, tax_id TEXT, operator_id TEXT, role TEXT NOT NULL DEFAULT 'operator', is_active INTEGER DEFAULT 1, session_version INTEGER DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(tenant_id, username))`,
       `CREATE INDEX IF NOT EXISTS idx_shop_users_tenant ON shop_users(tenant_id, is_active)`,
@@ -970,6 +1002,34 @@ export async function runMigrations() {
     exec('ALTER TABLE shop_orders ADD COLUMN is_paid INTEGER DEFAULT 0');
   if (!shopOrderCols.includes('paid_at'))
     exec('ALTER TABLE shop_orders ADD COLUMN paid_at TEXT');
+
+  // shop_config — QR ordering columns
+  const shopConfigColsQr = prepare("SELECT name FROM pragma_table_info('shop_config')")
+    .all().map((r: any) => r.name as string);
+  if (!shopConfigColsQr.includes('qr_ordering_enabled'))
+    exec('ALTER TABLE shop_config ADD COLUMN qr_ordering_enabled INTEGER DEFAULT 0');
+  if (!shopConfigColsQr.includes('qr_collect_name'))
+    exec('ALTER TABLE shop_config ADD COLUMN qr_collect_name INTEGER DEFAULT 1');
+  if (!shopConfigColsQr.includes('qr_collect_table'))
+    exec('ALTER TABLE shop_config ADD COLUMN qr_collect_table INTEGER DEFAULT 0');
+  if (!shopConfigColsQr.includes('qr_slug'))
+    exec('ALTER TABLE shop_config ADD COLUMN qr_slug TEXT');
+  if (!shopConfigColsQr.includes('shop_logo_url'))
+    exec('ALTER TABLE shop_config ADD COLUMN shop_logo_url TEXT');
+  if (!shopConfigColsQr.includes('shop_logo_filename'))
+    exec('ALTER TABLE shop_config ADD COLUMN shop_logo_filename TEXT');
+  if (!shopConfigColsQr.includes('qr_welcome_message'))
+    exec("ALTER TABLE shop_config ADD COLUMN qr_welcome_message TEXT DEFAULT 'Welcome! Please enter your name to start ordering.'");
+
+  // shop_orders — QR ordering columns
+  const shopOrderColsQr = prepare("SELECT name FROM pragma_table_info('shop_orders')")
+    .all().map((r: any) => r.name as string);
+  if (!shopOrderColsQr.includes('table_name'))
+    exec('ALTER TABLE shop_orders ADD COLUMN table_name TEXT');
+  if (!shopOrderColsQr.includes('qr_session'))
+    exec('ALTER TABLE shop_orders ADD COLUMN qr_session TEXT');
+
+  // shop_tables — new table for table-specific QR codes (SCHEMA CREATE IF NOT EXISTS handles it)
 
   // shop_conversations — consecutive error tracking
   const shopConvCols = prepare("SELECT name FROM pragma_table_info('shop_conversations')")

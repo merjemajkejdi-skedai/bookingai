@@ -93,4 +93,35 @@ export const shopApi = {
 
   // Audit log (admin only)
   getAuditLog: () => req<any[]>('/shop/audit-log'),
+
+  // Tables CRUD (admin only)
+  getTables:        ()                        => req<any[]>('/shop/tables'),
+  createTable:      (data: any)               => req<any>('/shop/tables', { method: 'POST', body: JSON.stringify(data) }),
+  bulkCreateTables: (count: number, prefix: string) =>
+    req<any[]>('/shop/tables/bulk', { method: 'POST', body: JSON.stringify({ count, prefix }) }),
+  updateTable:      (id: string, data: any)   => req<void>(`/shop/tables/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteTable:      (id: string)              => req<void>(`/shop/tables/${id}`, { method: 'DELETE' }),
+
+  // Logo upload (admin only)
+  uploadLogo: (file: File) => {
+    const fd = new FormData();
+    fd.append('logo', file);
+    return req<{ logo_url: string }>('/shop/config/logo', { method: 'POST', body: fd });
+  },
+  deleteLogo: () => req<void>('/shop/config/logo', { method: 'DELETE' }),
+};
+
+// Public QR ordering endpoints — no auth, direct fetch
+const API_BASE = (import.meta.env.VITE_API_URL as string) || '';
+export const shopPublicApi = {
+  getShop:    (slug: string) =>
+    fetch(`${API_BASE}/shop/public/${slug}`).then(r => r.json()),
+  getTable:   (slug: string, tableId: string) =>
+    fetch(`${API_BASE}/shop/public/${slug}/table/${tableId}`).then(r => r.json()),
+  placeOrder: (slug: string, data: any) =>
+    fetch(`${API_BASE}/shop/public/${slug}/order`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }).then(r => r.json()),
 };

@@ -92,22 +92,32 @@ shopRouter.put('/config', authenticateShopOrTenant, async (req: any, res: Respon
       fallback_message, fallback_backup_number, fallback_after_attempts,
       address, instagram_url, facebook_url, tiktok_url, website_url, phone,
       manual_orders_enabled,
+      qr_ordering_enabled, qr_collect_name, qr_collect_table, qr_slug, qr_welcome_message,
     } = req.body;
     const manualEnabled = manual_orders_enabled ? 1 : 0;
+    const qrEnabled     = qr_ordering_enabled  ? 1 : 0;
+    const qrName        = qr_collect_name !== undefined ? (qr_collect_name ? 1 : 0) : 1;
+    const qrTable       = qr_collect_table ? 1 : 0;
+    const slug          = qr_slug ? String(qr_slug).toLowerCase().trim() || null : null;
     const exists = await dbGet(`SELECT id FROM shop_config WHERE tenant_id = ?`, tenantId);
     if (exists) {
       await dbRun(
-        `UPDATE shop_config SET shop_name=?,opening_hours=?,estimated_pickup_minutes=?,pickup_mode=?,agent_personality=?,fallback_message=?,fallback_backup_number=?,fallback_after_attempts=?,manual_orders_enabled=?,address=?,instagram_url=?,facebook_url=?,tiktok_url=?,website_url=?,phone=?,updated_at=CURRENT_TIMESTAMP WHERE tenant_id=?`,
-        shop_name, opening_hours, estimated_pickup_minutes, pickup_mode, agent_personality, fallback_message, fallback_backup_number, fallback_after_attempts, manualEnabled, address, instagram_url, facebook_url, tiktok_url, website_url, phone, tenantId,
+        `UPDATE shop_config SET shop_name=?,opening_hours=?,estimated_pickup_minutes=?,pickup_mode=?,agent_personality=?,fallback_message=?,fallback_backup_number=?,fallback_after_attempts=?,manual_orders_enabled=?,address=?,instagram_url=?,facebook_url=?,tiktok_url=?,website_url=?,phone=?,qr_ordering_enabled=?,qr_collect_name=?,qr_collect_table=?,qr_slug=?,qr_welcome_message=?,updated_at=CURRENT_TIMESTAMP WHERE tenant_id=?`,
+        shop_name, opening_hours, estimated_pickup_minutes, pickup_mode, agent_personality, fallback_message, fallback_backup_number, fallback_after_attempts, manualEnabled, address, instagram_url, facebook_url, tiktok_url, website_url, phone, qrEnabled, qrName, qrTable, slug, qr_welcome_message ?? null, tenantId,
       );
     } else {
       await dbRun(
-        `INSERT INTO shop_config (id,tenant_id,shop_name,opening_hours,estimated_pickup_minutes,pickup_mode,agent_personality,fallback_message,fallback_backup_number,fallback_after_attempts,manual_orders_enabled,address,instagram_url,facebook_url,tiktok_url,website_url,phone) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        crypto.randomUUID(), tenantId, shop_name, opening_hours, estimated_pickup_minutes, pickup_mode, agent_personality, fallback_message, fallback_backup_number, fallback_after_attempts, manualEnabled, address, instagram_url, facebook_url, tiktok_url, website_url, phone,
+        `INSERT INTO shop_config (id,tenant_id,shop_name,opening_hours,estimated_pickup_minutes,pickup_mode,agent_personality,fallback_message,fallback_backup_number,fallback_after_attempts,manual_orders_enabled,address,instagram_url,facebook_url,tiktok_url,website_url,phone,qr_ordering_enabled,qr_collect_name,qr_collect_table,qr_slug,qr_welcome_message) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        crypto.randomUUID(), tenantId, shop_name, opening_hours, estimated_pickup_minutes, pickup_mode, agent_personality, fallback_message, fallback_backup_number, fallback_after_attempts, manualEnabled, address, instagram_url, facebook_url, tiktok_url, website_url, phone, qrEnabled, qrName, qrTable, slug, qr_welcome_message ?? null,
       );
     }
     res.json({ success: true });
-  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+  } catch (err: any) {
+    if (err.message?.includes('UNIQUE') || err.code === '23505') {
+      return res.status(400).json({ success: false, error: 'That URL slug is already taken by another shop' });
+    }
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // ── Categories ─────────────────────────────────────────────────────────────────
@@ -885,5 +895,248 @@ shopRouter.get('/audit-log', authenticateShopOrTenant, requireShopAdmin, async (
       tenantId,
     );
     res.json({ success: true, data: rows });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ── Logo Upload ────────────────────────────────────────────────────────────────
+
+const LOGO_DIR = path.join(process.cwd(), 'uploads', 'shop', 'logos');
+const uploadLogo = multer({
+  storage: multer.diskStorage({
+    destination: (_, __, cb) => { fs.mkdirSync(LOGO_DIR, { recursive: true }); cb(null, LOGO_DIR); },
+    filename:    (_, file, cb) => { cb(null, `logo-${Date.now()}${path.extname(file.originalname).toLowerCase()}`); },
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_, file, cb) => {
+    const ok = ['.jpg', '.jpeg', '.png', '.webp'].includes(path.extname(file.originalname).toLowerCase());
+    cb(null, ok);
+  },
+});
+
+shopRouter.post('/config/logo', authenticateShopOrTenant, uploadLogo.single('logo'), async (req: any, res: Response) => {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded' });
+    const tenantId = resolveTenantId(req);
+    const old = await dbGet(`SELECT shop_logo_filename FROM shop_config WHERE tenant_id=?`, tenantId);
+    if (old?.shop_logo_filename) {
+      const oldPath = path.join(LOGO_DIR, old.shop_logo_filename);
+      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+    }
+    const logoUrl = `${baseUrl()}/uploads/shop/logos/${req.file.filename}`;
+    await dbRun(
+      `UPDATE shop_config SET shop_logo_url=?, shop_logo_filename=?, updated_at=CURRENT_TIMESTAMP WHERE tenant_id=?`,
+      logoUrl, req.file.filename, tenantId,
+    );
+    res.json({ success: true, data: { logo_url: logoUrl } });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.delete('/config/logo', authenticateShopOrTenant, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const old = await dbGet(`SELECT shop_logo_filename FROM shop_config WHERE tenant_id=?`, tenantId);
+    if (old?.shop_logo_filename) {
+      const oldPath = path.join(LOGO_DIR, old.shop_logo_filename);
+      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+    }
+    await dbRun(
+      `UPDATE shop_config SET shop_logo_url=NULL, shop_logo_filename=NULL, updated_at=CURRENT_TIMESTAMP WHERE tenant_id=?`,
+      tenantId,
+    );
+    res.json({ success: true });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ── Tables (for table QR codes) ────────────────────────────────────────────────
+
+shopRouter.get('/tables', authenticateShopOrTenant, async (req: any, res: Response) => {
+  try {
+    const rows = await dbAll(
+      `SELECT * FROM shop_tables WHERE tenant_id=? ORDER BY sort_order ASC, name ASC`,
+      resolveTenantId(req),
+    );
+    res.json({ success: true, data: rows });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.post('/tables', authenticateShopOrTenant, requireShopAdmin, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const { name, sort_order } = req.body;
+    if (!name) return res.status(400).json({ success: false, error: 'name required' });
+    const id = crypto.randomUUID();
+    await dbRun(
+      `INSERT INTO shop_tables (id, tenant_id, name, sort_order) VALUES (?,?,?,?)`,
+      id, tenantId, name, sort_order ?? 0,
+    );
+    res.json({ success: true, data: { id, tenant_id: tenantId, name, sort_order: sort_order ?? 0, is_active: 1 } });
+  } catch (err: any) {
+    if (err.message?.includes('UNIQUE') || err.code === '23505')
+      return res.status(400).json({ success: false, error: 'Table name already exists' });
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+shopRouter.post('/tables/bulk', authenticateShopOrTenant, requireShopAdmin, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const { count, prefix = 'Table' } = req.body;
+    if (!count || count < 1 || count > 100)
+      return res.status(400).json({ success: false, error: 'count must be 1–100' });
+    const created: any[] = [];
+    for (let i = 1; i <= count; i++) {
+      const name = `${prefix} ${i}`;
+      const id   = crypto.randomUUID();
+      try {
+        await dbRun(
+          `INSERT INTO shop_tables (id, tenant_id, name, sort_order) VALUES (?,?,?,?)`,
+          id, tenantId, name, i,
+        );
+        created.push({ id, name, sort_order: i, is_active: 1 });
+      } catch { /* skip duplicate names */ }
+    }
+    res.json({ success: true, data: created });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.patch('/tables/:id', authenticateShopOrTenant, requireShopAdmin, async (req: any, res: Response) => {
+  try {
+    const { name, sort_order, is_active } = req.body;
+    await dbRun(
+      `UPDATE shop_tables SET name=COALESCE(?,name), sort_order=COALESCE(?,sort_order), is_active=COALESCE(?,is_active) WHERE id=? AND tenant_id=?`,
+      name ?? null, sort_order ?? null, is_active !== undefined ? (is_active ? 1 : 0) : null,
+      req.params.id, resolveTenantId(req),
+    );
+    res.json({ success: true });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.delete('/tables/:id', authenticateShopOrTenant, requireShopAdmin, async (req: any, res: Response) => {
+  try {
+    await dbRun(`DELETE FROM shop_tables WHERE id=? AND tenant_id=?`, req.params.id, resolveTenantId(req));
+    res.json({ success: true });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ── PUBLIC QR Ordering (no auth) ───────────────────────────────────────────────
+
+shopRouter.get('/public/:slug', async (req: any, res: Response) => {
+  try {
+    const cfg = await dbGet(
+      `SELECT sc.* FROM shop_config sc WHERE sc.qr_slug = ? AND sc.qr_ordering_enabled = 1`,
+      req.params.slug,
+    );
+    if (!cfg) return res.status(404).json({ success: false, error: 'Shop not found or QR ordering not enabled' });
+
+    const items = await dbAll(
+      `SELECT i.id, i.name, i.description, i.price, i.currency, i.photo_url, i.sort_order,
+              c.name AS category_name, c.sort_order AS category_order
+       FROM shop_menu_items i
+       LEFT JOIN shop_menu_categories c ON c.id = i.category_id
+       WHERE i.tenant_id = ? AND i.is_active = 1
+         AND (i.stock_type = 'unlimited' OR i.stock_limit IS NULL OR (i.stock_limit - i.stock_used) > 0)
+       ORDER BY c.sort_order ASC, i.sort_order ASC`,
+      cfg.tenant_id,
+    );
+
+    res.json({
+      success: true,
+      data: {
+        shop_name:          cfg.shop_name,
+        shop_logo_url:      cfg.shop_logo_url,
+        qr_collect_name:    cfg.qr_collect_name,
+        qr_collect_table:   cfg.qr_collect_table,
+        qr_welcome_message: cfg.qr_welcome_message,
+        items,
+      },
+    });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.get('/public/:slug/table/:tableId', async (req: any, res: Response) => {
+  try {
+    const cfg = await dbGet(
+      `SELECT tenant_id FROM shop_config WHERE qr_slug=? AND qr_ordering_enabled=1`,
+      req.params.slug,
+    );
+    if (!cfg) return res.status(404).json({ success: false, error: 'Shop not found' });
+    const table = await dbGet(
+      `SELECT id, name FROM shop_tables WHERE id=? AND tenant_id=? AND is_active=1`,
+      req.params.tableId, cfg.tenant_id,
+    );
+    if (!table) return res.status(404).json({ success: false, error: 'Table not found' });
+    res.json({ success: true, data: table });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.post('/public/:slug/order', async (req: any, res: Response) => {
+  try {
+    const { customer_name, table_name, items, qr_session } = req.body;
+    if (!items?.length) return res.status(400).json({ success: false, error: 'No items in order' });
+
+    const cfg = await dbGet(
+      `SELECT * FROM shop_config WHERE qr_slug=? AND qr_ordering_enabled=1`,
+      req.params.slug,
+    );
+    if (!cfg) return res.status(404).json({ success: false, error: 'Shop not found' });
+    const tenantId = cfg.tenant_id;
+
+    const itemIds = items.map((i: any) => i.item_id);
+    const ph = itemIds.map(() => '?').join(',');
+    const menuItems = await dbAll(
+      `SELECT id, name, price, currency, stock_type, stock_limit, stock_used, is_active FROM shop_menu_items WHERE tenant_id=? AND id IN (${ph}) AND is_active=1`,
+      tenantId, ...itemIds,
+    );
+    const itemMap = new Map(menuItems.map((i: any) => [i.id, i]));
+
+    const unavailable: string[] = [];
+    for (const oi of items) {
+      const mi = itemMap.get(oi.item_id) as any;
+      if (!mi) { unavailable.push(oi.item_id); continue; }
+      if (mi.stock_type !== 'unlimited' && mi.stock_limit != null) {
+        if ((mi.stock_limit - mi.stock_used) < oi.quantity) unavailable.push(mi.name);
+      }
+    }
+    if (unavailable.length) return res.status(400).json({ success: false, error: 'Some items are no longer available', unavailable });
+
+    let total = 0;
+    const orderLines = items.map((oi: any) => {
+      const mi = itemMap.get(oi.item_id) as any;
+      const subtotal = parseFloat(mi.price) * oi.quantity;
+      total += subtotal;
+      return { item_id: oi.item_id, item_name: mi.name, item_price: parseFloat(mi.price), quantity: oi.quantity, subtotal, currency: mi.currency };
+    });
+
+    const today = new Date().toISOString().split('T')[0];
+    const numRows = await dbAll(
+      `SELECT COALESCE(MAX(order_number), 0) + 1 AS next_num FROM shop_orders WHERE tenant_id=? AND order_date=?`,
+      tenantId, today,
+    );
+    const orderNumber = (numRows[0] as any)?.next_num || 1;
+
+    const orderId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    await dbRun(
+      `INSERT INTO shop_orders (id,tenant_id,order_number,order_date,guest_phone,pickup_name,status,total_price,currency,source,table_name,qr_session,created_at,updated_at)
+       VALUES (?,?,?,?,?,?,'new',?,?,'qr',?,?,?,?)`,
+      orderId, tenantId, orderNumber, today, null, customer_name || 'Walk-in',
+      total, orderLines[0]?.currency || 'ALL', table_name || null, qr_session || null, now, now,
+    );
+
+    for (const line of orderLines) {
+      await dbRun(
+        `INSERT INTO shop_order_items (id,order_id,tenant_id,item_id,item_name,item_price,quantity,subtotal) VALUES (?,?,?,?,?,?,?,?)`,
+        crypto.randomUUID(), orderId, tenantId, line.item_id, line.item_name, line.item_price, line.quantity, line.subtotal,
+      );
+    }
+    for (const line of orderLines) {
+      await dbRun(
+        `UPDATE shop_menu_items SET stock_used = stock_used + ?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND stock_type != 'unlimited'`,
+        line.quantity, line.item_id,
+      );
+    }
+
+    console.log(`[Shop QR] Order #${orderNumber} from ${customer_name || 'Walk-in'}${table_name ? ` @ ${table_name}` : ''}`);
+    res.json({ success: true, data: { order_id: orderId, order_number: orderNumber, total, customer_name: customer_name || 'Walk-in', table_name: table_name || null } });
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
 });
