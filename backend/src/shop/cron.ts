@@ -1,5 +1,7 @@
-import { isPg, prepare, queryRun } from '../db/database.js';
+import { isPg, prepare, query, queryRun } from '../db/database.js';
+import { sendDailyInventoryDigest } from '../services/inventory.js';
 
+async function dbAll(sql: string, ...p: unknown[]) { return (isPg ? query(sql, p) : prepare(sql).all(...p)) as any[]; }
 async function dbRun(sql: string, ...p: unknown[]) { if (isPg) return queryRun(sql, p); prepare(sql).run(...p); }
 
 async function resetDailyStock() {
@@ -27,4 +29,29 @@ export function startShopCron() {
   }, 5 * 60 * 1000);
 
   console.log('[Shop] ✅ Daily stock reset cron started');
+
+  // Inventory daily digest — checks every minute for shops due at this time
+  setInterval(async () => {
+    try {
+      const now = new Date().toLocaleTimeString('en-GB', {
+        timeZone: 'Europe/Tirane',
+        hour: '2-digit', minute: '2-digit', hour12: false,
+      });
+      const shops = await dbAll(
+        `SELECT tenant_id FROM shop_config
+         WHERE inventory_enabled = 1
+           AND inventory_alert_whatsapp = 1
+           AND inventory_alert_mode = 'daily'
+           AND inventory_alert_time = ?`,
+        now,
+      );
+      for (const shop of shops) {
+        await sendDailyInventoryDigest(shop.tenant_id as string).catch(
+          (err: any) => console.error('[Inventory] Digest error:', err.message),
+        );
+      }
+    } catch (err) {
+      console.error('[Inventory] Cron error:', err);
+    }
+  }, 60 * 1000);
 }

@@ -652,6 +652,108 @@ const SCHEMA = `
     created_at  TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
   );
   CREATE INDEX IF NOT EXISTS idx_shop_audit_tenant ON shop_audit_log(tenant_id, created_at);
+  CREATE TABLE IF NOT EXISTS inventory_categories (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    sort_order INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    UNIQUE(tenant_id, name)
+  );
+  CREATE TABLE IF NOT EXISTS inventory_ingredients (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    category_id TEXT,
+    supplier_id TEXT,
+    name TEXT NOT NULL,
+    unit TEXT NOT NULL DEFAULT 'pieces',
+    current_stock REAL DEFAULT 0,
+    reorder_threshold REAL DEFAULT 0,
+    cost_per_unit REAL DEFAULT 0,
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    UNIQUE(tenant_id, name)
+  );
+  CREATE TABLE IF NOT EXISTS inventory_suppliers (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    contact TEXT,
+    phone TEXT,
+    email TEXT,
+    notes TEXT,
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE TABLE IF NOT EXISTS inventory_recipes (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    menu_item_id TEXT NOT NULL,
+    name TEXT,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    UNIQUE(tenant_id, menu_item_id)
+  );
+  CREATE TABLE IF NOT EXISTS inventory_recipe_lines (
+    id TEXT PRIMARY KEY,
+    recipe_id TEXT NOT NULL,
+    tenant_id TEXT NOT NULL,
+    ingredient_id TEXT NOT NULL,
+    quantity REAL NOT NULL,
+    sort_order INTEGER DEFAULT 0
+  );
+  CREATE TABLE IF NOT EXISTS inventory_deliveries (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    supplier_id TEXT,
+    supplier_name TEXT,
+    invoice_ref TEXT,
+    notes TEXT,
+    total_cost REAL,
+    delivered_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+    created_by TEXT,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE TABLE IF NOT EXISTS inventory_delivery_lines (
+    id TEXT PRIMARY KEY,
+    delivery_id TEXT NOT NULL,
+    tenant_id TEXT NOT NULL,
+    ingredient_id TEXT NOT NULL,
+    ingredient_name TEXT NOT NULL,
+    quantity REAL NOT NULL,
+    unit TEXT NOT NULL,
+    cost_per_unit REAL,
+    line_total REAL
+  );
+  CREATE TABLE IF NOT EXISTS inventory_waste (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    ingredient_id TEXT NOT NULL,
+    ingredient_name TEXT NOT NULL,
+    quantity REAL NOT NULL,
+    unit TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'spillage',
+    notes TEXT,
+    recorded_by TEXT,
+    recorded_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE TABLE IF NOT EXISTS inventory_consumption (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    order_id TEXT,
+    ingredient_id TEXT NOT NULL,
+    ingredient_name TEXT NOT NULL,
+    quantity REAL NOT NULL,
+    unit TEXT NOT NULL,
+    consumed_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE INDEX IF NOT EXISTS idx_inv_ingredients_tenant   ON inventory_ingredients(tenant_id, is_active);
+  CREATE INDEX IF NOT EXISTS idx_inv_recipe_lines_recipe  ON inventory_recipe_lines(recipe_id);
+  CREATE INDEX IF NOT EXISTS idx_inv_delivery_lines       ON inventory_delivery_lines(delivery_id);
+  CREATE INDEX IF NOT EXISTS idx_inv_waste_tenant         ON inventory_waste(tenant_id, recorded_at);
+  CREATE INDEX IF NOT EXISTS idx_inv_consumption_tenant   ON inventory_consumption(tenant_id, consumed_at);
 `;
 
 export async function runMigrations() {
@@ -839,6 +941,26 @@ export async function runMigrations() {
       `ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS fiscal_token TEXT`,
       `ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS fiscal_token_exp TEXT`,
       `ALTER TABLE shop_users ADD COLUMN IF NOT EXISTS fiscal_operator_code TEXT`,
+      // shop_inventory_001 — Inventory & Recipe Module
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS inventory_enabled INTEGER DEFAULT 0`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS inventory_alert_mode TEXT DEFAULT 'daily'`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS inventory_alert_time TEXT DEFAULT '09:00'`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS inventory_alert_whatsapp INTEGER DEFAULT 0`,
+      `ALTER TABLE shop_menu_items ADD COLUMN IF NOT EXISTS stock_mode TEXT DEFAULT 'simple'`,
+      `CREATE TABLE IF NOT EXISTS inventory_categories (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, name TEXT NOT NULL, sort_order INTEGER DEFAULT 0, created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP), UNIQUE(tenant_id, name))`,
+      `CREATE TABLE IF NOT EXISTS inventory_suppliers (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, name TEXT NOT NULL, contact TEXT, phone TEXT, email TEXT, notes TEXT, is_active INTEGER DEFAULT 1, created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP), updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP))`,
+      `CREATE TABLE IF NOT EXISTS inventory_ingredients (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, category_id TEXT, supplier_id TEXT, name TEXT NOT NULL, unit TEXT NOT NULL DEFAULT 'pieces', current_stock REAL DEFAULT 0, reorder_threshold REAL DEFAULT 0, cost_per_unit REAL DEFAULT 0, is_active INTEGER DEFAULT 1, created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP), updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP), UNIQUE(tenant_id, name))`,
+      `CREATE TABLE IF NOT EXISTS inventory_recipes (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, menu_item_id TEXT NOT NULL, name TEXT, created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP), updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP), UNIQUE(tenant_id, menu_item_id))`,
+      `CREATE TABLE IF NOT EXISTS inventory_recipe_lines (id TEXT PRIMARY KEY, recipe_id TEXT NOT NULL, tenant_id TEXT NOT NULL, ingredient_id TEXT NOT NULL, quantity REAL NOT NULL, sort_order INTEGER DEFAULT 0)`,
+      `CREATE TABLE IF NOT EXISTS inventory_deliveries (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, supplier_id TEXT, supplier_name TEXT, invoice_ref TEXT, notes TEXT, total_cost REAL, delivered_at TEXT DEFAULT (CURRENT_TIMESTAMP), created_by TEXT, created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP))`,
+      `CREATE TABLE IF NOT EXISTS inventory_delivery_lines (id TEXT PRIMARY KEY, delivery_id TEXT NOT NULL, tenant_id TEXT NOT NULL, ingredient_id TEXT NOT NULL, ingredient_name TEXT NOT NULL, quantity REAL NOT NULL, unit TEXT NOT NULL, cost_per_unit REAL, line_total REAL)`,
+      `CREATE TABLE IF NOT EXISTS inventory_waste (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, ingredient_id TEXT NOT NULL, ingredient_name TEXT NOT NULL, quantity REAL NOT NULL, unit TEXT NOT NULL, category TEXT NOT NULL DEFAULT 'spillage', notes TEXT, recorded_by TEXT, recorded_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP))`,
+      `CREATE TABLE IF NOT EXISTS inventory_consumption (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, order_id TEXT, ingredient_id TEXT NOT NULL, ingredient_name TEXT NOT NULL, quantity REAL NOT NULL, unit TEXT NOT NULL, consumed_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP))`,
+      `CREATE INDEX IF NOT EXISTS idx_inv_ingredients_tenant ON inventory_ingredients(tenant_id, is_active)`,
+      `CREATE INDEX IF NOT EXISTS idx_inv_recipe_lines_recipe ON inventory_recipe_lines(recipe_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_inv_delivery_lines ON inventory_delivery_lines(delivery_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_inv_waste_tenant ON inventory_waste(tenant_id, recorded_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_inv_consumption_tenant ON inventory_consumption(tenant_id, consumed_at)`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -1146,6 +1268,23 @@ export async function runMigrations() {
     .all().map((r: any) => r.name as string);
   if (!shopUserFiscalCols.includes('fiscal_operator_code'))
     exec('ALTER TABLE shop_users ADD COLUMN fiscal_operator_code TEXT');
+
+  // shop_inventory_001 — Inventory & Recipe Module
+  const shopConfigInvCols = prepare("SELECT name FROM pragma_table_info('shop_config')")
+    .all().map((r: any) => r.name as string);
+  if (!shopConfigInvCols.includes('inventory_enabled'))
+    exec('ALTER TABLE shop_config ADD COLUMN inventory_enabled INTEGER DEFAULT 0');
+  if (!shopConfigInvCols.includes('inventory_alert_mode'))
+    exec("ALTER TABLE shop_config ADD COLUMN inventory_alert_mode TEXT DEFAULT 'daily'");
+  if (!shopConfigInvCols.includes('inventory_alert_time'))
+    exec("ALTER TABLE shop_config ADD COLUMN inventory_alert_time TEXT DEFAULT '09:00'");
+  if (!shopConfigInvCols.includes('inventory_alert_whatsapp'))
+    exec('ALTER TABLE shop_config ADD COLUMN inventory_alert_whatsapp INTEGER DEFAULT 0');
+
+  const shopItemInvCols = prepare("SELECT name FROM pragma_table_info('shop_menu_items')")
+    .all().map((r: any) => r.name as string);
+  if (!shopItemInvCols.includes('stock_mode'))
+    exec("ALTER TABLE shop_menu_items ADD COLUMN stock_mode TEXT DEFAULT 'simple'");
 
   console.log('✅ SQLite migrations complete');
 }

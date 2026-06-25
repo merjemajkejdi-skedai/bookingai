@@ -131,6 +131,39 @@ export const shopApi = {
   getReceipt:          (orderId: string) =>
     req<any>(`/shop/orders/${orderId}/receipt`),
 
+  // Inventory (admin only)
+  getInvCategories:    ()                       => req<any[]>('/shop/inventory/categories'),
+  createInvCategory:   (d: any)                 => req<any>('/shop/inventory/categories', { method: 'POST', body: JSON.stringify(d) }),
+  updateInvCategory:   (id: string, d: any)     => req<void>(`/shop/inventory/categories/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
+  deleteInvCategory:   (id: string)             => req<void>(`/shop/inventory/categories/${id}`, { method: 'DELETE' }),
+
+  getInvSuppliers:     ()                       => req<any[]>('/shop/inventory/suppliers'),
+  createInvSupplier:   (d: any)                 => req<any>('/shop/inventory/suppliers', { method: 'POST', body: JSON.stringify(d) }),
+  updateInvSupplier:   (id: string, d: any)     => req<void>(`/shop/inventory/suppliers/${id}`, { method: 'PATCH', body: JSON.stringify(d) }),
+  deleteInvSupplier:   (id: string)             => req<void>(`/shop/inventory/suppliers/${id}`, { method: 'DELETE' }),
+
+  getIngredients:      ()                       => req<any[]>('/shop/inventory/ingredients'),
+  createIngredient:    (d: any)                 => req<any>('/shop/inventory/ingredients', { method: 'POST', body: JSON.stringify(d) }),
+  updateIngredient:    (id: string, d: any)     => req<void>(`/shop/inventory/ingredients/${id}`, { method: 'PATCH', body: JSON.stringify(d) }),
+  deleteIngredient:    (id: string)             => req<void>(`/shop/inventory/ingredients/${id}`, { method: 'DELETE' }),
+
+  getRecipes:          ()                       => req<any[]>('/shop/inventory/recipes'),
+  getRecipe:           (menuItemId: string)     => req<any>(`/shop/inventory/recipes/${menuItemId}`),
+  saveRecipe:          (menuItemId: string, d: any) => req<any>(`/shop/inventory/recipes/${menuItemId}`, { method: 'PUT', body: JSON.stringify(d) }),
+  deleteRecipe:        (menuItemId: string)     => req<void>(`/shop/inventory/recipes/${menuItemId}`, { method: 'DELETE' }),
+
+  getDeliveries:       ()                       => req<any[]>('/shop/inventory/deliveries'),
+  createDelivery:      (d: any)                 => req<any>('/shop/inventory/deliveries', { method: 'POST', body: JSON.stringify(d) }),
+  deleteDelivery:      (id: string)             => req<void>(`/shop/inventory/deliveries/${id}`, { method: 'DELETE' }),
+
+  getWaste:            ()                       => req<any[]>('/shop/inventory/waste'),
+  logWaste:            (d: any)                 => req<any>('/shop/inventory/waste', { method: 'POST', body: JSON.stringify(d) }),
+
+  getStockLevels:      ()                       => req<any[]>('/shop/inventory/reports/stock-levels'),
+  getConsumption:      (days?: number)          => req<any[]>(`/shop/inventory/reports/consumption?days=${days ?? 30}`),
+  getWasteReport:      (days?: number)          => req<any[]>(`/shop/inventory/reports/waste?days=${days ?? 30}`),
+  getStockValue:       ()                       => req<any>('/shop/inventory/reports/stock-value'),
+
   // Logo upload (admin only)
   uploadLogo: (file: File) => {
     const fd = new FormData();

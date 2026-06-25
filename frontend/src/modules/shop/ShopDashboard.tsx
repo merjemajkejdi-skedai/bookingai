@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ShoppingBag, Package, MessageSquare, HelpCircle, Settings, Plus, Trash2, Pencil, X, Check, RefreshCw, LogOut, BarChart2, Users, QrCode } from 'lucide-react';
+import { ShoppingBag, Package, MessageSquare, HelpCircle, Settings, Plus, Trash2, Pencil, X, Check, RefreshCw, LogOut, BarChart2, Users, QrCode, Boxes } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
 import jsPDF from 'jspdf';
 import { shopApi, setViewTenantId } from './api';
 import type { ShopOrder, ShopItem, ShopCategory, ShopFaq, ShopConversation, ShopConfig } from './types';
 import { ShopReports } from './ShopReports';
 import { ShopUsers } from './ShopUsers';
+import { ShopInventory } from './ShopInventory';
 import { getStoredUser } from '../../shared/lib/auth';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -1562,6 +1563,54 @@ function ConfigTab() {
         </div>
       )}
 
+      {/* Inventory Module */}
+      <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+        <div>
+          <h4 className="font-medium text-slate-800">Inventory Module</h4>
+          <p className="text-xs text-slate-400 mt-0.5">Track ingredients, recipes, and stock levels</p>
+        </div>
+        <Toggle label="Enable inventory module" value={cfg.inventory_enabled} onChange={v => set('inventory_enabled', v)} />
+        {cfg.inventory_enabled ? (
+          <>
+            <div>
+              <label className="text-xs font-medium text-slate-500">Low-stock alert mode</label>
+              <div className="flex gap-2 mt-1">
+                {([['immediate', 'Immediate (on each order)'], ['daily', 'Daily digest']] as const).map(([val, lbl]) => (
+                  <button key={val}
+                    onClick={() => set('inventory_alert_mode', val)}
+                    className={`flex-1 py-2 text-xs font-medium rounded-lg border transition-colors ${
+                      (cfg.inventory_alert_mode ?? 'daily') === val
+                        ? 'border-teal-500 bg-teal-50 text-teal-700'
+                        : 'border-slate-200 text-slate-500'
+                    }`}
+                  >
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {(cfg.inventory_alert_mode ?? 'daily') === 'daily' && (
+              <div>
+                <label className="text-xs font-medium text-slate-500">Daily digest time (Europe/Tirane)</label>
+                <input
+                  type="time" value={cfg.inventory_alert_time ?? '09:00'}
+                  onChange={e => set('inventory_alert_time', e.target.value)}
+                  className="mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+            )}
+            <Toggle
+              label="Send low-stock alerts via WhatsApp"
+              desc="Uses the backup WhatsApp number configured above"
+              value={cfg.inventory_alert_whatsapp}
+              onChange={v => set('inventory_alert_whatsapp', v)}
+            />
+          </>
+        ) : (
+          <p className="text-xs text-slate-400">Enable inventory to configure stock alerts and recipe tracking.</p>
+        )}
+      </div>
+
       {configError && <p className="text-xs text-red-500">{configError}</p>}
 
       <button onClick={save} disabled={busy} className="px-5 py-2 bg-brand-600 text-white rounded-lg text-sm hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2">
@@ -1695,7 +1744,7 @@ function Field({ label, value, onChange, placeholder }: { label: string; value: 
 
 // ── Root ───────────────────────────────────────────────────────────────────────
 
-type Tab = 'orders' | 'menu' | 'conversations' | 'faq' | 'config' | 'reports' | 'users';
+type Tab = 'orders' | 'menu' | 'conversations' | 'faq' | 'config' | 'reports' | 'users' | 'inventory';
 
 interface TabDef { id: Tab; label: string; icon: React.ReactNode; roles: string[] }
 
@@ -1705,6 +1754,7 @@ const TABS: TabDef[] = [
   { id: 'menu',          label: 'Menu',     icon: <Package size={16} />, roles: ['supervisor','admin'] },
   { id: 'faq',           label: 'FAQ',      icon: <HelpCircle size={16} />, roles: ['supervisor','admin'] },
   { id: 'reports',       label: 'Reports',  icon: <BarChart2 size={16} />, roles: ['admin'] },
+  { id: 'inventory',     label: 'Inventory', icon: <Boxes size={16} />, roles: ['admin'] },
   { id: 'config',        label: 'Settings', icon: <Settings size={16} />, roles: ['admin'] },
   { id: 'users',         label: 'Users',    icon: <Users size={16} />, roles: ['admin'] },
 ];
@@ -1874,6 +1924,7 @@ export function ShopDashboard({ onLogout, tenantId }: { onLogout: () => void; te
         {tab === 'menu'          && <MenuTab />}
         {tab === 'faq'           && <FaqTab />}
         {tab === 'reports'       && <ShopReports />}
+        {tab === 'inventory'     && <ShopInventory />}
         {tab === 'config'        && <ConfigTab />}
         {tab === 'users'         && <ShopUsers />}
       </div>

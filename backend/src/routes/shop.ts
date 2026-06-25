@@ -13,6 +13,7 @@ import { getJwtSecret } from '../lib/jwt.js';
 import { authenticateShopUser, auditLog } from '../middleware/shopAuth.js';
 import { sendWhatsAppMessage } from '../whatsapp/twilio.js';
 import { fiscalizeOrder, correctInvoice, registerCashDeposit, registerTCR } from '../services/fiscalization.js';
+import { isInventoryEnabled, deductIngredientsForOrder, restoreIngredientsForOrder } from '../services/inventory.js';
 
 export const shopRouter = Router();
 
@@ -97,13 +98,16 @@ shopRouter.put('/config', authenticateShopOrTenant, async (req: any, res: Respon
       fiscal_enabled, fiscal_api_url, fiscal_username, fiscal_password, fiscal_nuis,
       fiscal_tcr_code, fiscal_busun_code, fiscal_soft_code, fiscal_initial_cash,
       fiscal_default_client, fiscal_environment,
+      inventory_enabled, inventory_alert_mode, inventory_alert_time, inventory_alert_whatsapp,
     } = req.body;
-    const manualEnabled  = manual_orders_enabled ? 1 : 0;
-    const qrEnabled      = qr_ordering_enabled  ? 1 : 0;
-    const qrName         = qr_collect_name !== undefined ? (qr_collect_name ? 1 : 0) : 1;
-    const qrTable        = qr_collect_table ? 1 : 0;
-    const slug           = qr_slug ? String(qr_slug).toLowerCase().trim() || null : null;
-    const fiscalEnabledV = fiscal_enabled ? 1 : 0;
+    const manualEnabled      = manual_orders_enabled ? 1 : 0;
+    const qrEnabled          = qr_ordering_enabled  ? 1 : 0;
+    const qrName             = qr_collect_name !== undefined ? (qr_collect_name ? 1 : 0) : 1;
+    const qrTable            = qr_collect_table ? 1 : 0;
+    const slug               = qr_slug ? String(qr_slug).toLowerCase().trim() || null : null;
+    const fiscalEnabledV     = fiscal_enabled ? 1 : 0;
+    const inventoryEnabledV  = inventory_enabled ? 1 : 0;
+    const inventoryAlertWAV  = inventory_alert_whatsapp ? 1 : 0;
     const exists = await dbGet(`SELECT id FROM shop_config WHERE tenant_id = ?`, tenantId);
     if (exists) {
       await dbRun(
@@ -115,6 +119,7 @@ shopRouter.put('/config', authenticateShopOrTenant, async (req: any, res: Respon
            fiscal_enabled=?,fiscal_api_url=?,fiscal_username=?,fiscal_password=?,fiscal_nuis=?,
            fiscal_tcr_code=?,fiscal_busun_code=?,fiscal_soft_code=?,fiscal_initial_cash=?,
            fiscal_default_client=?,fiscal_environment=?,
+           inventory_enabled=?,inventory_alert_mode=?,inventory_alert_time=?,inventory_alert_whatsapp=?,
            updated_at=CURRENT_TIMESTAMP
          WHERE tenant_id=?`,
         shop_name, opening_hours, estimated_pickup_minutes, pickup_mode, agent_personality,
@@ -124,6 +129,7 @@ shopRouter.put('/config', authenticateShopOrTenant, async (req: any, res: Respon
         fiscalEnabledV, fiscal_api_url ?? null, fiscal_username ?? null, fiscal_password ?? null, fiscal_nuis ?? null,
         fiscal_tcr_code ?? null, fiscal_busun_code ?? null, fiscal_soft_code ?? null, fiscal_initial_cash ?? null,
         fiscal_default_client ?? null, fiscal_environment ?? null,
+        inventoryEnabledV, inventory_alert_mode ?? 'daily', inventory_alert_time ?? '09:00', inventoryAlertWAV,
         tenantId,
       );
     } else {
@@ -135,8 +141,9 @@ shopRouter.put('/config', authenticateShopOrTenant, async (req: any, res: Respon
             qr_ordering_enabled,qr_collect_name,qr_collect_table,qr_slug,qr_welcome_message,
             fiscal_enabled,fiscal_api_url,fiscal_username,fiscal_password,fiscal_nuis,
             fiscal_tcr_code,fiscal_busun_code,fiscal_soft_code,fiscal_initial_cash,
-            fiscal_default_client,fiscal_environment)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+            fiscal_default_client,fiscal_environment,
+            inventory_enabled,inventory_alert_mode,inventory_alert_time,inventory_alert_whatsapp)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         crypto.randomUUID(), tenantId, shop_name, opening_hours, estimated_pickup_minutes, pickup_mode, agent_personality,
         fallback_message, fallback_backup_number, fallback_after_attempts, manualEnabled,
         address, instagram_url, facebook_url, tiktok_url, website_url, phone,
@@ -144,6 +151,7 @@ shopRouter.put('/config', authenticateShopOrTenant, async (req: any, res: Respon
         fiscalEnabledV, fiscal_api_url ?? null, fiscal_username ?? null, fiscal_password ?? null, fiscal_nuis ?? null,
         fiscal_tcr_code ?? null, fiscal_busun_code ?? null, fiscal_soft_code ?? null, fiscal_initial_cash ?? null,
         fiscal_default_client ?? null, fiscal_environment ?? null,
+        inventoryEnabledV, inventory_alert_mode ?? 'daily', inventory_alert_time ?? '09:00', inventoryAlertWAV,
       );
     }
     res.json({ success: true });
@@ -346,6 +354,12 @@ shopRouter.patch('/orders/:id', authenticateShopOrTenant, async (req: any, res: 
             : `UPDATE shop_menu_items SET stock_used = max(0, stock_used - ?) WHERE id=? AND stock_type != 'unlimited'`;
           await dbRun(restoreSql, oi.quantity, oi.item_id);
         }
+        // Restore recipe-based inventory
+        if (await isInventoryEnabled(tenantId)) {
+          await restoreIngredientsForOrder(req.params.id, tenantId).catch(
+            (err: any) => console.error('[Inventory] Restore failed:', err.message),
+          );
+        }
       }
 
       const actorName = req.shopUser ? `${req.shopUser.name} ${req.shopUser.surname}` : 'Admin';
@@ -440,6 +454,13 @@ shopRouter.post('/orders/manual', authenticateShopOrTenant, async (req: any, res
       await dbRun(
         `UPDATE shop_menu_items SET stock_used = stock_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id=? AND stock_type != 'unlimited'`,
         line.quantity, line.item_id,
+      );
+    }
+
+    // Deduct recipe-based inventory
+    if (await isInventoryEnabled(tenantId)) {
+      await deductIngredientsForOrder(orderId, tenantId, orderLines).catch(
+        (err: any) => console.error('[Inventory] Deduct failed:', err.message),
       );
     }
 
@@ -1173,6 +1194,13 @@ shopRouter.post('/public/:slug/order', async (req: any, res: Response) => {
       );
     }
 
+    // Deduct recipe-based inventory
+    if (await isInventoryEnabled(tenantId)) {
+      await deductIngredientsForOrder(orderId, tenantId, orderLines).catch(
+        (err: any) => console.error('[Inventory] Deduct failed:', err.message),
+      );
+    }
+
     console.log(`[Shop QR] Order #${orderNumber} from ${customer_name || 'Walk-in'}${table_name ? ` @ ${table_name}` : ''}`);
     res.json({ success: true, data: { order_id: orderId, order_number: orderNumber, total, customer_name: customer_name || 'Walk-in', table_name: table_name || null } });
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
@@ -1301,5 +1329,429 @@ shopRouter.get('/orders/:id/receipt', authenticateShopOrTenant, async (req: any,
         is_paid:           order.is_paid,
       },
     });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ── Inventory Module ───────────────────────────────────────────────────────────
+
+async function requireInventory(req: any, res: Response, next: Function) {
+  try {
+    const tenantId = resolveTenantId(req);
+    if (!(await isInventoryEnabled(tenantId))) {
+      return res.status(403).json({ success: false, error: 'Inventory module is not enabled' });
+    }
+    next();
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+// ── Inventory Categories ────────────────────────────────────────────────────────
+
+shopRouter.get('/inventory/categories', authenticateShopOrTenant, requireInventory, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const rows = await dbAll(`SELECT * FROM inventory_categories WHERE tenant_id=? ORDER BY sort_order ASC, name ASC`, tenantId);
+    res.json({ success: true, data: rows });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.post('/inventory/categories', authenticateShopOrTenant, requireInventory, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const { name, sort_order = 0 } = req.body;
+    if (!name) return res.status(400).json({ success: false, error: 'name is required' });
+    const id = crypto.randomUUID();
+    await dbRun(`INSERT INTO inventory_categories (id,tenant_id,name,sort_order) VALUES (?,?,?,?)`, id, tenantId, name, sort_order);
+    res.json({ success: true, data: { id } });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.put('/inventory/categories/:id', authenticateShopOrTenant, requireInventory, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const { name, sort_order } = req.body;
+    await dbRun(
+      `UPDATE inventory_categories SET name=?,sort_order=? WHERE id=? AND tenant_id=?`,
+      name, sort_order ?? 0, req.params.id, tenantId,
+    );
+    res.json({ success: true });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.delete('/inventory/categories/:id', authenticateShopOrTenant, requireInventory, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    await dbRun(`DELETE FROM inventory_categories WHERE id=? AND tenant_id=?`, req.params.id, tenantId);
+    res.json({ success: true });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ── Inventory Suppliers ─────────────────────────────────────────────────────────
+
+shopRouter.get('/inventory/suppliers', authenticateShopOrTenant, requireInventory, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const rows = await dbAll(`SELECT * FROM inventory_suppliers WHERE tenant_id=? AND is_active=1 ORDER BY name ASC`, tenantId);
+    res.json({ success: true, data: rows });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.post('/inventory/suppliers', authenticateShopOrTenant, requireInventory, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const { name, contact, phone, email, notes } = req.body;
+    if (!name) return res.status(400).json({ success: false, error: 'name is required' });
+    const id = crypto.randomUUID();
+    await dbRun(
+      `INSERT INTO inventory_suppliers (id,tenant_id,name,contact,phone,email,notes) VALUES (?,?,?,?,?,?,?)`,
+      id, tenantId, name, contact ?? null, phone ?? null, email ?? null, notes ?? null,
+    );
+    res.json({ success: true, data: { id } });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.patch('/inventory/suppliers/:id', authenticateShopOrTenant, requireInventory, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const { name, contact, phone, email, notes, is_active } = req.body;
+    await dbRun(
+      `UPDATE inventory_suppliers SET name=?,contact=?,phone=?,email=?,notes=?,is_active=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND tenant_id=?`,
+      name, contact ?? null, phone ?? null, email ?? null, notes ?? null, is_active ?? 1, req.params.id, tenantId,
+    );
+    res.json({ success: true });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.delete('/inventory/suppliers/:id', authenticateShopOrTenant, requireInventory, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    await dbRun(`UPDATE inventory_suppliers SET is_active=0,updated_at=CURRENT_TIMESTAMP WHERE id=? AND tenant_id=?`, req.params.id, tenantId);
+    res.json({ success: true });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ── Inventory Ingredients ───────────────────────────────────────────────────────
+
+shopRouter.get('/inventory/ingredients', authenticateShopOrTenant, requireInventory, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const rows = await dbAll(
+      `SELECT i.*, c.name AS category_name, s.name AS supplier_name
+       FROM inventory_ingredients i
+       LEFT JOIN inventory_categories c ON c.id = i.category_id
+       LEFT JOIN inventory_suppliers s ON s.id = i.supplier_id
+       WHERE i.tenant_id=? AND i.is_active=1
+       ORDER BY i.name ASC`,
+      tenantId,
+    );
+    res.json({ success: true, data: rows });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.post('/inventory/ingredients', authenticateShopOrTenant, requireInventory, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const { name, unit = 'pieces', category_id, supplier_id, current_stock = 0, reorder_threshold = 0, cost_per_unit = 0 } = req.body;
+    if (!name) return res.status(400).json({ success: false, error: 'name is required' });
+    const id = crypto.randomUUID();
+    await dbRun(
+      `INSERT INTO inventory_ingredients (id,tenant_id,name,unit,category_id,supplier_id,current_stock,reorder_threshold,cost_per_unit) VALUES (?,?,?,?,?,?,?,?,?)`,
+      id, tenantId, name, unit, category_id ?? null, supplier_id ?? null, current_stock, reorder_threshold, cost_per_unit,
+    );
+    res.json({ success: true, data: { id } });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.patch('/inventory/ingredients/:id', authenticateShopOrTenant, requireInventory, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const { name, unit, category_id, supplier_id, current_stock, reorder_threshold, cost_per_unit, is_active } = req.body;
+    await dbRun(
+      `UPDATE inventory_ingredients SET name=?,unit=?,category_id=?,supplier_id=?,current_stock=?,reorder_threshold=?,cost_per_unit=?,is_active=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND tenant_id=?`,
+      name, unit, category_id ?? null, supplier_id ?? null, current_stock, reorder_threshold, cost_per_unit, is_active ?? 1, req.params.id, tenantId,
+    );
+    res.json({ success: true });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.delete('/inventory/ingredients/:id', authenticateShopOrTenant, requireInventory, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    await dbRun(`UPDATE inventory_ingredients SET is_active=0,updated_at=CURRENT_TIMESTAMP WHERE id=? AND tenant_id=?`, req.params.id, tenantId);
+    res.json({ success: true });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ── Inventory Recipes ───────────────────────────────────────────────────────────
+
+shopRouter.get('/inventory/recipes', authenticateShopOrTenant, requireInventory, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const recipes = await dbAll(
+      `SELECT r.*, smi.name AS item_name
+       FROM inventory_recipes r
+       JOIN shop_menu_items smi ON smi.id = r.menu_item_id
+       WHERE r.tenant_id=?
+       ORDER BY smi.name ASC`,
+      tenantId,
+    );
+    for (const recipe of recipes) {
+      recipe.lines = await dbAll(
+        `SELECT rl.*, i.name AS ingredient_name, i.unit
+         FROM inventory_recipe_lines rl
+         JOIN inventory_ingredients i ON i.id = rl.ingredient_id
+         WHERE rl.recipe_id=?
+         ORDER BY rl.sort_order ASC`,
+        recipe.id,
+      );
+    }
+    res.json({ success: true, data: recipes });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.get('/inventory/recipes/:menuItemId', authenticateShopOrTenant, requireInventory, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const recipe = await dbGet(
+      `SELECT r.* FROM inventory_recipes r WHERE r.menu_item_id=? AND r.tenant_id=?`,
+      req.params.menuItemId, tenantId,
+    );
+    if (!recipe) return res.json({ success: true, data: null });
+    recipe.lines = await dbAll(
+      `SELECT rl.*, i.name AS ingredient_name, i.unit
+       FROM inventory_recipe_lines rl
+       JOIN inventory_ingredients i ON i.id = rl.ingredient_id
+       WHERE rl.recipe_id=?
+       ORDER BY rl.sort_order ASC`,
+      recipe.id,
+    );
+    res.json({ success: true, data: recipe });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.put('/inventory/recipes/:menuItemId', authenticateShopOrTenant, requireInventory, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const { name, lines = [] } = req.body as { name?: string; lines: { ingredient_id: string; quantity: number; sort_order?: number }[] };
+    let recipe = await dbGet(`SELECT id FROM inventory_recipes WHERE menu_item_id=? AND tenant_id=?`, req.params.menuItemId, tenantId);
+    if (!recipe) {
+      const recipeId = crypto.randomUUID();
+      await dbRun(
+        `INSERT INTO inventory_recipes (id,tenant_id,menu_item_id,name) VALUES (?,?,?,?)`,
+        recipeId, tenantId, req.params.menuItemId, name ?? null,
+      );
+      recipe = { id: recipeId };
+      await dbRun(`UPDATE shop_menu_items SET stock_mode='recipe' WHERE id=? AND tenant_id=?`, req.params.menuItemId, tenantId);
+    } else {
+      await dbRun(`UPDATE inventory_recipes SET name=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`, name ?? null, recipe.id);
+    }
+    await dbRun(`DELETE FROM inventory_recipe_lines WHERE recipe_id=?`, recipe.id);
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      await dbRun(
+        `INSERT INTO inventory_recipe_lines (id,recipe_id,tenant_id,ingredient_id,quantity,sort_order) VALUES (?,?,?,?,?,?)`,
+        crypto.randomUUID(), recipe.id, tenantId, line.ingredient_id, line.quantity, line.sort_order ?? i,
+      );
+    }
+    res.json({ success: true, data: { id: recipe.id } });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.delete('/inventory/recipes/:menuItemId', authenticateShopOrTenant, requireInventory, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const recipe = await dbGet(`SELECT id FROM inventory_recipes WHERE menu_item_id=? AND tenant_id=?`, req.params.menuItemId, tenantId);
+    if (recipe) {
+      await dbRun(`DELETE FROM inventory_recipe_lines WHERE recipe_id=?`, recipe.id);
+      await dbRun(`DELETE FROM inventory_recipes WHERE id=?`, recipe.id);
+    }
+    await dbRun(`UPDATE shop_menu_items SET stock_mode='simple' WHERE id=? AND tenant_id=?`, req.params.menuItemId, tenantId);
+    res.json({ success: true });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ── Inventory Deliveries ────────────────────────────────────────────────────────
+
+shopRouter.get('/inventory/deliveries', authenticateShopOrTenant, requireInventory, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const deliveries = await dbAll(
+      `SELECT * FROM inventory_deliveries WHERE tenant_id=? ORDER BY delivered_at DESC`,
+      tenantId,
+    );
+    for (const d of deliveries) {
+      d.lines = await dbAll(`SELECT * FROM inventory_delivery_lines WHERE delivery_id=?`, d.id);
+    }
+    res.json({ success: true, data: deliveries });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.post('/inventory/deliveries', authenticateShopOrTenant, requireInventory, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const actorName = req.shopUser ? `${req.shopUser.name} ${req.shopUser.surname}` : 'Admin';
+    const { supplier_id, supplier_name, invoice_ref, notes, delivered_at, lines = [] } = req.body as {
+      supplier_id?: string; supplier_name?: string; invoice_ref?: string; notes?: string;
+      delivered_at?: string; lines: { ingredient_id: string; quantity: number; unit: string; cost_per_unit?: number }[];
+    };
+    if (lines.length === 0) return res.status(400).json({ success: false, error: 'At least one line is required' });
+
+    const deliveryId = crypto.randomUUID();
+    let totalCost = 0;
+    const deliveryLines: any[] = [];
+    for (const line of lines) {
+      const ing = await dbGet(`SELECT name, unit FROM inventory_ingredients WHERE id=? AND tenant_id=?`, line.ingredient_id, tenantId);
+      if (!ing) continue;
+      const lineTotal = (line.cost_per_unit ?? 0) * line.quantity;
+      totalCost += lineTotal;
+      deliveryLines.push({ ...line, ingredient_name: ing.name, unit: line.unit || ing.unit, lineTotal });
+    }
+
+    await dbRun(
+      `INSERT INTO inventory_deliveries (id,tenant_id,supplier_id,supplier_name,invoice_ref,notes,total_cost,delivered_at,created_by) VALUES (?,?,?,?,?,?,?,?,?)`,
+      deliveryId, tenantId, supplier_id ?? null, supplier_name ?? null, invoice_ref ?? null, notes ?? null,
+      totalCost, delivered_at ?? new Date().toISOString(), actorName,
+    );
+
+    for (const dl of deliveryLines) {
+      await dbRun(
+        `INSERT INTO inventory_delivery_lines (id,delivery_id,tenant_id,ingredient_id,ingredient_name,quantity,unit,cost_per_unit,line_total) VALUES (?,?,?,?,?,?,?,?,?)`,
+        crypto.randomUUID(), deliveryId, tenantId, dl.ingredient_id, dl.ingredient_name, dl.quantity, dl.unit, dl.cost_per_unit ?? 0, dl.lineTotal,
+      );
+      await dbRun(
+        `UPDATE inventory_ingredients SET current_stock = current_stock + ?, cost_per_unit=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND tenant_id=?`,
+        dl.quantity, dl.cost_per_unit ?? 0, dl.ingredient_id, tenantId,
+      );
+    }
+
+    res.json({ success: true, data: { id: deliveryId, total_cost: totalCost } });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.delete('/inventory/deliveries/:id', authenticateShopOrTenant, requireInventory, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const lines = await dbAll(`SELECT * FROM inventory_delivery_lines WHERE delivery_id=?`, req.params.id);
+    for (const dl of lines) {
+      await dbRun(
+        `UPDATE inventory_ingredients SET current_stock = current_stock - ?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND tenant_id=?`,
+        dl.quantity, dl.ingredient_id, tenantId,
+      );
+    }
+    await dbRun(`DELETE FROM inventory_delivery_lines WHERE delivery_id=?`, req.params.id);
+    await dbRun(`DELETE FROM inventory_deliveries WHERE id=? AND tenant_id=?`, req.params.id, tenantId);
+    res.json({ success: true });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ── Inventory Waste ─────────────────────────────────────────────────────────────
+
+shopRouter.get('/inventory/waste', authenticateShopOrTenant, requireInventory, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const rows = await dbAll(`SELECT * FROM inventory_waste WHERE tenant_id=? ORDER BY recorded_at DESC`, tenantId);
+    res.json({ success: true, data: rows });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.post('/inventory/waste', authenticateShopOrTenant, requireInventory, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const actorName = req.shopUser ? `${req.shopUser.name} ${req.shopUser.surname}` : 'Admin';
+    const { ingredient_id, quantity, category = 'spillage', notes } = req.body;
+    if (!ingredient_id || !quantity) return res.status(400).json({ success: false, error: 'ingredient_id and quantity are required' });
+
+    const ing = await dbGet(`SELECT name, unit FROM inventory_ingredients WHERE id=? AND tenant_id=?`, ingredient_id, tenantId);
+    if (!ing) return res.status(404).json({ success: false, error: 'Ingredient not found' });
+
+    const id = crypto.randomUUID();
+    await dbRun(
+      `INSERT INTO inventory_waste (id,tenant_id,ingredient_id,ingredient_name,quantity,unit,category,notes,recorded_by) VALUES (?,?,?,?,?,?,?,?,?)`,
+      id, tenantId, ingredient_id, ing.name, quantity, ing.unit, category, notes ?? null, actorName,
+    );
+    const deductSql = isPg
+      ? `UPDATE inventory_ingredients SET current_stock = GREATEST(0, current_stock - ?), updated_at=CURRENT_TIMESTAMP WHERE id=? AND tenant_id=?`
+      : `UPDATE inventory_ingredients SET current_stock = MAX(0, current_stock - ?), updated_at=CURRENT_TIMESTAMP WHERE id=? AND tenant_id=?`;
+    await dbRun(deductSql, quantity, ingredient_id, tenantId);
+    res.json({ success: true, data: { id } });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ── Inventory Reports ───────────────────────────────────────────────────────────
+
+shopRouter.get('/inventory/reports/stock-levels', authenticateShopOrTenant, requireInventory, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const rows = await dbAll(
+      `SELECT i.id, i.name, i.unit, i.current_stock, i.reorder_threshold, i.cost_per_unit,
+              c.name AS category_name,
+              CASE WHEN i.reorder_threshold > 0 AND i.current_stock <= i.reorder_threshold THEN 1 ELSE 0 END AS is_low
+       FROM inventory_ingredients i
+       LEFT JOIN inventory_categories c ON c.id = i.category_id
+       WHERE i.tenant_id=? AND i.is_active=1
+       ORDER BY is_low DESC, i.name ASC`,
+      tenantId,
+    );
+    res.json({ success: true, data: rows });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.get('/inventory/reports/consumption', authenticateShopOrTenant, requireInventory, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const days = parseInt(String(req.query.days || '30'), 10) || 30;
+    const dateSql = isPg
+      ? `consumed_at >= NOW() - (? || ' days')::INTERVAL`
+      : `consumed_at >= datetime('now', '-' || ? || ' days')`;
+    const rows = await dbAll(
+      `SELECT ingredient_id, ingredient_name, unit,
+              SUM(quantity) AS total_consumed,
+              COUNT(DISTINCT order_id) AS order_count
+       FROM inventory_consumption
+       WHERE tenant_id=? AND ${dateSql}
+       GROUP BY ingredient_id, ingredient_name, unit
+       ORDER BY total_consumed DESC`,
+      tenantId, days,
+    );
+    res.json({ success: true, data: rows });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.get('/inventory/reports/waste', authenticateShopOrTenant, requireInventory, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const days = parseInt(String(req.query.days || '30'), 10) || 30;
+    const dateSql = isPg
+      ? `recorded_at >= NOW() - (? || ' days')::INTERVAL`
+      : `recorded_at >= datetime('now', '-' || ? || ' days')`;
+    const rows = await dbAll(
+      `SELECT ingredient_id, ingredient_name, unit, category,
+              SUM(quantity) AS total_wasted
+       FROM inventory_waste
+       WHERE tenant_id=? AND ${dateSql}
+       GROUP BY ingredient_id, ingredient_name, unit, category
+       ORDER BY total_wasted DESC`,
+      tenantId, days,
+    );
+    res.json({ success: true, data: rows });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+shopRouter.get('/inventory/reports/stock-value', authenticateShopOrTenant, requireInventory, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const rows = await dbAll(
+      `SELECT i.id, i.name, i.unit, i.current_stock, i.cost_per_unit,
+              (i.current_stock * i.cost_per_unit) AS stock_value,
+              c.name AS category_name
+       FROM inventory_ingredients i
+       LEFT JOIN inventory_categories c ON c.id = i.category_id
+       WHERE i.tenant_id=? AND i.is_active=1
+       ORDER BY stock_value DESC`,
+      tenantId,
+    );
+    const total = rows.reduce((sum: number, r: any) => sum + parseFloat(r.stock_value || 0), 0);
+    res.json({ success: true, data: { items: rows, total_value: total } });
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
 });

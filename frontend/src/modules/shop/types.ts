@@ -28,6 +28,10 @@ export interface ShopConfig {
   fiscal_initial_cash?: number;
   fiscal_default_client?: string;
   fiscal_environment?: 'test' | 'production';
+  inventory_enabled?: boolean | number;
+  inventory_alert_mode?: 'immediate' | 'daily';
+  inventory_alert_time?: string;
+  inventory_alert_whatsapp?: boolean | number;
   address?: string;
   instagram_url?: string;
   facebook_url?: string;
