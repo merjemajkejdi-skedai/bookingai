@@ -308,11 +308,8 @@ function OrderCard({
       )}
 
       {/* Fiscal status badge */}
-      {order.is_paid && (
+      {shopConfig?.fiscal_enabled && order.is_paid && (
         <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-100">
-          {(!order.fiscal_status || order.fiscal_status === 'not_fiscalized') && (
-            <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">Paid · not fiscalized</span>
-          )}
           {order.fiscal_status === 'fiscalized' && (
             <span className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full font-medium">
               ✓ Fiscalized · {order.fiscal_inv_num}
