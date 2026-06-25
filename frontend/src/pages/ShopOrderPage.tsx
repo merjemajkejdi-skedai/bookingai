@@ -12,6 +12,7 @@ export function ShopOrderPage({ slug, tableId }: { slug: string; tableId?: strin
   const [placedOrder, setPlacedOrder] = useState<any>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]           = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const sessionId                   = useRef(crypto.randomUUID());
   const inactivityTimer             = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -43,7 +44,9 @@ export function ShopOrderPage({ slug, tableId }: { slug: string; tableId?: strin
           const tr = await shopPublicApi.getTable(slug, tableId);
           if (tr.success) setTableInfo(tr.data);
         }
-        setState(res.data.qr_collect_name ? 'name-input' : 'menu');
+        const nextState = res.data.qr_collect_name ? 'name-input' : 'menu';
+        setState(nextState);
+        if (nextState === 'menu') setSelectedCategory('all');
       } catch {
         setState('error');
       }
@@ -177,7 +180,7 @@ export function ShopOrderPage({ slug, tableId }: { slug: string; tableId?: strin
           className="w-full border border-slate-200 rounded-xl px-4 py-3 text-base mb-4 focus:outline-none focus:border-teal-400"
         />
         <button
-          onClick={() => setState('menu')}
+          onClick={() => { setState('menu'); setSelectedCategory('all'); }}
           disabled={!customerName.trim()}
           className="w-full py-3 bg-teal-500 hover:bg-teal-600 text-white font-semibold rounded-xl disabled:opacity-40 transition-colors"
         >
@@ -189,13 +192,20 @@ export function ShopOrderPage({ slug, tableId }: { slug: string; tableId?: strin
 
   // ── Menu ──────────────────────────────────────────────────────────────────────
 
-  const categories = [...new Set((shopInfo?.items || []).map((i: any) => i.category_name || 'Other'))] as string[];
+  const categories = [
+    'all',
+    ...Array.from(new Set((shopInfo?.items || []).map((i: any) => i.category_name || 'Other'))),
+  ] as string[];
+
+  const visibleItems = selectedCategory === 'all'
+    ? (shopInfo?.items || [])
+    : (shopInfo?.items || []).filter((i: any) => (i.category_name || 'Other') === selectedCategory);
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 flex flex-col">
       {/* Sticky header */}
-      <div className="bg-white sticky top-0 z-10 shadow-sm">
-        <div className="max-w-lg mx-auto px-4 py-3 flex items-center gap-3">
+      <div className="bg-white sticky top-0 z-10 shadow-sm flex-shrink-0">
+        <div className="px-4 py-3 flex items-center gap-3">
           {shopInfo?.shop_logo_url && (
             <img src={shopInfo.shop_logo_url} alt="Logo" className="h-8 object-contain flex-shrink-0" />
           )}
@@ -220,47 +230,103 @@ export function ShopOrderPage({ slug, tableId }: { slug: string; tableId?: strin
 
       {/* Menu */}
       {state === 'menu' && (
-        <div className="max-w-lg mx-auto pb-32">
-          {categories.map(cat => (
-            <div key={cat}>
-              <div className="px-4 py-2 bg-slate-100 sticky top-[60px] z-[5]">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{cat}</p>
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+
+          {/* LEFT — Category sidebar (desktop) */}
+          <div
+            className="hidden sm:flex flex-col w-36 bg-white border-r border-slate-100 flex-shrink-0 overflow-y-auto sticky top-[57px]"
+            style={{ height: 'calc(100vh - 57px)' }}
+          >
+            {categories.map(cat => (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
+                className={`text-left px-3 py-3 text-sm border-l-2 transition-colors ${
+                  selectedCategory === cat
+                    ? 'border-teal-500 bg-teal-50 text-teal-700 font-medium'
+                    : 'border-transparent text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                {cat === 'all' ? 'All' : cat}
+              </button>
+            ))}
+          </div>
+
+          {/* TOP — Category tabs (mobile) */}
+          <div
+            className="sm:hidden fixed left-0 right-0 overflow-x-auto flex gap-1.5 px-3 py-2 bg-white border-b border-slate-100 shadow-sm z-10"
+            style={{ top: '57px' }}
+          >
+            {categories.map(cat => (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
+                className={`whitespace-nowrap px-3 py-1.5 text-xs rounded-full flex-shrink-0 transition-colors ${
+                  selectedCategory === cat
+                    ? 'bg-teal-500 text-white font-semibold'
+                    : 'bg-slate-100 text-slate-600'
+                }`}
+              >
+                {cat === 'all' ? 'All' : cat}
+              </button>
+            ))}
+          </div>
+
+          {/* RIGHT — Item grid */}
+          <div className="flex-1 overflow-y-auto p-3 sm:pt-3 pt-14 pb-28">
+            {visibleItems.length === 0 ? (
+              <div className="text-center py-16 text-slate-400">
+                <p className="text-2xl mb-2">📭</p>
+                <p className="text-sm">No items available</p>
               </div>
-              {(shopInfo?.items || [])
-                .filter((i: any) => (i.category_name || 'Other') === cat)
-                .map((item: any) => {
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                {visibleItems.map((item: any) => {
                   const inCart = cart.find(ci => ci.item.id === item.id);
+                  const qty    = inCart?.qty || 0;
                   return (
-                    <div key={item.id} className="bg-white border-b border-slate-100 px-4 py-3 flex items-center gap-3">
-                      {item.photo_url && (
-                        <img src={item.photo_url} alt={item.name} className="w-16 h-16 rounded-xl object-cover flex-shrink-0" />
+                    <div
+                      key={item.id}
+                      onClick={() => addToCart(item)}
+                      className={`relative rounded-xl border-2 cursor-pointer select-none transition-all active:scale-95 ${
+                        qty > 0 ? 'border-teal-400 bg-teal-50' : 'border-slate-200 bg-white'
+                      }`}
+                    >
+                      {item.photo_url ? (
+                        <img src={item.photo_url} alt={item.name} className="w-full h-28 object-cover rounded-t-xl" />
+                      ) : (
+                        <div className="w-full h-28 bg-slate-100 rounded-t-xl flex items-center justify-center">
+                          <span className="text-4xl">🛍️</span>
+                        </div>
                       )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-slate-800">{item.name}</p>
+                      <div className="p-2.5">
+                        <p className="text-xs font-semibold text-slate-800 line-clamp-2 leading-tight mb-1">{item.name}</p>
                         {item.description && (
-                          <p className="text-xs text-slate-400 mt-0.5 line-clamp-2">{item.description}</p>
+                          <p className="text-xs text-slate-400 line-clamp-1 mb-1">{item.description}</p>
                         )}
-                        <p className="text-sm font-bold text-teal-600 mt-1">
+                        <p className="text-sm font-bold text-teal-600">
                           {parseFloat(item.price).toLocaleString()} {item.currency}
                         </p>
                       </div>
-                      {inCart ? (
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <button onClick={() => updateQty(item.id, inCart.qty - 1)}
-                            className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 text-lg font-medium">−</button>
-                          <span className="text-sm font-bold w-4 text-center">{inCart.qty}</span>
-                          <button onClick={() => addToCart(item)}
-                            className="w-8 h-8 rounded-full bg-teal-500 flex items-center justify-center text-white text-lg font-medium">+</button>
+                      {qty > 0 && (
+                        <div className="absolute top-2 right-2 flex items-center gap-1 bg-teal-500 rounded-full shadow px-1.5 py-0.5">
+                          <button
+                            onClick={e => { e.stopPropagation(); updateQty(item.id, qty - 1); }}
+                            className="text-white text-sm w-5 h-5 flex items-center justify-center"
+                          >−</button>
+                          <span className="text-white text-xs font-bold">{qty}</span>
+                          <button
+                            onClick={e => { e.stopPropagation(); addToCart(item); }}
+                            className="text-white text-sm w-5 h-5 flex items-center justify-center"
+                          >+</button>
                         </div>
-                      ) : (
-                        <button onClick={() => addToCart(item)}
-                          className="w-8 h-8 rounded-full bg-teal-500 flex items-center justify-center text-white text-xl font-medium flex-shrink-0">+</button>
                       )}
                     </div>
                   );
                 })}
-            </div>
-          ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
