@@ -28,6 +28,7 @@ export interface ShopConfig {
   fiscal_initial_cash?: number;
   fiscal_default_client?: string;
   fiscal_environment?: 'test' | 'production';
+  fiscal_middleware?: string;
   inventory_enabled?: boolean | number;
   inventory_alert_mode?: 'immediate' | 'daily';
   inventory_alert_time?: string;

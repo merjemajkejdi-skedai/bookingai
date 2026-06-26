@@ -928,6 +928,7 @@ export async function runMigrations() {
       `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS fiscal_initial_cash REAL DEFAULT 0`,
       `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS fiscal_default_client TEXT DEFAULT 'Klient i Pergjithshem'`,
       `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS fiscal_environment TEXT DEFAULT 'test'`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS fiscal_middleware TEXT DEFAULT 'nexia'`,
       `ALTER TABLE shop_menu_items ADD COLUMN IF NOT EXISTS vat_rate TEXT DEFAULT 'VAT_20'`,
       `ALTER TABLE shop_menu_items ADD COLUMN IF NOT EXISTS item_code TEXT`,
       `ALTER TABLE shop_menu_items ADD COLUMN IF NOT EXISTS unit TEXT DEFAULT 'XPP'`,
@@ -1233,6 +1234,8 @@ export async function runMigrations() {
     exec("ALTER TABLE shop_config ADD COLUMN fiscal_default_client TEXT DEFAULT 'Klient i Pergjithshem'");
   if (!shopConfigFiscalCols.includes('fiscal_environment'))
     exec("ALTER TABLE shop_config ADD COLUMN fiscal_environment TEXT DEFAULT 'test'");
+  if (!shopConfigFiscalCols.includes('fiscal_middleware'))
+    exec("ALTER TABLE shop_config ADD COLUMN fiscal_middleware TEXT DEFAULT 'nexia'");
 
   const shopItemFiscalCols = prepare("SELECT name FROM pragma_table_info('shop_menu_items')")
     .all().map((r: any) => r.name as string);

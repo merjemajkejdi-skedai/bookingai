@@ -128,6 +128,8 @@ export const shopApi = {
     rawReq(`/shop/orders/${orderId}/correct`, { method: 'POST' }),
   registerCashDeposit: (amount?: number) =>
     rawReq('/shop/fiscal/cash-deposit', { method: 'POST', body: JSON.stringify({ amount }) }),
+  getFiscalMiddlewares: () =>
+    rawReq('/shop/fiscal/middlewares'),
   getReceipt:          (orderId: string) =>
     req<any>(`/shop/orders/${orderId}/receipt`),
 

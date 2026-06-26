@@ -1270,6 +1270,7 @@ function ConfigTab() {
   const [bulkCount, setBulkCount]   = useState(10);
   const [showBulk, setShowBulk]     = useState(false);
   const [showTableQr, setShowTableQr] = useState<any>(null);
+  const [middlewares, setMiddlewares] = useState<{ value: string; label: string }[]>([{ value: 'nexia', label: 'Nexia' }]);
   const logoRef                 = useRef<HTMLInputElement>(null);
 
   const origin = window.location.origin;
@@ -1277,6 +1278,7 @@ function ConfigTab() {
   useEffect(() => {
     shopApi.getConfig().then(c => { setCfg(c); setLoading(false); }).catch(() => setLoading(false));
     shopApi.getTables().then(setTables).catch(() => {});
+    shopApi.getFiscalMiddlewares().then((list: any) => { if (Array.isArray(list)) setMiddlewares(list); }).catch(() => {});
   }, []);
 
   function set(key: keyof ShopConfig, value: any) { setCfg(prev => ({ ...prev, [key]: value })); }
@@ -1627,6 +1629,19 @@ function ConfigTab() {
         <Toggle label="Enable fiscalization" value={cfg.fiscal_enabled} onChange={v => set('fiscal_enabled', v)} />
         {cfg.fiscal_enabled ? (
           <>
+            <div>
+              <label className="text-xs font-medium text-slate-600 block mb-1.5">Fiscal middleware</label>
+              <select
+                value={cfg.fiscal_middleware || 'nexia'}
+                onChange={e => set('fiscal_middleware', e.target.value)}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              >
+                {middlewares.map(m => (
+                  <option key={m.value} value={m.value}>{m.label}</option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-400 mt-1">Select the fiscal middleware provider for this shop</p>
+            </div>
             <div className="flex gap-3">
               {(['test', 'production'] as const).map(env => (
                 <button
