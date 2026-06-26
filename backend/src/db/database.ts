@@ -935,6 +935,8 @@ export async function runMigrations() {
       `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS delivery_time_1 INTEGER DEFAULT 15`,
       `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS delivery_time_2 INTEGER DEFAULT 30`,
       `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS delivery_time_3 INTEGER DEFAULT 45`,
+      // shop_photos_001 — per-tenant photo upload toggle for shop module
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS shop_photos_enabled INTEGER NOT NULL DEFAULT 0`,
       `ALTER TABLE shop_menu_items ADD COLUMN IF NOT EXISTS vat_rate TEXT DEFAULT 'VAT_20'`,
       `ALTER TABLE shop_menu_items ADD COLUMN IF NOT EXISTS item_code TEXT`,
       `ALTER TABLE shop_menu_items ADD COLUMN IF NOT EXISTS unit TEXT DEFAULT 'XPP'`,
@@ -1107,6 +1109,8 @@ export async function runMigrations() {
     exec('ALTER TABLE tenants ADD COLUMN survey_enabled INTEGER NOT NULL DEFAULT 0');
   if (!cols.includes('menus_enabled'))
     exec('ALTER TABLE tenants ADD COLUMN menus_enabled INTEGER NOT NULL DEFAULT 0');
+  if (!cols.includes('shop_photos_enabled'))
+    exec('ALTER TABLE tenants ADD COLUMN shop_photos_enabled INTEGER NOT NULL DEFAULT 0');
 
   const convCols = prepare("SELECT name FROM pragma_table_info('hotel_conversations')")
     .all().map((r: any) => r.name as string);

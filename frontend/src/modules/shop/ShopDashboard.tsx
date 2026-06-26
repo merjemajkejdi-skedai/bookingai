@@ -479,7 +479,7 @@ function ManualOrderModal({
         }`}
         onClick={() => addItem(item)}
       >
-        {item.photo_url ? (
+        {!!shopConfig?.shop_photos_enabled && item.photo_url ? (
           <img src={item.photo_url} alt={item.name} className="w-full h-24 object-cover rounded-t-xl" />
         ) : (
           <div className="w-full h-24 bg-slate-100 rounded-t-xl flex items-center justify-center">
@@ -829,11 +829,13 @@ function OrdersTab() {
 function ItemModal({
   item,
   categories,
+  photosEnabled,
   onSave,
   onClose,
 }: {
   item?: ShopItem | null;
   categories: ShopCategory[];
+  photosEnabled?: boolean;
   onSave: () => void;
   onClose: () => void;
 }) {
@@ -963,13 +965,15 @@ function ItemModal({
               </select>
             </div>
           </div>
-          <div>
-            <label className="text-xs text-slate-500 font-medium">Photo</label>
-            {item?.photo_url && !photo && (
-              <img src={item.photo_url} alt="" className="mt-1 h-16 w-16 rounded-lg object-cover border border-slate-200" />
-            )}
-            <input type="file" accept="image/*" onChange={e => setPhoto(e.target.files?.[0] || null)} className="mt-1 w-full text-xs text-slate-500" />
-          </div>
+          {photosEnabled && (
+            <div>
+              <label className="text-xs text-slate-500 font-medium">Photo</label>
+              {item?.photo_url && !photo && (
+                <img src={item.photo_url} alt="" className="mt-1 h-16 w-16 rounded-lg object-cover border border-slate-200" />
+              )}
+              <input type="file" accept="image/*" onChange={e => setPhoto(e.target.files?.[0] || null)} className="mt-1 w-full text-xs text-slate-500" />
+            </div>
+          )}
           <div className="flex items-center gap-2">
             <input type="checkbox" id="active" checked={isActive} onChange={e => setIsActive(e.target.checked)} className="rounded" />
             <label htmlFor="active" className="text-sm text-slate-700">Active (visible to customers)</label>
@@ -996,12 +1000,14 @@ function MenuTab() {
   const [catName, setCatName] = useState('');
   const [addingCat, setAddingCat] = useState(false);
   const [selectedCat, setSelectedCat] = useState<string>('');
+  const [photosEnabled, setPhotosEnabled] = useState(false);
 
   async function load() {
     setLoading(true);
     try {
-      const [c, i] = await Promise.all([shopApi.getCategories(), shopApi.getItems()]);
+      const [c, i, cfg] = await Promise.all([shopApi.getCategories(), shopApi.getItems(), shopApi.getConfig()]);
       setCategories(c); setItems(i);
+      setPhotosEnabled(!!cfg.shop_photos_enabled);
     } catch { /* ignore */ } finally { setLoading(false); }
   }
   useEffect(() => { load(); }, []);
@@ -1067,7 +1073,7 @@ function MenuTab() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           {filtered.map(item => (
             <div key={item.id} className="bg-white border border-slate-200 rounded-xl p-3 flex gap-3 shadow-sm">
-              {item.photo_url
+              {photosEnabled && item.photo_url
                 ? <img src={item.photo_url} alt={item.name} className="w-14 h-14 rounded-lg object-cover flex-shrink-0 border border-slate-100" />
                 : <div className="w-14 h-14 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0"><Package size={20} className="text-slate-300" /></div>
               }
@@ -1100,7 +1106,7 @@ function MenuTab() {
       </div>
 
       {editItem !== undefined && (
-        <ItemModal item={editItem} categories={categories} onSave={() => { setEditItem(undefined); load(); }} onClose={() => setEditItem(undefined)} />
+        <ItemModal item={editItem} categories={categories} photosEnabled={photosEnabled} onSave={() => { setEditItem(undefined); load(); }} onClose={() => setEditItem(undefined)} />
       )}
     </div>
   );

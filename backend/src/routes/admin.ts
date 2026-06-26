@@ -1,4 +1,6 @@
 import { Router, Request, Response } from 'express';
+import fs from 'fs';
+import path from 'path';
 import bcrypt from 'bcryptjs';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
@@ -11,7 +13,7 @@ const err = (res: Response, msg: string, status = 400) =>
   res.status(status).json({ success: false, error: msg });
 
 async function dbAll(sql: string, ...params: unknown[]) {
-  return isPg ? query(sql, params) : prepare(sql).all(...params);
+  return (isPg ? query(sql, params) : prepare(sql).all(...params)) as any[];
 }
 async function dbGet(sql: string, ...params: unknown[]) {
   return isPg ? queryOne(sql, params) : prepare(sql).get(...params);
@@ -92,7 +94,7 @@ adminRouter.post('/tenants', async (req: Request, res: Response) => {
 adminRouter.put('/tenants/:id', async (req: Request, res: Response) => {
   const {
     name, whatsappNumber, plan, isActive, billingEmail, type, timezone, hasAnalytics,
-    reviewsEnabled, surveyEnabled, menusEnabled,
+    reviewsEnabled, surveyEnabled, menusEnabled, shopPhotosEnabled,
     provider, metaPhoneNumberId, metaAccessToken, metaWabaId,
     twilioAccountSid, twilioAuthToken, twilioDeptTemplateSid,
   } = req.body;
@@ -115,6 +117,7 @@ adminRouter.put('/tenants/:id', async (req: Request, res: Response) => {
        reviews_enabled      = COALESCE(?,reviews_enabled),
        survey_enabled       = COALESCE(?,survey_enabled),
        menus_enabled        = COALESCE(?,menus_enabled),
+       shop_photos_enabled  = COALESCE(?,shop_photos_enabled),
        provider             = COALESCE(?,provider),
        meta_phone_number_id = COALESCE(?,meta_phone_number_id),
        meta_access_token    = COALESCE(?,meta_access_token),
@@ -126,14 +129,33 @@ adminRouter.put('/tenants/:id', async (req: Request, res: Response) => {
     name??null, normalisedWhatsapp, plan??null,
     isActive !== undefined ? (isActive ? 1 : 0) : null,
     billingEmail??null, type??null, timezone??null,
-    hasAnalytics    !== undefined ? (hasAnalytics    ? 1 : 0) : null,
-    reviewsEnabled  !== undefined ? (reviewsEnabled  ? 1 : 0) : null,
-    surveyEnabled   !== undefined ? (surveyEnabled   ? 1 : 0) : null,
-    menusEnabled    !== undefined ? (menusEnabled    ? 1 : 0) : null,
+    hasAnalytics        !== undefined ? (hasAnalytics        ? 1 : 0) : null,
+    reviewsEnabled      !== undefined ? (reviewsEnabled      ? 1 : 0) : null,
+    surveyEnabled       !== undefined ? (surveyEnabled       ? 1 : 0) : null,
+    menusEnabled        !== undefined ? (menusEnabled        ? 1 : 0) : null,
+    shopPhotosEnabled   !== undefined ? (shopPhotosEnabled   ? 1 : 0) : null,
     provider??null, metaPhoneNumberId??null, metaAccessToken??null, metaWabaId??null,
     twilioAccountSid||null, twilioAuthToken||null, twilioDeptTemplateSid||null,
     req.params.id,
   );
+
+  // When photos are turned OFF, clear all photo files and DB references for this shop
+  if (shopPhotosEnabled === false) {
+    const SHOP_UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'shop');
+    const photoItems = await dbAll(
+      'SELECT photo_filename FROM shop_menu_items WHERE tenant_id = ? AND photo_filename IS NOT NULL',
+      req.params.id,
+    ) as any[];
+    for (const item of photoItems) {
+      const fp = path.join(SHOP_UPLOAD_DIR, item.photo_filename);
+      try { if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch { /* ignore */ }
+    }
+    await dbRun(
+      'UPDATE shop_menu_items SET photo_url = NULL, photo_filename = NULL WHERE tenant_id = ?',
+      req.params.id,
+    );
+  }
+
   ok(res, await dbGet('SELECT * FROM tenants WHERE id=?', req.params.id));
 });
 

@@ -84,7 +84,8 @@ shopRouter.get('/config', authenticateShopOrTenant, async (req: any, res: Respon
       await dbRun(`INSERT INTO shop_config (id, tenant_id) VALUES (?,?)`, id, tenantId);
       cfg = { id, tenant_id: tenantId, estimated_pickup_minutes: 15, pickup_mode: 'estimated', agent_personality: 'friendly' };
     }
-    res.json({ success: true, data: cfg });
+    const tenant = await dbGet(`SELECT shop_photos_enabled FROM tenants WHERE id = ?`, tenantId);
+    res.json({ success: true, data: { ...cfg, shop_photos_enabled: tenant?.shop_photos_enabled ?? 0 } });
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
 });
 
@@ -228,6 +229,13 @@ shopRouter.get('/items', authenticateShopOrTenant, async (req: any, res: Respons
 shopRouter.post('/items', authenticateShopOrTenant, upload.single('photo'), async (req: any, res: Response) => {
   try {
     const tenantId = resolveTenantId(req);
+    if (req.file) {
+      const tenant = await dbGet(`SELECT shop_photos_enabled FROM tenants WHERE id = ?`, tenantId);
+      if (!tenant?.shop_photos_enabled) {
+        try { fs.unlinkSync(path.join(UPLOAD_DIR, req.file.filename)); } catch { /* ignore */ }
+        return res.status(403).json({ success: false, error: 'Photo uploads are disabled for this shop' });
+      }
+    }
     const { name, description, price, currency, category_id, stock_type, stock_limit, sort_order, vat_rate, item_code, unit } = req.body;
     const id = crypto.randomUUID();
     const photo_filename = req.file?.filename || null;
@@ -243,6 +251,13 @@ shopRouter.post('/items', authenticateShopOrTenant, upload.single('photo'), asyn
 shopRouter.put('/items/:id', authenticateShopOrTenant, upload.single('photo'), async (req: any, res: Response) => {
   try {
     const tenantId = resolveTenantId(req);
+    if (req.file) {
+      const tenant = await dbGet(`SELECT shop_photos_enabled FROM tenants WHERE id = ?`, tenantId);
+      if (!tenant?.shop_photos_enabled) {
+        try { fs.unlinkSync(path.join(UPLOAD_DIR, req.file.filename)); } catch { /* ignore */ }
+        return res.status(403).json({ success: false, error: 'Photo uploads are disabled for this shop' });
+      }
+    }
     const existing = await dbGet(`SELECT photo_filename FROM shop_menu_items WHERE id=? AND tenant_id=?`, req.params.id, tenantId);
     if (!existing) return res.status(404).json({ success: false, error: 'Not found' });
 
@@ -1097,25 +1112,30 @@ shopRouter.get('/public/:slug', async (req: any, res: Response) => {
     );
     if (!cfg) return res.status(404).json({ success: false, error: 'Shop not found or QR ordering not enabled' });
 
-    const items = await dbAll(
-      `SELECT i.id, i.name, i.description, i.price, i.currency, i.photo_url, i.sort_order,
-              c.name AS category_name, c.sort_order AS category_order
-       FROM shop_menu_items i
-       LEFT JOIN shop_menu_categories c ON c.id = i.category_id
-       WHERE i.tenant_id = ? AND i.is_active = 1
-         AND (i.stock_type = 'unlimited' OR i.stock_limit IS NULL OR (i.stock_limit - i.stock_used) > 0)
-       ORDER BY c.sort_order ASC, i.sort_order ASC`,
-      cfg.tenant_id,
-    );
+    const [items, shopTenant] = await Promise.all([
+      dbAll(
+        `SELECT i.id, i.name, i.description, i.price, i.currency, i.photo_url, i.sort_order,
+                c.name AS category_name, c.sort_order AS category_order
+         FROM shop_menu_items i
+         LEFT JOIN shop_menu_categories c ON c.id = i.category_id
+         WHERE i.tenant_id = ? AND i.is_active = 1
+           AND (i.stock_type = 'unlimited' OR i.stock_limit IS NULL OR (i.stock_limit - i.stock_used) > 0)
+         ORDER BY c.sort_order ASC, i.sort_order ASC`,
+        cfg.tenant_id,
+      ),
+      dbGet(`SELECT shop_photos_enabled FROM tenants WHERE id = ?`, cfg.tenant_id),
+    ]);
 
     res.json({
       success: true,
       data: {
-        shop_name:          cfg.shop_name,
-        shop_logo_url:      cfg.shop_logo_url,
-        qr_collect_name:    cfg.qr_collect_name,
-        qr_collect_table:   cfg.qr_collect_table,
-        qr_welcome_message: cfg.qr_welcome_message,
+        shop_name:           cfg.shop_name,
+        shop_logo_url:       cfg.shop_logo_url,
+        qr_collect_name:     cfg.qr_collect_name,
+        qr_collect_table:    cfg.qr_collect_table,
+        qr_welcome_message:  cfg.qr_welcome_message,
+        shop_photos_enabled: shopTenant?.shop_photos_enabled ?? 0,
+        pickup_mode:         cfg.pickup_mode,
         items,
       },
     });

@@ -304,7 +304,7 @@ export function ShopOrderPage({ slug, tableId }: { slug: string; tableId?: strin
                         qty > 0 ? 'border-teal-400 bg-teal-50' : 'border-slate-200 bg-white'
                       }`}
                     >
-                      {item.photo_url ? (
+                      {!!shopInfo?.shop_photos_enabled && item.photo_url ? (
                         <img src={item.photo_url} alt={item.name} className="w-full h-28 object-cover rounded-t-xl" />
                       ) : (
                         <div className="w-full h-28 bg-slate-100 rounded-t-xl flex items-center justify-center">
