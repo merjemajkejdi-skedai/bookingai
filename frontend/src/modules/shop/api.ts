@@ -130,6 +130,8 @@ export const shopApi = {
     rawReq('/shop/fiscal/cash-deposit', { method: 'POST', body: JSON.stringify({ amount }) }),
   getFiscalMiddlewares: () =>
     rawReq('/shop/fiscal/middlewares'),
+  getDeliveryTime: () =>
+    rawReq('/shop/delivery-time'),
   getReceipt:          (orderId: string) =>
     req<any>(`/shop/orders/${orderId}/receipt`),
 
@@ -188,4 +190,6 @@ export const shopPublicApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     }).then(r => r.json()),
+  getDeliveryTime: (slug: string) =>
+    fetch(`${API_BASE}/shop/public/${slug}/delivery-time`).then(r => r.json()),
 };

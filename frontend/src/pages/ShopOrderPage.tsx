@@ -12,6 +12,7 @@ export function ShopOrderPage({ slug, tableId }: { slug: string; tableId?: strin
   const [placedOrder, setPlacedOrder] = useState<any>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]           = useState('');
+  const [deliveryInfo, setDeliveryInfo] = useState<any>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const sessionId                   = useRef(crypto.randomUUID());
   const inactivityTimer             = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -37,14 +38,18 @@ export function ShopOrderPage({ slug, tableId }: { slug: string; tableId?: strin
   useEffect(() => {
     async function load() {
       try {
-        const res = await shopPublicApi.getShop(slug);
-        if (!res.success) { setState('error'); return; }
-        setShopInfo(res.data);
+        const [shopRes, deliveryRes] = await Promise.all([
+          shopPublicApi.getShop(slug),
+          shopPublicApi.getDeliveryTime(slug).catch(() => null),
+        ]);
+        if (!shopRes.success) { setState('error'); return; }
+        setShopInfo(shopRes.data);
+        if (deliveryRes && deliveryRes.minutes) setDeliveryInfo(deliveryRes);
         if (tableId) {
           const tr = await shopPublicApi.getTable(slug, tableId);
           if (tr.success) setTableInfo(tr.data);
         }
-        const nextState = res.data.qr_collect_name ? 'name-input' : 'menu';
+        const nextState = shopRes.data.qr_collect_name ? 'name-input' : 'menu';
         setState(nextState);
         if (nextState === 'menu') setSelectedCategory('all');
       } catch {
@@ -81,6 +86,7 @@ export function ShopOrderPage({ slug, tableId }: { slug: string; tableId?: strin
       });
       if (!res.success) throw new Error(res.error || 'Failed to place order');
       setPlacedOrder(res.data);
+      if (res.data?.estimated_minutes) setDeliveryInfo({ minutes: res.data.estimated_minutes, label: res.data.delivery_label });
       setState('success');
       if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
     } catch (e: any) {
@@ -131,7 +137,13 @@ export function ShopOrderPage({ slug, tableId }: { slug: string; tableId?: strin
           <span className="text-3xl">✅</span>
         </div>
         <h2 className="text-xl font-bold text-slate-800 mb-1">Order placed!</h2>
-        <p className="text-slate-500 text-sm mb-6">{shopInfo?.shop_name} will prepare your order shortly.</p>
+        {deliveryInfo && placedOrder?.pickup_mode !== 'notify_when_ready' ? (
+          <p className="text-slate-500 text-sm mb-6">Ready in approximately <span className="font-semibold text-teal-600">{deliveryInfo.label}</span></p>
+        ) : placedOrder?.pickup_mode === 'notify_when_ready' ? (
+          <p className="text-slate-500 text-sm mb-6">We'll notify you when your order is ready 📱</p>
+        ) : (
+          <p className="text-slate-500 text-sm mb-6">{shopInfo?.shop_name} will prepare your order shortly.</p>
+        )}
         <div className="bg-slate-50 rounded-xl p-4 mb-4">
           <p className="text-xs text-slate-400 mb-1">Your order number</p>
           <p className="text-4xl font-black text-teal-600">#{placedOrder.order_number}</p>
@@ -364,6 +376,11 @@ export function ShopOrderPage({ slug, tableId }: { slug: string; tableId?: strin
           {tableInfo && (
             <div className="bg-teal-50 rounded-xl px-4 py-2.5 mb-4 text-sm text-teal-700 font-medium">
               📍 {tableInfo.name}
+            </div>
+          )}
+          {deliveryInfo && shopInfo?.pickup_mode !== 'notify_when_ready' && (
+            <div className="bg-teal-50 rounded-xl px-4 py-3 mb-3 text-center">
+              <p className="text-xs text-teal-600 font-medium">⏱ Estimated ready in <span className="font-bold">{deliveryInfo.label}</span></p>
             </div>
           )}
           {error && (

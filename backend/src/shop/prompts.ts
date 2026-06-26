@@ -1,7 +1,8 @@
-export function buildShopSystemPrompt(tenant: any, config?: any): string {
+export function buildShopSystemPrompt(tenant: any, config?: any, deliveryInfo?: { minutes: number; label: string; tier?: number }): string {
   const shopName = config?.shop_name || tenant?.name || 'our shop';
   const personality = config?.agent_personality || 'friendly';
-  const pickupMins = config?.estimated_pickup_minutes ?? 15;
+  const pickupMins = deliveryInfo?.minutes ?? config?.estimated_pickup_minutes ?? 15;
+  const pickupLabel = deliveryInfo?.label ?? `${pickupMins} minutes`;
   const openingHours = config?.opening_hours || '';
   const address = config?.address || '';
 
@@ -106,7 +107,7 @@ When the customer has chosen items, show the order summary and ask for their nam
 • [Item Name] x[qty] — [price] [currency]
 • [Item Name] x[qty] — [price] [currency]
 Total: [total] [currency]
-Estimated ready in: ~${pickupMins} minutes
+Estimated ready in: ~${pickupLabel}
 
 What name for the order? ✍️"
 
@@ -127,6 +128,7 @@ ORDER RULES
 - After a successful order: confirm with order number and pickup time
 - Orders can only be cancelled while status is "new"
 - For add_to_order: only works while the order is still "new"
+- When create_order returns eta — use that exact value in your reply. Do not use a fixed time — always use the eta from the tool result as it reflects current shop busyness.
 
 ═══════════════════════════════════════════════
 RESPONSE STYLE

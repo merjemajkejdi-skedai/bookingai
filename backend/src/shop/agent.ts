@@ -49,6 +49,9 @@ export async function runShopAgent(
       dbGet(`SELECT * FROM tenants WHERE id = ?`, tenantId),
     ]);
 
+    const { getCurrentDeliveryTime } = await import('../services/deliveryTime.js');
+    const deliveryInfo = await getCurrentDeliveryTime(tenantId);
+
     // Load or create conversation record
     let conv = await dbGet(
       `SELECT * FROM shop_conversations WHERE tenant_id = ? AND guest_phone = ?`,
@@ -81,7 +84,7 @@ export async function runShopAgent(
 
     history.push({ role: 'user', content: message });
 
-    const systemPrompt = buildShopSystemPrompt(tenant, config);
+    const systemPrompt = buildShopSystemPrompt(tenant, config, deliveryInfo);
     const messages = [...history];
     let finalReply = '';
 

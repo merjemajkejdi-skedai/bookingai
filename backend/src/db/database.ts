@@ -929,6 +929,12 @@ export async function runMigrations() {
       `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS fiscal_default_client TEXT DEFAULT 'Klient i Pergjithshem'`,
       `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS fiscal_environment TEXT DEFAULT 'test'`,
       `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS fiscal_middleware TEXT DEFAULT 'nexia'`,
+      // shop_delivery_001 — dynamic delivery time tiers
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS delivery_threshold_1 INTEGER DEFAULT 5`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS delivery_threshold_2 INTEGER DEFAULT 15`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS delivery_time_1 INTEGER DEFAULT 15`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS delivery_time_2 INTEGER DEFAULT 30`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS delivery_time_3 INTEGER DEFAULT 45`,
       `ALTER TABLE shop_menu_items ADD COLUMN IF NOT EXISTS vat_rate TEXT DEFAULT 'VAT_20'`,
       `ALTER TABLE shop_menu_items ADD COLUMN IF NOT EXISTS item_code TEXT`,
       `ALTER TABLE shop_menu_items ADD COLUMN IF NOT EXISTS unit TEXT DEFAULT 'XPP'`,
@@ -1236,6 +1242,16 @@ export async function runMigrations() {
     exec("ALTER TABLE shop_config ADD COLUMN fiscal_environment TEXT DEFAULT 'test'");
   if (!shopConfigFiscalCols.includes('fiscal_middleware'))
     exec("ALTER TABLE shop_config ADD COLUMN fiscal_middleware TEXT DEFAULT 'nexia'");
+  if (!shopConfigFiscalCols.includes('delivery_threshold_1'))
+    exec('ALTER TABLE shop_config ADD COLUMN delivery_threshold_1 INTEGER DEFAULT 5');
+  if (!shopConfigFiscalCols.includes('delivery_threshold_2'))
+    exec('ALTER TABLE shop_config ADD COLUMN delivery_threshold_2 INTEGER DEFAULT 15');
+  if (!shopConfigFiscalCols.includes('delivery_time_1'))
+    exec('ALTER TABLE shop_config ADD COLUMN delivery_time_1 INTEGER DEFAULT 15');
+  if (!shopConfigFiscalCols.includes('delivery_time_2'))
+    exec('ALTER TABLE shop_config ADD COLUMN delivery_time_2 INTEGER DEFAULT 30');
+  if (!shopConfigFiscalCols.includes('delivery_time_3'))
+    exec('ALTER TABLE shop_config ADD COLUMN delivery_time_3 INTEGER DEFAULT 45');
 
   const shopItemFiscalCols = prepare("SELECT name FROM pragma_table_info('shop_menu_items')")
     .all().map((r: any) => r.name as string);

@@ -196,18 +196,50 @@ function PayButton({ order, onRefresh }: { order: ShopOrder; onRefresh: () => vo
 
 // ── Order Card ─────────────────────────────────────────────────────────────────
 
+function DeliveryTimeBadge() {
+  const [info, setInfo] = useState<any>(null);
+
+  useEffect(() => {
+    function load() { shopApi.getDeliveryTime().then(setInfo).catch(() => {}); }
+    load();
+    const interval = setInterval(load, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (!info) return null;
+
+  const tierColor: Record<number, string> = {
+    1: 'bg-green-50 text-green-700 border-green-200',
+    2: 'bg-amber-50 text-amber-700 border-amber-200',
+    3: 'bg-red-50 text-red-700 border-red-200',
+  };
+  const tierLabel: Record<number, string> = { 1: '🟢 Quiet', 2: '🟡 Busy', 3: '🔴 Very busy' };
+
+  return (
+    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium ${tierColor[info.tier] || 'bg-slate-50 text-slate-600 border-slate-200'}`}>
+      <span>{tierLabel[info.tier]}</span>
+      <span>·</span>
+      <span>{info.active_orders} active</span>
+      <span>·</span>
+      <span>Est. {info.label}</span>
+    </div>
+  );
+}
+
 function OrderCard({
   order,
   onStatusChange,
   onPaidChange,
   onRefresh,
   shopConfig,
+  deliveryInfo,
 }: {
   order: ShopOrder;
   onStatusChange: (id: string, s: string) => void;
   onPaidChange: (id: string, isPaid: boolean) => void;
   onRefresh: () => void;
   shopConfig?: any;
+  deliveryInfo?: any;
 }) {
   const [busy, setBusy] = useState(false);
   const [paidBusy, setPaidBusy] = useState(false);
@@ -298,6 +330,10 @@ function OrderCard({
           )}
         </div>
       </div>
+
+      {order.status === 'new' && deliveryInfo && (
+        <div className="text-xs text-slate-400">⏱ Est. {deliveryInfo.label}</div>
+      )}
 
       {order.notes && <div className="text-xs text-slate-400 italic">Note: {order.notes}</div>}
 
@@ -703,6 +739,7 @@ function OrdersTab() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [showManualOrderModal, setShowManualOrderModal] = useState(false);
+  const [deliveryInfo, setDeliveryInfo] = useState<any>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -717,6 +754,7 @@ function OrdersTab() {
   useEffect(() => {
     shopApi.getConfig().then(setShopConfig).catch(() => {});
     shopApi.getTables().then(setTables).catch(() => {});
+    shopApi.getDeliveryTime().then(setDeliveryInfo).catch(() => {});
   }, []);
 
   async function handleStatusChange(id: string, status: string) {
@@ -734,10 +772,11 @@ function OrdersTab() {
 
   return (
     <div className="flex flex-col gap-4 h-full">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
         <button onClick={load} className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors"><RefreshCw size={15} className={loading ? 'animate-spin text-slate-400' : 'text-slate-500'} /></button>
         <span className="text-xs text-slate-400">{orders.filter(o => o.status !== 'cancelled').length} orders</span>
+        <DeliveryTimeBadge />
         {shopConfig?.manual_orders_enabled && (
           <button
             onClick={() => setShowManualOrderModal(true)}
@@ -765,7 +804,7 @@ function OrdersTab() {
               <div className="flex flex-col gap-2 overflow-y-auto">
                 {byStatus(col).length === 0
                   ? <div className="text-xs text-slate-300 text-center py-4">Empty</div>
-                  : byStatus(col).map((o) => <OrderCard key={o.id} order={o} onStatusChange={handleStatusChange} onPaidChange={handlePaidChange} onRefresh={load} shopConfig={shopConfig} />)
+                  : byStatus(col).map((o) => <OrderCard key={o.id} order={o} onStatusChange={handleStatusChange} onPaidChange={handlePaidChange} onRefresh={load} shopConfig={shopConfig} deliveryInfo={deliveryInfo} />)
                 }
               </div>
             </div>
@@ -1362,9 +1401,50 @@ function ConfigTab() {
         <Field label="Opening Hours" value={cfg.opening_hours || ''} onChange={v => set('opening_hours', v)} placeholder="Mon–Sat 9:00–20:00" />
         <Field label="Address" value={cfg.address || ''} onChange={v => set('address', v)} placeholder="Street, City" />
         <Field label="Phone" value={cfg.phone || ''} onChange={v => set('phone', v)} placeholder="+355 69 123 4567" />
-        <div>
-          <label className="text-xs text-slate-500 font-medium">Estimated Pickup (minutes)</label>
-          <input type="number" min="1" value={cfg.estimated_pickup_minutes ?? 15} onChange={e => set('estimated_pickup_minutes', parseInt(e.target.value))} className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+        <div className="space-y-3">
+          <div>
+            <h5 className="text-xs text-slate-500 font-medium mb-0.5">Estimated delivery time</h5>
+            <p className="text-xs text-slate-400">Set different times based on how busy the shop is. Active orders = New + In Progress.</p>
+          </div>
+          <div className="bg-green-50 border border-green-200 rounded-xl p-3">
+            <p className="text-xs font-semibold text-green-700 mb-2">🟢 Tier 1 — Quiet</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-green-600">0 to</span>
+              <input type="number" value={cfg.delivery_threshold_1 ?? 5} onChange={e => set('delivery_threshold_1', +e.target.value)} min={1}
+                className="w-16 rounded-lg border border-green-200 px-2 py-1.5 text-sm text-center bg-white" />
+              <span className="text-xs text-green-600">active orders →</span>
+              <input type="number" value={cfg.delivery_time_1 ?? 15} onChange={e => set('delivery_time_1', +e.target.value)} min={1}
+                className="w-16 rounded-lg border border-green-200 px-2 py-1.5 text-sm text-center bg-white" />
+              <span className="text-xs text-green-600">min</span>
+            </div>
+          </div>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+            <p className="text-xs font-semibold text-amber-700 mb-2">🟡 Tier 2 — Busy</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-amber-600">{cfg.delivery_threshold_1 ?? 5} to</span>
+              <input type="number" value={cfg.delivery_threshold_2 ?? 15} onChange={e => set('delivery_threshold_2', +e.target.value)} min={(cfg.delivery_threshold_1 ?? 5) + 1}
+                className="w-16 rounded-lg border border-amber-200 px-2 py-1.5 text-sm text-center bg-white" />
+              <span className="text-xs text-amber-600">active orders →</span>
+              <input type="number" value={cfg.delivery_time_2 ?? 30} onChange={e => set('delivery_time_2', +e.target.value)} min={1}
+                className="w-16 rounded-lg border border-amber-200 px-2 py-1.5 text-sm text-center bg-white" />
+              <span className="text-xs text-amber-600">min</span>
+            </div>
+          </div>
+          <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+            <p className="text-xs font-semibold text-red-700 mb-2">🔴 Tier 3 — Very busy</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-red-600">{cfg.delivery_threshold_2 ?? 15}+ active orders →</span>
+              <input type="number" value={cfg.delivery_time_3 ?? 45} onChange={e => set('delivery_time_3', +e.target.value)} min={1}
+                className="w-16 rounded-lg border border-red-200 px-2 py-1.5 text-sm text-center bg-white" />
+              <span className="text-xs text-red-600">min</span>
+            </div>
+          </div>
+          <div className="bg-slate-50 rounded-xl p-3 text-xs text-slate-500 space-y-1">
+            <p className="font-medium text-slate-600">Summary</p>
+            <p>0–{cfg.delivery_threshold_1 ?? 5} orders → {cfg.delivery_time_1 ?? 15} min</p>
+            <p>{cfg.delivery_threshold_1 ?? 5}–{cfg.delivery_threshold_2 ?? 15} orders → {cfg.delivery_time_2 ?? 30} min</p>
+            <p>{cfg.delivery_threshold_2 ?? 15}+ orders → {cfg.delivery_time_3 ?? 45} min</p>
+          </div>
         </div>
         <div>
           <label className="text-xs text-slate-500 font-medium">Agent Personality</label>

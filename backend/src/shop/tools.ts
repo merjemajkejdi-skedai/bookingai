@@ -243,8 +243,8 @@ export async function executeShopTool(
 
       console.log('[Shop create_order] ✅ order created:', orderId, 'number:', orderNumber);
 
-      const config = await dbGet(`SELECT estimated_pickup_minutes FROM shop_config WHERE tenant_id = ?`, tenantId);
-      const etaMins = config?.estimated_pickup_minutes ?? 15;
+      const { getCurrentDeliveryTime } = await import('../services/deliveryTime.js');
+      const deliveryInfo = await getCurrentDeliveryTime(tenantId);
 
       return {
         success: true,
@@ -252,7 +252,8 @@ export async function executeShopTool(
         order_number: orderNumber,
         total_price: totalPrice,
         currency,
-        estimated_pickup_minutes: etaMins,
+        estimated_pickup_minutes: deliveryInfo.minutes,
+        eta: deliveryInfo.label,
         items: lineItems.map((li) => ({ name: li.item.name, quantity: li.qty, subtotal: parseFloat(li.item.price) * li.qty })),
       };
       } catch (err: any) {

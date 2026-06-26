@@ -29,6 +29,11 @@ export interface ShopConfig {
   fiscal_default_client?: string;
   fiscal_environment?: 'test' | 'production';
   fiscal_middleware?: string;
+  delivery_threshold_1?: number;
+  delivery_threshold_2?: number;
+  delivery_time_1?: number;
+  delivery_time_2?: number;
+  delivery_time_3?: number;
   inventory_enabled?: boolean | number;
   inventory_alert_mode?: 'immediate' | 'daily';
   inventory_alert_time?: string;

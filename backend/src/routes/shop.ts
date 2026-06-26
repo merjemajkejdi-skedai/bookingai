@@ -15,6 +15,7 @@ import { sendWhatsAppMessage } from '../whatsapp/twilio.js';
 import { fiscalizeOrder, correctInvoice, registerCashDeposit, registerTCR } from '../services/fiscalization.js';
 import { getAllMiddlewares } from '../services/fiscal/registry.js';
 import { isInventoryEnabled, deductIngredientsForOrder, restoreIngredientsForOrder } from '../services/inventory.js';
+import { getCurrentDeliveryTime } from '../services/deliveryTime.js';
 
 export const shopRouter = Router();
 
@@ -100,6 +101,8 @@ shopRouter.put('/config', authenticateShopOrTenant, async (req: any, res: Respon
       fiscal_tcr_code, fiscal_busun_code, fiscal_soft_code, fiscal_initial_cash,
       fiscal_default_client, fiscal_environment, fiscal_middleware,
       inventory_enabled, inventory_alert_mode, inventory_alert_time, inventory_alert_whatsapp,
+      delivery_threshold_1, delivery_threshold_2,
+      delivery_time_1, delivery_time_2, delivery_time_3,
     } = req.body;
     const manualEnabled      = manual_orders_enabled ? 1 : 0;
     const qrEnabled          = qr_ordering_enabled  ? 1 : 0;
@@ -121,6 +124,7 @@ shopRouter.put('/config', authenticateShopOrTenant, async (req: any, res: Respon
            fiscal_tcr_code=?,fiscal_busun_code=?,fiscal_soft_code=?,fiscal_initial_cash=?,
            fiscal_default_client=?,fiscal_environment=?,fiscal_middleware=?,
            inventory_enabled=?,inventory_alert_mode=?,inventory_alert_time=?,inventory_alert_whatsapp=?,
+           delivery_threshold_1=?,delivery_threshold_2=?,delivery_time_1=?,delivery_time_2=?,delivery_time_3=?,
            updated_at=CURRENT_TIMESTAMP
          WHERE tenant_id=?`,
         shop_name, opening_hours, estimated_pickup_minutes, pickup_mode, agent_personality,
@@ -131,6 +135,8 @@ shopRouter.put('/config', authenticateShopOrTenant, async (req: any, res: Respon
         fiscal_tcr_code ?? null, fiscal_busun_code ?? null, fiscal_soft_code ?? null, fiscal_initial_cash ?? null,
         fiscal_default_client ?? null, fiscal_environment ?? null, fiscal_middleware ?? 'nexia',
         inventoryEnabledV, inventory_alert_mode ?? 'daily', inventory_alert_time ?? '09:00', inventoryAlertWAV,
+        delivery_threshold_1 ?? 5, delivery_threshold_2 ?? 15,
+        delivery_time_1 ?? 15, delivery_time_2 ?? 30, delivery_time_3 ?? 45,
         tenantId,
       );
     } else {
@@ -143,8 +149,9 @@ shopRouter.put('/config', authenticateShopOrTenant, async (req: any, res: Respon
             fiscal_enabled,fiscal_api_url,fiscal_username,fiscal_password,fiscal_nuis,
             fiscal_tcr_code,fiscal_busun_code,fiscal_soft_code,fiscal_initial_cash,
             fiscal_default_client,fiscal_environment,fiscal_middleware,
-            inventory_enabled,inventory_alert_mode,inventory_alert_time,inventory_alert_whatsapp)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+            inventory_enabled,inventory_alert_mode,inventory_alert_time,inventory_alert_whatsapp,
+            delivery_threshold_1,delivery_threshold_2,delivery_time_1,delivery_time_2,delivery_time_3)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         crypto.randomUUID(), tenantId, shop_name, opening_hours, estimated_pickup_minutes, pickup_mode, agent_personality,
         fallback_message, fallback_backup_number, fallback_after_attempts, manualEnabled,
         address, instagram_url, facebook_url, tiktok_url, website_url, phone,
@@ -153,6 +160,8 @@ shopRouter.put('/config', authenticateShopOrTenant, async (req: any, res: Respon
         fiscal_tcr_code ?? null, fiscal_busun_code ?? null, fiscal_soft_code ?? null, fiscal_initial_cash ?? null,
         fiscal_default_client ?? null, fiscal_environment ?? null, fiscal_middleware ?? 'nexia',
         inventoryEnabledV, inventory_alert_mode ?? 'daily', inventory_alert_time ?? '09:00', inventoryAlertWAV,
+        delivery_threshold_1 ?? 5, delivery_threshold_2 ?? 15,
+        delivery_time_1 ?? 15, delivery_time_2 ?? 30, delivery_time_3 ?? 45,
       );
     }
     res.json({ success: true });
@@ -470,7 +479,8 @@ shopRouter.post('/orders/manual', authenticateShopOrTenant, async (req: any, res
       order_number: orderNumber, total,
     });
     console.log(`[Shop] Manual order #${orderNumber} created by staff`);
-    res.json({ success: true, data: { order_id: orderId, order_number: orderNumber, total, status: 'in_progress' } });
+    const deliveryInfo = await getCurrentDeliveryTime(tenantId);
+    res.json({ success: true, data: { order_id: orderId, order_number: orderNumber, total, status: 'in_progress', estimated_minutes: deliveryInfo.minutes, delivery_label: deliveryInfo.label } });
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
 });
 
@@ -1203,8 +1213,29 @@ shopRouter.post('/public/:slug/order', async (req: any, res: Response) => {
     }
 
     console.log(`[Shop QR] Order #${orderNumber} from ${customer_name || 'Walk-in'}${table_name ? ` @ ${table_name}` : ''}`);
-    res.json({ success: true, data: { order_id: orderId, order_number: orderNumber, total, customer_name: customer_name || 'Walk-in', table_name: table_name || null } });
+    const deliveryInfo = await getCurrentDeliveryTime(tenantId);
+    res.json({ success: true, data: { order_id: orderId, order_number: orderNumber, total, customer_name: customer_name || 'Walk-in', table_name: table_name || null, pickup_mode: cfg.pickup_mode || 'estimated', estimated_minutes: deliveryInfo.minutes, delivery_label: deliveryInfo.label } });
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ── Delivery time ──────────────────────────────────────────────────────────────
+
+// GET /shop/delivery-time — authenticated, for dashboard badge
+shopRouter.get('/delivery-time', authenticateShopOrTenant, async (req: any, res: Response) => {
+  try {
+    const info = await getCurrentDeliveryTime(resolveTenantId(req));
+    res.json(info);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /shop/public/:slug/delivery-time — public, for QR ordering page
+shopRouter.get('/public/:slug/delivery-time', async (req: any, res: Response) => {
+  try {
+    const cfg = await dbGet(`SELECT tenant_id FROM shop_config WHERE qr_slug = ?`, req.params.slug);
+    if (!cfg) return res.status(404).json({ error: 'Shop not found' });
+    const info = await getCurrentDeliveryTime(cfg.tenant_id);
+    res.json(info);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
 // ── Fiscalization ──────────────────────────────────────────────────────────────
