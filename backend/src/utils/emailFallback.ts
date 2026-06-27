@@ -17,6 +17,8 @@ export async function sendEmailFallback(params: EmailFallbackParams): Promise<vo
   const MAILGUN_API_KEY = process.env.MAILGUN_API_KEY!;
   const MAILGUN_DOMAIN  = process.env.MAILGUN_DOMAIN || 'reviews.skedai.net';
 
+  if (!MAILGUN_API_KEY) throw new Error('MAILGUN_API_KEY not set');
+
   const guestLabel = guestName ? `${guestName} (${guestPhone})` : guestPhone;
 
   const now = new Date().toLocaleString('en-GB', {
