@@ -293,6 +293,50 @@ Text to translate: ${description}`,
         }
       }
 
+      // ── STATUS CHECK: Was this already handled / in progress in last 2 hrs? ──
+      // Catches the case where staff resolved an AC request and the guest asks
+      // again — prevents creating a duplicate and promising someone is coming.
+      if (finalRoom) {
+        try {
+          const statusSql = isPg
+            ? `SELECT id, status FROM hotel_requests
+               WHERE tenant_id = ? AND room_number = ? AND request_type = ?
+                 AND created_at::timestamptz >= NOW() - INTERVAL '2 hours'
+               ORDER BY created_at DESC LIMIT 1`
+            : `SELECT id, status FROM hotel_requests
+               WHERE tenant_id = ? AND room_number = ? AND request_type = ?
+                 AND created_at >= datetime('now', '-2 hours')
+               ORDER BY created_at DESC LIMIT 1`;
+
+          const recent = await dbGet(statusSql, tenantId, finalRoom, request_type) as any;
+
+          if (recent?.status === 'resolved') {
+            return {
+              success:         true,
+              request_id:      recent.id,
+              already_handled: true,
+              status:          'resolved',
+              message:         'This request was already handled recently',
+              room:            finalRoom,
+              department,
+            };
+          }
+          if (recent?.status === 'in_progress') {
+            return {
+              success:         true,
+              request_id:      recent.id,
+              already_handled: true,
+              status:          'in_progress',
+              message:         'This request is currently being handled',
+              room:            finalRoom,
+              department,
+            };
+          }
+        } catch (statusErr: any) {
+          console.warn('[Hotel create_request] Status check failed:', statusErr.message);
+        }
+      }
+
       // ── DEDUPLICATION: Check for recent open request same room + type ────────
       // If same guest has an open request for same room+type within 30 minutes,
       // amend it with new details instead of creating a duplicate ticket.
@@ -543,10 +587,9 @@ Text to translate: ${description}`,
         tenantId,
       ) as any[];
 
-      if (!faqs.length) return { found: false, faqs: [], note: 'No FAQ entries configured yet.' };
-
-      // Return ALL FAQs — Claude does the semantic matching
-      return { found: true, faqs };
+      // Return ALL FAQs — agent decides relevance semantically.
+      // Do NOT return found:false — that phrase leaks into agent responses.
+      return { faqs, count: faqs.length };
     }
 
     case 'get_guest_requests': {

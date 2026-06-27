@@ -293,9 +293,30 @@ export async function runHotelAgent(
   }
   */
 
+  // Fix 2: load staff phones so their messages are excluded from agent context
+  let staffPhones = new Set<string>();
+  try {
+    const staffRows = await dbAll(
+      'SELECT phone FROM hotel_blocked_numbers WHERE tenant_id = ?',
+      tenantId,
+    ) as any[];
+    staffPhones = new Set(staffRows.map((r: any) => (r.phone as string).replace(/[^0-9+]/g, '')));
+  } catch (e: any) {
+    console.warn('[Hotel] staff phone load failed:', e.message);
+  }
+
   // Build Anthropic messages from hotel history (strip ts — not part of API format)
+  // Exclude any messages tagged with a staff phone (forward-compatible: old messages
+  // without a `from` field pass through unchanged).
   const anthropicHistory: Anthropic.MessageParam[] = hotelHistory
-    .filter(m => m.role === 'user' || m.role === 'assistant')
+    .filter(m => {
+      if (m.role !== 'user' && m.role !== 'assistant') return false;
+      if (m.role === 'user' && (m as any).from) {
+        const clean = ((m as any).from as string).replace(/[^0-9+]/g, '');
+        if (staffPhones.has(clean)) return false;
+      }
+      return true;
+    })
     .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
 
   // If the guest sent a photo, append context so Claude knows the URL and can

@@ -16,6 +16,62 @@ export const whatsappRouter = Router();
 
 const MessagingResponse = twilio.twiml.MessagingResponse;
 
+// ---------------------------------------------------------------------------
+// Hotel message buffer — combines rapid successive messages before processing
+// ---------------------------------------------------------------------------
+const messageBuffer = new Map<string, {
+  messages: string[];
+  timer:    ReturnType<typeof setTimeout>;
+  resolve:  (msg: string) => void;
+}>();
+
+/**
+ * Waits 5 seconds before passing the message to the agent.
+ * If another message from the same guest arrives within the window,
+ * the timer resets and the messages are combined.
+ * Returns null for the 2nd+ caller — only the first awaiter processes.
+ */
+async function bufferMessage(
+  tenantId:    string,
+  guestPhone:  string,
+  messageText: string,
+): Promise<string | null> {
+  const key = `${tenantId}:${guestPhone}`;
+
+  if (messageBuffer.has(key)) {
+    const existing = messageBuffer.get(key)!;
+    clearTimeout(existing.timer);
+
+    // Dedup: skip if identical to last message
+    const last = existing.messages[existing.messages.length - 1];
+    if (messageText !== last) {
+      existing.messages.push(messageText);
+    }
+
+    // Reset timer — original resolve handles final processing
+    const timer = setTimeout(() => {
+      const combined = existing.messages.join('\n');
+      messageBuffer.delete(key);
+      existing.resolve(combined);
+    }, 5000);
+
+    existing.timer = timer;
+    return null; // let the original awaiter process the combined message
+  }
+
+  return new Promise((resolve) => {
+    const messages = [messageText];
+
+    const timer = setTimeout(() => {
+      const combined = messages.join('\n');
+      messageBuffer.delete(key);
+      resolve(combined);
+    }, 5000);
+
+    messageBuffer.set(key, { messages, timer, resolve });
+  });
+}
+
 async function dbGet(sql: string, ...p: unknown[]) {
   return isPg ? queryOne(sql, p) : prepare(sql).get(...p);
 }
@@ -356,8 +412,12 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
     let reply: string;
     try {
       if (tenantType === 'hotel') {
+        // Buffer for 5 s — combines rapid successive messages before processing
+        const combined = await bufferMessage(tenant.id, phone, messageText);
+        if (combined === null) return; // another message reset the timer; that call will process
+
         reply = await withTimeout(
-          runHotelAgent(messageText, history, phone, tenant.id, mediaUrl, mediaMime),
+          runHotelAgent(combined, history, phone, tenant.id, mediaUrl, mediaMime),
           15_000,
         );
       } else {
