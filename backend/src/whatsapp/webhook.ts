@@ -390,6 +390,7 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
     }
 
     // Email fallback — runs regardless of WhatsApp success/failure
+    console.log('[Email fallback] Checking:', tenant.email_fallback_enabled, tenant.notification_email);
     if (tenant.email_fallback_enabled && tenant.notification_email) {
       try {
         const { sendEmailFallback } = await import('../utils/emailFallback.js');
