@@ -216,6 +216,7 @@ async function handleMetaWebhook(req: Request, res: Response) {
           });
         } catch (emailErr: any) {
           console.error('[Meta][Email fallback] Failed:', emailErr.message);
+          console.error('[Meta][Email fallback] Full error:', JSON.stringify(emailErr, null, 2));
         }
       }
     }
@@ -405,6 +406,7 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
         });
       } catch (emailErr: any) {
         console.error('[Email fallback] Failed:', emailErr.message);
+        console.error('[Email fallback] Full error:', JSON.stringify(emailErr, null, 2));
       }
     }
 
