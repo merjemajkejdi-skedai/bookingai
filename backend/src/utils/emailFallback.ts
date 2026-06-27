@@ -1,5 +1,3 @@
-import nodemailer from 'nodemailer';
-
 export interface EmailFallbackParams {
   toEmail:           string;
   tenantName:        string;
@@ -10,26 +8,14 @@ export interface EmailFallbackParams {
   whatsappDelivered: boolean;
 }
 
-/**
- * Sends hotel staff an email with full conversation details.
- * Called for every incoming message when email_fallback_enabled = true.
- * Whether WhatsApp succeeded or failed, email always sends.
- */
 export async function sendEmailFallback(params: EmailFallbackParams): Promise<void> {
   const {
     toEmail, tenantName, guestPhone, guestName,
     guestMessage, aiReply, whatsappDelivered,
   } = params;
 
-  const transporter = nodemailer.createTransport({
-    host:   process.env.SMTP_HOST   || 'smtp.mailgun.org',
-    port:   parseInt(process.env.SMTP_PORT || '587'),
-    secure: false,
-    auth: {
-      user: process.env.SMTP_USER || process.env.MAILGUN_SMTP_LOGIN,
-      pass: process.env.SMTP_PASS || process.env.MAILGUN_SMTP_PASSWORD,
-    },
-  });
+  const MAILGUN_API_KEY = process.env.MAILGUN_API_KEY!;
+  const MAILGUN_DOMAIN  = process.env.MAILGUN_DOMAIN || 'reviews.skedai.net';
 
   const guestLabel = guestName ? `${guestName} (${guestPhone})` : guestPhone;
 
@@ -105,12 +91,30 @@ export async function sendEmailFallback(params: EmailFallbackParams): Promise<vo
     ? `📱 [${tenantName}] Message from ${guestLabel}`
     : `⚠️ [${tenantName}] UNDELIVERED — Message from ${guestLabel}`;
 
-  await transporter.sendMail({
-    from: `"SkedAI" <alerts@${process.env.MAILGUN_DOMAIN || 'reviews.skedai.net'}>`,
-    to:   toEmail,
-    subject,
-    html,
-  });
+  const formData = new URLSearchParams();
+  formData.append('from',    `SkedAI <alerts@${MAILGUN_DOMAIN}>`);
+  formData.append('to',      toEmail);
+  formData.append('subject', subject);
+  formData.append('html',    html);
 
-  console.log(`[Email fallback] ✅ Sent to ${toEmail} — guest: ${guestPhone}`);
+  const credentials = Buffer.from(`api:${MAILGUN_API_KEY}`).toString('base64');
+
+  const response = await fetch(
+    `https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages`,
+    {
+      method:  'POST',
+      headers: {
+        'Authorization': `Basic ${credentials}`,
+        'Content-Type':  'application/x-www-form-urlencoded',
+      },
+      body: formData.toString(),
+    },
+  );
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Mailgun API error: ${response.status} ${error}`);
+  }
+
+  console.log(`[Email fallback] ✅ Sent to ${toEmail} via Mailgun API`);
 }
