@@ -992,7 +992,7 @@ export async function runMigrations() {
       UPDATE art_events
       SET    price = 2000
       WHERE  is_active = 1
-        AND  date >= CURRENT_DATE
+        AND  date::date >= CURRENT_DATE
         AND  tenant_id = (SELECT id FROM tenants WHERE LOWER(name) LIKE '%weart%' LIMIT 1)
     `).then(r => {
       if (r.rowCount && r.rowCount > 0)
