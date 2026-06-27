@@ -102,7 +102,7 @@ export async function sendEmailFallback(params: EmailFallbackParams): Promise<vo
   const credentials = Buffer.from(`api:${MAILGUN_API_KEY}`).toString('base64');
 
   const response = await fetch(
-    `https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages`,
+    `https://api.eu.mailgun.net/v3/${MAILGUN_DOMAIN}/messages`,
     {
       method:  'POST',
       headers: {
