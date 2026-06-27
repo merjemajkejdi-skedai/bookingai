@@ -134,14 +134,14 @@ async function runPositiveDigest(): Promise<void> {
       `SELECT
          t.id,
          COUNT(r.id)             AS new_count,
-         ROUND(AVG(r.score), 1) AS avg_score
+         ROUND(AVG(r.score)::numeric, 1) AS avg_score
        FROM tenants t
        JOIN hotel_reviews r ON r.tenant_id = t.id
        WHERE t.type       = 'hotel'
          AND t.owner_phone IS NOT NULL
          AND r.is_flagged  = 0
          AND r.status      = 'pending'
-         AND r.created_at >= ?
+         AND r.created_at::timestamptz >= ?
        GROUP BY t.id
        HAVING COUNT(r.id) > 0`,
       yesterday.toISOString(),

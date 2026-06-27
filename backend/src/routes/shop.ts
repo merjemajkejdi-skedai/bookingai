@@ -635,9 +635,9 @@ shopRouter.get('/reports/summary', authenticateShopOrTenant, async (req: any, re
       : `(julianday(done_at) - julianday(created_at)) * 24 * 60`;
     const speedRows = await dbAll(`
       SELECT
-        ROUND(AVG(${minutesDiff})) AS avg_minutes,
-        MIN(${minutesDiff})        AS min_minutes,
-        MAX(${minutesDiff})        AS max_minutes
+        ROUND(AVG(${minutesDiff})::numeric) AS avg_minutes,
+        MIN(${minutesDiff})                AS min_minutes,
+        MAX(${minutesDiff})                AS max_minutes
       FROM shop_orders
       WHERE tenant_id = ? AND ${df} AND done_at IS NOT NULL AND status != 'cancelled'
     `, tenantId);
@@ -731,7 +731,7 @@ shopRouter.get('/reports/breakdown', authenticateShopOrTenant, async (req: any, 
     // 6 — avg order value trend per day
     const avgOrderTrend = await dbAll(`
       SELECT ${dateExpr} AS day,
-        ROUND(AVG(total_price)) AS avg_value,
+        ROUND(AVG(total_price)::numeric) AS avg_value,
         COUNT(*) AS order_count
       FROM shop_orders WHERE tenant_id = ? AND ${df} AND status != 'cancelled'
       GROUP BY ${dateExpr} ORDER BY day ASC
@@ -773,7 +773,7 @@ shopRouter.get('/reports/breakdown', authenticateShopOrTenant, async (req: any, 
       : `(julianday(done_at) - julianday(created_at)) * 24 * 60`;
     const speedTrend = await dbAll(`
       SELECT ${dateExpr} AS day,
-        ROUND(AVG(${minutesDiff})) AS avg_minutes
+        ROUND(AVG(${minutesDiff})::numeric) AS avg_minutes
       FROM shop_orders
       WHERE tenant_id = ? AND ${df} AND done_at IS NOT NULL AND status != 'cancelled'
       GROUP BY ${dateExpr} ORDER BY day ASC

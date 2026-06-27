@@ -6,9 +6,13 @@ async function dbRun(sql: string, ...p: unknown[]) { if (isPg) return queryRun(s
 
 async function resetDailyStock() {
   try {
-    // Reset stock_used for items with daily limit whose last reset was before today
+    // Reset stock_used for items with daily limit whose last reset was before today.
+    // stock_last_reset is TEXT; PG cannot compare TEXT < DATE directly, so cast it.
+    const resetCond = isPg
+      ? `stock_last_reset IS NULL OR stock_last_reset::date < CURRENT_DATE`
+      : `stock_last_reset IS NULL OR stock_last_reset < CURRENT_DATE`;
     await dbRun(
-      `UPDATE shop_menu_items SET stock_used = 0, stock_last_reset = CURRENT_DATE WHERE stock_type = 'daily' AND (stock_last_reset IS NULL OR stock_last_reset < CURRENT_DATE)`,
+      `UPDATE shop_menu_items SET stock_used = 0, stock_last_reset = CURRENT_DATE WHERE stock_type = 'daily' AND (${resetCond})`,
     );
     console.log('[Shop] ✅ Daily stock reset complete');
   } catch (err: any) {
