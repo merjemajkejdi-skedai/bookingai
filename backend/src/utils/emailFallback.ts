@@ -1,3 +1,5 @@
+import { Resend } from 'resend';
+
 export interface EmailFallbackParams {
   toEmail:           string;
   tenantName:        string;
@@ -14,10 +16,7 @@ export async function sendEmailFallback(params: EmailFallbackParams): Promise<vo
     guestMessage, aiReply, whatsappDelivered,
   } = params;
 
-  const MAILGUN_API_KEY = process.env.MAILGUN_API_KEY!;
-  const MAILGUN_DOMAIN  = process.env.MAILGUN_DOMAIN || 'reviews.skedai.net';
-
-  if (!MAILGUN_API_KEY) throw new Error('MAILGUN_API_KEY not set');
+  const resend = new Resend(process.env.RESEND_API_KEY);
 
   const guestLabel = guestName ? `${guestName} (${guestPhone})` : guestPhone;
 
@@ -93,30 +92,12 @@ export async function sendEmailFallback(params: EmailFallbackParams): Promise<vo
     ? `📱 [${tenantName}] Message from ${guestLabel}`
     : `⚠️ [${tenantName}] UNDELIVERED — Message from ${guestLabel}`;
 
-  const formData = new URLSearchParams();
-  formData.append('from',    `SkedAI <alerts@${MAILGUN_DOMAIN}>`);
-  formData.append('to',      toEmail);
-  formData.append('subject', subject);
-  formData.append('html',    html);
+  await resend.emails.send({
+    from:    'SkedAI <alerts@skedai.net>',
+    to:      toEmail,
+    subject: subject,
+    html:    html,
+  });
 
-  const credentials = Buffer.from(`api:${MAILGUN_API_KEY}`).toString('base64');
-
-  const response = await fetch(
-    `https://api.eu.mailgun.net/v3/${MAILGUN_DOMAIN}/messages`,
-    {
-      method:  'POST',
-      headers: {
-        'Authorization': `Basic ${credentials}`,
-        'Content-Type':  'application/x-www-form-urlencoded',
-      },
-      body: formData.toString(),
-    },
-  );
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Mailgun API error: ${response.status} ${error}`);
-  }
-
-  console.log(`[Email fallback] ✅ Sent to ${toEmail} via Mailgun API`);
+  console.log(`[Email fallback] ✅ Sent to ${toEmail} via Resend`);
 }
