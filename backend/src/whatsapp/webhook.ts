@@ -383,12 +383,13 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
     let whatsappDelivered = true;
     try {
       await sendWhatsAppMessage(phone, reply, tenant);
-      console.log(`✅ Reply sent to ${phone}`);
     } catch (waErr: any) {
       whatsappDelivered = false;
       console.error('❌ WhatsApp send failed:', waErr.message);
+      // DO NOT re-throw here — handle via email fallback below
     }
 
+    // Email fallback — runs regardless of WhatsApp success/failure
     if (tenant.email_fallback_enabled && tenant.notification_email) {
       try {
         const { sendEmailFallback } = await import('../utils/emailFallback.js');
@@ -404,8 +405,6 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
       } catch (emailErr: any) {
         console.error('[Email fallback] Failed:', emailErr.message);
       }
-    } else if (!whatsappDelivered) {
-      console.error('❌ WhatsApp delivery failed and no email fallback configured');
     }
 
   } catch (err: any) {
