@@ -317,6 +317,8 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
   const [surveyEnabled,  setSurveyEnabled]    = useState(!!tenant.survey_enabled);
   const [menusEnabled,   setMenusEnabled]     = useState(!!tenant.menus_enabled);
   const [shopPhotosEnabled, setShopPhotosEnabled] = useState(!!tenant.shop_photos_enabled);
+  const [notificationEmail, setNotificationEmail] = useState(tenant.notification_email || '');
+  const [emailFallbackEnabled, setEmailFallbackEnabled] = useState(!!tenant.email_fallback_enabled);
   const [saving, setSaving]                   = useState(false);
   const [error, setError]                     = useState('');
 
@@ -326,6 +328,7 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
       await adminApi.updateTenant(tenant.id, {
         name, whatsappNumber: whatsapp, plan, billingEmail, type,
         provider, reviewsEnabled, surveyEnabled, menusEnabled, shopPhotosEnabled,
+        notificationEmail, emailFallbackEnabled,
         metaPhoneNumberId: metaPhoneNumberId || null,
         metaAccessToken:   metaAccessToken   || null,
         metaWabaId:        metaWabaId        || null,
@@ -455,6 +458,37 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
               <span className="text-sm text-slate-700">Menu item photos</span>
               <span className="text-xs text-slate-400">{shopPhotosEnabled ? 'Enabled' : 'Disabled'}</span>
             </label>
+          )}
+        </div>
+
+        {/* Email fallback — all tenant types */}
+        <div className="border border-slate-200 rounded-lg p-4 space-y-3">
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Email fallback</p>
+          <Input
+            label="Notification email"
+            type="email"
+            value={notificationEmail}
+            onChange={(e: any) => setNotificationEmail(e.target.value)}
+            placeholder="manager@hotel.com"
+          />
+          <label className="flex items-center gap-3 cursor-pointer select-none">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={emailFallbackEnabled}
+              onClick={() => setEmailFallbackEnabled(v => !v)}
+              className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors ${emailFallbackEnabled ? 'bg-indigo-500' : 'bg-slate-200'}`}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ${emailFallbackEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
+            </button>
+            <span className="text-sm text-slate-700">Forward all messages to email</span>
+            <span className="text-xs text-slate-400">{emailFallbackEnabled ? 'Enabled' : 'Disabled'}</span>
+          </label>
+          {emailFallbackEnabled && !notificationEmail && (
+            <p className="text-xs text-amber-600 font-medium">⚠️ Enter a notification email above for forwarding to work.</p>
+          )}
+          {emailFallbackEnabled && notificationEmail && (
+            <p className="text-xs text-slate-400">Every incoming WhatsApp message will be forwarded to <strong>{notificationEmail}</strong>.</p>
           )}
         </div>
 

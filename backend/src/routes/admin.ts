@@ -97,6 +97,7 @@ adminRouter.put('/tenants/:id', async (req: Request, res: Response) => {
     reviewsEnabled, surveyEnabled, menusEnabled, shopPhotosEnabled,
     provider, metaPhoneNumberId, metaAccessToken, metaWabaId,
     twilioAccountSid, twilioAuthToken, twilioDeptTemplateSid,
+    notificationEmail, emailFallbackEnabled,
   } = req.body;
 
   // Normalise: always store with whatsapp: prefix; empty string → null (don't overwrite)
@@ -124,7 +125,9 @@ adminRouter.put('/tenants/:id', async (req: Request, res: Response) => {
        meta_waba_id         = COALESCE(?,meta_waba_id),
        twilio_account_sid        = COALESCE(?,twilio_account_sid),
        twilio_auth_token         = COALESCE(?,twilio_auth_token),
-       twilio_dept_template_sid  = COALESCE(?,twilio_dept_template_sid)
+       twilio_dept_template_sid  = COALESCE(?,twilio_dept_template_sid),
+       notification_email        = COALESCE(?,notification_email),
+       email_fallback_enabled    = COALESCE(?,email_fallback_enabled)
      WHERE id=?`,
     name??null, normalisedWhatsapp, plan??null,
     isActive !== undefined ? (isActive ? 1 : 0) : null,
@@ -136,6 +139,8 @@ adminRouter.put('/tenants/:id', async (req: Request, res: Response) => {
     shopPhotosEnabled   !== undefined ? (shopPhotosEnabled   ? 1 : 0) : null,
     provider??null, metaPhoneNumberId??null, metaAccessToken??null, metaWabaId??null,
     twilioAccountSid||null, twilioAuthToken||null, twilioDeptTemplateSid||null,
+    notificationEmail !== undefined ? (notificationEmail || null) : null,
+    emailFallbackEnabled !== undefined ? (emailFallbackEnabled ? 1 : 0) : null,
     req.params.id,
   );
 

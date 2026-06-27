@@ -192,8 +192,32 @@ async function handleMetaWebhook(req: Request, res: Response) {
     }
 
     if (reply) {
-      await sendWhatsAppMessage(customerPhone, reply, tenant);
-      console.log(`[Meta] ✅ Reply sent to +${from}`);
+      let waDelivered = true;
+      try {
+        await sendWhatsAppMessage(customerPhone, reply, tenant);
+        console.log(`[Meta] ✅ Reply sent to +${from}`);
+      } catch (waErr: any) {
+        waDelivered = false;
+        console.error(`[Meta] ❌ WhatsApp send failed:`, waErr.message);
+      }
+
+      if (tenant.email_fallback_enabled && tenant.notification_email) {
+        try {
+          const { sendEmailFallback } = await import('../utils/emailFallback.js');
+          const contactName = (value as any).contacts?.[0]?.profile?.name;
+          await sendEmailFallback({
+            toEmail:           tenant.notification_email,
+            tenantName:        tenant.name || 'Hotel',
+            guestPhone:        `+${from}`,
+            guestName:         contactName || undefined,
+            guestMessage:      body,
+            aiReply:           reply,
+            whatsappDelivered: waDelivered,
+          });
+        } catch (emailErr: any) {
+          console.error('[Meta][Email fallback] Failed:', emailErr.message);
+        }
+      }
     }
   } catch (err) {
     console.error('[Meta webhook error]', err);
@@ -356,8 +380,33 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
     // Empty reply = hotel silent mode (blocked number) — send nothing
     if (!reply) return;
 
-    await sendWhatsAppMessage(phone, reply, tenant);
-    console.log(`✅ Reply sent to ${phone}`);
+    let whatsappDelivered = true;
+    try {
+      await sendWhatsAppMessage(phone, reply, tenant);
+      console.log(`✅ Reply sent to ${phone}`);
+    } catch (waErr: any) {
+      whatsappDelivered = false;
+      console.error('❌ WhatsApp send failed:', waErr.message);
+    }
+
+    if (tenant.email_fallback_enabled && tenant.notification_email) {
+      try {
+        const { sendEmailFallback } = await import('../utils/emailFallback.js');
+        await sendEmailFallback({
+          toEmail:           tenant.notification_email,
+          tenantName:        tenant.name || 'Hotel',
+          guestPhone:        phone,
+          guestName:         ProfileName || undefined,
+          guestMessage:      messageText,
+          aiReply:           reply,
+          whatsappDelivered,
+        });
+      } catch (emailErr: any) {
+        console.error('[Email fallback] Failed:', emailErr.message);
+      }
+    } else if (!whatsappDelivered) {
+      console.error('❌ WhatsApp delivery failed and no email fallback configured');
+    }
 
   } catch (err: any) {
     console.error('❌ Webhook error:', err?.message ?? err);

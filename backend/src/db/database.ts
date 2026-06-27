@@ -937,6 +937,9 @@ export async function runMigrations() {
       `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS delivery_time_3 INTEGER DEFAULT 45`,
       // shop_photos_001 — per-tenant photo upload toggle for shop module
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS shop_photos_enabled INTEGER NOT NULL DEFAULT 0`,
+      // email_fallback_001 — hotel staff email fallback when WhatsApp delivery fails
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS notification_email TEXT`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS email_fallback_enabled INTEGER NOT NULL DEFAULT 0`,
       `ALTER TABLE shop_menu_items ADD COLUMN IF NOT EXISTS vat_rate TEXT DEFAULT 'VAT_20'`,
       `ALTER TABLE shop_menu_items ADD COLUMN IF NOT EXISTS item_code TEXT`,
       `ALTER TABLE shop_menu_items ADD COLUMN IF NOT EXISTS unit TEXT DEFAULT 'XPP'`,
@@ -1111,6 +1114,10 @@ export async function runMigrations() {
     exec('ALTER TABLE tenants ADD COLUMN menus_enabled INTEGER NOT NULL DEFAULT 0');
   if (!cols.includes('shop_photos_enabled'))
     exec('ALTER TABLE tenants ADD COLUMN shop_photos_enabled INTEGER NOT NULL DEFAULT 0');
+  if (!cols.includes('notification_email'))
+    exec('ALTER TABLE tenants ADD COLUMN notification_email TEXT');
+  if (!cols.includes('email_fallback_enabled'))
+    exec('ALTER TABLE tenants ADD COLUMN email_fallback_enabled INTEGER NOT NULL DEFAULT 0');
 
   const convCols = prepare("SELECT name FROM pragma_table_info('hotel_conversations')")
     .all().map((r: any) => r.name as string);

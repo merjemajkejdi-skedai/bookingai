@@ -305,7 +305,7 @@ Text to translate: ${description}`,
             ? `SELECT id, description, photo_url FROM hotel_requests
                WHERE tenant_id = ? AND room_number = ? AND request_type = ?
                  AND status != 'resolved'
-                 AND created_at >= NOW() - INTERVAL '${DEDUP_WINDOW_MINUTES} minutes'
+                 AND created_at::timestamptz >= NOW() - INTERVAL '${DEDUP_WINDOW_MINUTES} minutes'
                ORDER BY created_at DESC LIMIT 1`
             : `SELECT id, description, photo_url FROM hotel_requests
                WHERE tenant_id = ? AND room_number = ? AND request_type = ?
