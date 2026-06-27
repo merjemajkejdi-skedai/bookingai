@@ -48,33 +48,24 @@ app.get('/health', (_, res) => res.json({
   claude: !!process.env.CLAUDE_API_KEY,
 }));
 
-// TEMPORARY — remove after Mailgun region is confirmed
+// TEMPORARY — remove after Mailgun is confirmed working
 app.get('/test-mailgun', async (req, res) => {
   const key    = process.env.MAILGUN_API_KEY!;
   const domain = process.env.MAILGUN_DOMAIN || 'reviews.skedai.net';
   const creds  = Buffer.from(`api:${key}`).toString('base64');
 
-  const r1 = await fetch(`https://api.mailgun.net/v3/${domain}/messages`, {
+  const r = await fetch(`https://api.eu.mailgun.net/v3/${domain}/messages`, {
     method: 'POST',
     headers: { 'Authorization': `Basic ${creds}`, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ from: `test@${domain}`, to: 'test@test.com', subject: 'test', text: 'test' }).toString(),
   });
-  const t1 = await r1.text();
-
-  const r2 = await fetch(`https://api.eu.mailgun.net/v3/${domain}/messages`, {
-    method: 'POST',
-    headers: { 'Authorization': `Basic ${creds}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ from: `test@${domain}`, to: 'test@test.com', subject: 'test', text: 'test' }).toString(),
-  });
-  const t2 = await r2.text();
+  const t = await r.text();
 
   res.json({
-    key_prefix:  key?.substring(0, 8),
+    key_prefix: key?.substring(0, 8),
     domain,
-    us_status:   r1.status,
-    us_response: t1,
-    eu_status:   r2.status,
-    eu_response: t2,
+    eu_status:   r.status,
+    eu_response: t,
   });
 });
 
