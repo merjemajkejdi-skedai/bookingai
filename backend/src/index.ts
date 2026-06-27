@@ -48,27 +48,6 @@ app.get('/health', (_, res) => res.json({
   claude: !!process.env.CLAUDE_API_KEY,
 }));
 
-// TEMPORARY — remove after Mailgun is confirmed working
-app.get('/test-mailgun', async (req, res) => {
-  const key    = process.env.MAILGUN_API_KEY!;
-  const domain = process.env.MAILGUN_DOMAIN || 'reviews.skedai.net';
-  const creds  = Buffer.from(`api:${key}`).toString('base64');
-
-  const r = await fetch(`https://api.eu.mailgun.net/v3/${domain}/messages`, {
-    method: 'POST',
-    headers: { 'Authorization': `Basic ${creds}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ from: `test@${domain}`, to: 'test@test.com', subject: 'test', text: 'test' }).toString(),
-  });
-  const t = await r.text();
-
-  res.json({
-    key_prefix: key?.substring(0, 8),
-    domain,
-    eu_status:   r.status,
-    eu_response: t,
-  });
-});
-
 app.use('/api', bookingRouter);
 app.use('/api', artEventRouter);
 app.use('/api', artClassRouter);
