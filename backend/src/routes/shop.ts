@@ -1,7 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import multer from 'multer';
 import path from 'path';
-import fs from 'fs';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 const bcryptHash   = bcrypt.hash.bind(bcrypt);
@@ -56,13 +55,8 @@ function requireShopAdmin(req: any, res: any, next: any) {
   return res.status(403).json({ success: false, error: 'Admin role required' });
 }
 
-const UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'shop');
-
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: (_, __, cb) => { fs.mkdirSync(UPLOAD_DIR, { recursive: true }); cb(null, UPLOAD_DIR); },
-    filename: (_, file, cb) => { cb(null, `${crypto.randomUUID()}${path.extname(file.originalname)}`); },
-  }),
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_, file, cb) => { cb(null, file.mimetype.startsWith('image/')); },
 });
@@ -229,20 +223,22 @@ shopRouter.get('/items', authenticateShopOrTenant, async (req: any, res: Respons
 shopRouter.post('/items', authenticateShopOrTenant, upload.single('photo'), async (req: any, res: Response) => {
   try {
     const tenantId = resolveTenantId(req);
+    let photo_url: string | null = null;
     if (req.file) {
       const tenant = await dbGet(`SELECT shop_photos_enabled FROM tenants WHERE id = ?`, tenantId);
       if (!tenant?.shop_photos_enabled) {
-        try { fs.unlinkSync(path.join(UPLOAD_DIR, req.file.filename)); } catch { /* ignore */ }
         return res.status(403).json({ success: false, error: 'Photo uploads are disabled for this shop' });
       }
+      const { uploadToR2 } = await import('../utils/r2.js');
+      const ext = path.extname(req.file.originalname);
+      const key = `shop/${tenantId}/menu/${crypto.randomUUID()}${ext}`;
+      photo_url = await uploadToR2(key, req.file.buffer, req.file.mimetype);
     }
     const { name, description, price, currency, category_id, stock_type, stock_limit, sort_order, vat_rate, item_code, unit } = req.body;
     const id = crypto.randomUUID();
-    const photo_filename = req.file?.filename || null;
-    const photo_url = photo_filename ? `${baseUrl()}/uploads/shop/${photo_filename}` : null;
     await dbRun(
       `INSERT INTO shop_menu_items (id,tenant_id,category_id,name,description,price,currency,photo_url,photo_filename,stock_type,stock_limit,sort_order,vat_rate,item_code,unit) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      id, tenantId, category_id || null, name, description, parseFloat(price), currency || 'ALL', photo_url, photo_filename, stock_type || 'unlimited', stock_limit ? parseInt(stock_limit) : null, sort_order ?? 0, vat_rate || 'VAT_20', item_code || null, unit || 'XPP',
+      id, tenantId, category_id || null, name, description, parseFloat(price), currency || 'ALL', photo_url, null, stock_type || 'unlimited', stock_limit ? parseInt(stock_limit) : null, sort_order ?? 0, vat_rate || 'VAT_20', item_code || null, unit || 'XPP',
     );
     res.json({ success: true, data: { id, photo_url } });
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
@@ -251,34 +247,35 @@ shopRouter.post('/items', authenticateShopOrTenant, upload.single('photo'), asyn
 shopRouter.put('/items/:id', authenticateShopOrTenant, upload.single('photo'), async (req: any, res: Response) => {
   try {
     const tenantId = resolveTenantId(req);
+    const existing = await dbGet(`SELECT photo_url FROM shop_menu_items WHERE id=? AND tenant_id=?`, req.params.id, tenantId);
+    if (!existing) return res.status(404).json({ success: false, error: 'Not found' });
+
+    let photo_url: string | null = null;
     if (req.file) {
       const tenant = await dbGet(`SELECT shop_photos_enabled FROM tenants WHERE id = ?`, tenantId);
       if (!tenant?.shop_photos_enabled) {
-        try { fs.unlinkSync(path.join(UPLOAD_DIR, req.file.filename)); } catch { /* ignore */ }
         return res.status(403).json({ success: false, error: 'Photo uploads are disabled for this shop' });
       }
-    }
-    const existing = await dbGet(`SELECT photo_filename FROM shop_menu_items WHERE id=? AND tenant_id=?`, req.params.id, tenantId);
-    if (!existing) return res.status(404).json({ success: false, error: 'Not found' });
-
-    let photo_filename: string | null = existing.photo_filename || null;
-    let photo_url: string | null = null;
-    if (req.file) {
-      if (photo_filename) { const old = path.join(UPLOAD_DIR, photo_filename); if (fs.existsSync(old)) fs.unlinkSync(old); }
-      photo_filename = req.file.filename;
-      photo_url = `${baseUrl()}/uploads/shop/${photo_filename}`;
+      if (existing.photo_url) {
+        const { isR2Url, deleteFromR2 } = await import('../utils/r2.js');
+        if (isR2Url(existing.photo_url)) { try { await deleteFromR2(existing.photo_url); } catch { /* ignore */ } }
+      }
+      const { uploadToR2 } = await import('../utils/r2.js');
+      const ext = path.extname(req.file.originalname);
+      const key = `shop/${tenantId}/menu/${crypto.randomUUID()}${ext}`;
+      photo_url = await uploadToR2(key, req.file.buffer, req.file.mimetype);
     }
 
     const { name, description, price, currency, category_id, stock_type, stock_limit, stock_used, is_active, sort_order, vat_rate, item_code, unit } = req.body;
     await dbRun(
-      `UPDATE shop_menu_items SET name=?,description=?,price=?,currency=?,category_id=?,stock_type=?,stock_limit=?,stock_used=?,is_active=?,sort_order=?,vat_rate=?,item_code=?,unit=?,photo_url=COALESCE(?,photo_url),photo_filename=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND tenant_id=?`,
+      `UPDATE shop_menu_items SET name=?,description=?,price=?,currency=?,category_id=?,stock_type=?,stock_limit=?,stock_used=?,is_active=?,sort_order=?,vat_rate=?,item_code=?,unit=?,photo_url=COALESCE(?,photo_url),photo_filename=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=? AND tenant_id=?`,
       name, description, parseFloat(price), currency || 'ALL', category_id || null,
       stock_type || 'unlimited', stock_limit !== undefined ? parseInt(stock_limit) : null,
       stock_used !== undefined ? parseInt(stock_used) : undefined,
       is_active !== undefined ? (is_active ? 1 : 0) : 1,
       sort_order ?? 0,
       vat_rate || 'VAT_20', item_code || null, unit || 'XPP',
-      photo_url, photo_filename,
+      photo_url,
       req.params.id, tenantId,
     );
     res.json({ success: true, data: { photo_url: photo_url || undefined } });
@@ -288,10 +285,10 @@ shopRouter.put('/items/:id', authenticateShopOrTenant, upload.single('photo'), a
 shopRouter.delete('/items/:id', authenticateShopOrTenant, async (req: any, res: Response) => {
   try {
     const tenantId = resolveTenantId(req);
-    const item = await dbGet(`SELECT photo_filename FROM shop_menu_items WHERE id=? AND tenant_id=?`, req.params.id, tenantId);
-    if (item?.photo_filename) {
-      const fp = path.join(UPLOAD_DIR, item.photo_filename);
-      if (fs.existsSync(fp)) fs.unlinkSync(fp);
+    const item = await dbGet(`SELECT photo_url FROM shop_menu_items WHERE id=? AND tenant_id=?`, req.params.id, tenantId);
+    if (item?.photo_url) {
+      const { isR2Url, deleteFromR2 } = await import('../utils/r2.js');
+      if (isR2Url(item.photo_url)) { try { await deleteFromR2(item.photo_url); } catch { /* ignore */ } }
     }
     await dbRun(`DELETE FROM shop_menu_items WHERE id=? AND tenant_id=?`, req.params.id, tenantId);
     res.json({ success: true });
@@ -984,12 +981,8 @@ shopRouter.get('/audit-log', authenticateShopOrTenant, requireShopAdmin, async (
 
 // ── Logo Upload ────────────────────────────────────────────────────────────────
 
-const LOGO_DIR = path.join(process.cwd(), 'uploads', 'shop', 'logos');
 const uploadLogo = multer({
-  storage: multer.diskStorage({
-    destination: (_, __, cb) => { fs.mkdirSync(LOGO_DIR, { recursive: true }); cb(null, LOGO_DIR); },
-    filename:    (_, file, cb) => { cb(null, `logo-${Date.now()}${path.extname(file.originalname).toLowerCase()}`); },
-  }),
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_, file, cb) => {
     const ok = ['.jpg', '.jpeg', '.png', '.webp'].includes(path.extname(file.originalname).toLowerCase());
@@ -1001,15 +994,18 @@ shopRouter.post('/config/logo', authenticateShopOrTenant, uploadLogo.single('log
   try {
     if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded' });
     const tenantId = resolveTenantId(req);
-    const old = await dbGet(`SELECT shop_logo_filename FROM shop_config WHERE tenant_id=?`, tenantId);
-    if (old?.shop_logo_filename) {
-      const oldPath = path.join(LOGO_DIR, old.shop_logo_filename);
-      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+    const old = await dbGet(`SELECT shop_logo_url FROM shop_config WHERE tenant_id=?`, tenantId);
+    if (old?.shop_logo_url) {
+      const { isR2Url, deleteFromR2 } = await import('../utils/r2.js');
+      if (isR2Url(old.shop_logo_url)) { try { await deleteFromR2(old.shop_logo_url); } catch { /* ignore */ } }
     }
-    const logoUrl = `${baseUrl()}/uploads/shop/logos/${req.file.filename}`;
+    const { uploadToR2 } = await import('../utils/r2.js');
+    const ext = path.extname(req.file.originalname).toLowerCase();
+    const key = `shop/${tenantId}/logo/${crypto.randomUUID()}${ext}`;
+    const logoUrl = await uploadToR2(key, req.file.buffer, req.file.mimetype);
     await dbRun(
-      `UPDATE shop_config SET shop_logo_url=?, shop_logo_filename=?, updated_at=CURRENT_TIMESTAMP WHERE tenant_id=?`,
-      logoUrl, req.file.filename, tenantId,
+      `UPDATE shop_config SET shop_logo_url=?, shop_logo_filename=NULL, updated_at=CURRENT_TIMESTAMP WHERE tenant_id=?`,
+      logoUrl, tenantId,
     );
     res.json({ success: true, data: { logo_url: logoUrl } });
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
@@ -1018,10 +1014,10 @@ shopRouter.post('/config/logo', authenticateShopOrTenant, uploadLogo.single('log
 shopRouter.delete('/config/logo', authenticateShopOrTenant, async (req: any, res: Response) => {
   try {
     const tenantId = resolveTenantId(req);
-    const old = await dbGet(`SELECT shop_logo_filename FROM shop_config WHERE tenant_id=?`, tenantId);
-    if (old?.shop_logo_filename) {
-      const oldPath = path.join(LOGO_DIR, old.shop_logo_filename);
-      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+    const old = await dbGet(`SELECT shop_logo_url FROM shop_config WHERE tenant_id=?`, tenantId);
+    if (old?.shop_logo_url) {
+      const { isR2Url, deleteFromR2 } = await import('../utils/r2.js');
+      if (isR2Url(old.shop_logo_url)) { try { await deleteFromR2(old.shop_logo_url); } catch { /* ignore */ } }
     }
     await dbRun(
       `UPDATE shop_config SET shop_logo_url=NULL, shop_logo_filename=NULL, updated_at=CURRENT_TIMESTAMP WHERE tenant_id=?`,

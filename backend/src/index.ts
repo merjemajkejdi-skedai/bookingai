@@ -1,9 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import fs from 'fs';
 import { runMigrations } from './db/database.js';
 import { whatsappRouter } from './whatsapp/webhook.js';
 import { authRouter } from './routes/auth.js';
@@ -36,16 +33,11 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: false, limit: '10mb' }));
 
-// Serve uploaded files (Railway filesystem — ephemeral across deploys)
-fs.mkdirSync(path.join(process.cwd(), 'uploads', 'menus'),        { recursive: true });
-fs.mkdirSync(path.join(process.cwd(), 'uploads', 'maintenance'),  { recursive: true });
-fs.mkdirSync(path.join(process.cwd(), 'uploads', 'shop'),         { recursive: true });
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
-
 app.get('/health', (_, res) => res.json({
   status: 'ok', ts: new Date().toISOString(),
   twilio: !!process.env.TWILIO_ACCOUNT_SID,
   claude: !!process.env.CLAUDE_API_KEY,
+  r2: !!process.env.R2_BUCKET_NAME,
 }));
 
 app.use('/api', bookingRouter);
@@ -74,7 +66,9 @@ async function start() {
     console.log(`   Admin:     http://localhost:${PORT}/admin/tenants`);
     console.log(`   Health:    http://localhost:${PORT}/health`);
     console.log(`\n   Twilio: ${!!process.env.TWILIO_ACCOUNT_SID ? '✅' : '❌ missing TWILIO_ACCOUNT_SID'}`);
-    console.log(`   Claude: ${!!process.env.CLAUDE_API_KEY ? '✅' : '❌ missing CLAUDE_API_KEY'}\n`);
+    console.log(`   Claude: ${!!process.env.CLAUDE_API_KEY ? '✅' : '❌ missing CLAUDE_API_KEY'}`);
+    const r2Ok = !!(process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_ENDPOINT && process.env.R2_BUCKET_NAME && process.env.R2_PUBLIC_URL);
+    console.log(`   R2:     ${r2Ok ? '✅' : '❌ missing R2_* env vars — file uploads will fail'}\n`);
   });
 }
 

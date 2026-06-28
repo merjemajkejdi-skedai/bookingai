@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import multer from 'multer';
 import path from 'path';
-import fs from 'fs';
+import crypto from 'crypto';
 import { requireAuth, resolveTenantId } from '../middleware/auth.js';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 
@@ -18,26 +18,11 @@ const ok = <T>(res: Response, data: T) => res.json({ success: true, data });
 const err = (res: Response, msg: string, status = 400) =>
   res.status(status).json({ success: false, error: msg });
 
-const BASE_URL = process.env.RAILWAY_PUBLIC_DOMAIN
-  ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-  : 'https://bookingai-production-8d5d.up.railway.app';
-
 // ---------------------------------------------------------------------------
-// File upload setup
+// File upload setup — memoryStorage; files go to Cloudflare R2
 // ---------------------------------------------------------------------------
-const uploadsDir = path.join(process.cwd(), 'uploads', 'menus');
-fs.mkdirSync(uploadsDir, { recursive: true });
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadsDir),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, `${crypto.randomUUID()}${ext}`);
-  },
-});
-
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 16 * 1024 * 1024 }, // 16 MB
   fileFilter: (_req, file, cb) => {
     const allowed = ['.pdf', '.jpg', '.jpeg', '.png'];
@@ -178,11 +163,9 @@ hotelMenusRouter.delete('/menus/:id', requireAuth, async (req: Request, res: Res
     const menu = await dbGet('SELECT * FROM hotel_menus WHERE id = ? AND tenant_id = ?', req.params.id, tenantId) as any;
     if (!menu) return err(res, 'Menu not found', 404);
 
-    // Remove file from disk if present
     if (menu.file_url) {
-      const filePath = path.join(process.cwd(), 'uploads', 'menus',
-        path.basename(menu.file_url));
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      const { isR2Url, deleteFromR2 } = await import('../utils/r2.js');
+      if (isR2Url(menu.file_url)) { try { await deleteFromR2(menu.file_url); } catch { /* ignore */ } }
     }
 
     await dbRun('DELETE FROM hotel_menu_items WHERE menu_id = ?', req.params.id);
@@ -194,7 +177,7 @@ hotelMenusRouter.delete('/menus/:id', requireAuth, async (req: Request, res: Res
 });
 
 // ---------------------------------------------------------------------------
-// POST /menus/:id/upload — upload file
+// POST /menus/:id/upload — upload file to R2
 // ---------------------------------------------------------------------------
 hotelMenusRouter.post('/menus/:id/upload', requireAuth, upload.single('file'), async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
@@ -204,14 +187,15 @@ hotelMenusRouter.post('/menus/:id/upload', requireAuth, upload.single('file'), a
 
     if (!req.file) return err(res, 'No file uploaded');
 
-    // Remove old file if present
     if (menu.file_url) {
-      const oldPath = path.join(process.cwd(), 'uploads', 'menus', path.basename(menu.file_url));
-      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+      const { isR2Url, deleteFromR2 } = await import('../utils/r2.js');
+      if (isR2Url(menu.file_url)) { try { await deleteFromR2(menu.file_url); } catch { /* ignore */ } }
     }
 
+    const { uploadToR2 } = await import('../utils/r2.js');
     const ext = path.extname(req.file.originalname).toLowerCase().replace('.', '');
-    const fileUrl = `${BASE_URL}/uploads/menus/${req.file.filename}`;
+    const key = `hotel/${tenantId}/menus/${crypto.randomUUID()}.${ext}`;
+    const fileUrl = await uploadToR2(key, req.file.buffer, req.file.mimetype);
     const now = new Date().toISOString();
 
     await dbRun(
@@ -227,7 +211,7 @@ hotelMenusRouter.post('/menus/:id/upload', requireAuth, upload.single('file'), a
 });
 
 // ---------------------------------------------------------------------------
-// DELETE /menus/:id/upload — remove file
+// DELETE /menus/:id/upload — remove file from R2
 // ---------------------------------------------------------------------------
 hotelMenusRouter.delete('/menus/:id/upload', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
@@ -236,8 +220,8 @@ hotelMenusRouter.delete('/menus/:id/upload', requireAuth, async (req: Request, r
     if (!menu) return err(res, 'Menu not found', 404);
 
     if (menu.file_url) {
-      const filePath = path.join(process.cwd(), 'uploads', 'menus', path.basename(menu.file_url));
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      const { isR2Url, deleteFromR2 } = await import('../utils/r2.js');
+      if (isR2Url(menu.file_url)) { try { await deleteFromR2(menu.file_url); } catch { /* ignore */ } }
     }
 
     const now = new Date().toISOString();

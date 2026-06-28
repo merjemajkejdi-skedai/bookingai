@@ -1,12 +1,9 @@
 import twilio from 'twilio';
-import fs from 'fs';
-import path from 'path';
 import { logMessage } from './messageLog.js';
 
-// ── Download Twilio media and re-host on Railway filesystem ──────────────────
-// Twilio media URLs require HTTP Basic Auth — browsers and external services
-// (including Twilio itself for department forwards) cannot access them directly.
-// This function downloads the file and returns a public Railway URL instead.
+// ── Download Twilio media and upload to Cloudflare R2 ─────────────────────────
+// Twilio media URLs require HTTP Basic Auth — external services cannot access
+// them directly. This downloads the file and returns a permanent public R2 URL.
 
 export async function downloadTwilioMedia(
   mediaUrl:  string,
@@ -30,9 +27,7 @@ export async function downloadTwilioMedia(
       'image/webp': '.webp',
       'video/mp4':  '.mp4',
     };
-    const ext      = EXT_MAP[mediaMime] || '.jpg';
-    const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
-    const savePath = path.join(process.cwd(), 'uploads', 'maintenance', filename);
+    const ext = EXT_MAP[mediaMime] || '.jpg';
 
     const response = await fetch(mediaUrl, {
       headers: {
@@ -45,15 +40,13 @@ export async function downloadTwilioMedia(
       return null;
     }
 
-    const buffer = await response.arrayBuffer();
-    fs.writeFileSync(savePath, Buffer.from(buffer));
+    const buffer  = Buffer.from(await response.arrayBuffer());
+    const tenantId = tenant?.id ?? 'unknown';
+    const key      = `hotel/${tenantId}/maintenance/${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
 
-    const BASE_URL = process.env.RAILWAY_PUBLIC_DOMAIN
-      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-      : 'https://bookingai-production-8d5d.up.railway.app';
-
-    const publicUrl = `${BASE_URL}/uploads/maintenance/${filename}`;
-    console.log(`[Media] ✅ Saved: ${publicUrl}`);
+    const { uploadToR2 } = await import('../utils/r2.js');
+    const publicUrl = await uploadToR2(key, buffer, mediaMime);
+    console.log(`[Media] ✅ Uploaded to R2: ${publicUrl}`);
     return publicUrl;
 
   } catch (err: any) {

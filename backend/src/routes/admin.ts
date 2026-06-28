@@ -1,6 +1,4 @@
 import { Router, Request, Response } from 'express';
-import fs from 'fs';
-import path from 'path';
 import bcrypt from 'bcryptjs';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
@@ -146,14 +144,13 @@ adminRouter.put('/tenants/:id', async (req: Request, res: Response) => {
 
   // When photos are turned OFF, clear all photo files and DB references for this shop
   if (shopPhotosEnabled === false) {
-    const SHOP_UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'shop');
     const photoItems = await dbAll(
-      'SELECT photo_filename FROM shop_menu_items WHERE tenant_id = ? AND photo_filename IS NOT NULL',
+      'SELECT photo_url FROM shop_menu_items WHERE tenant_id = ? AND photo_url IS NOT NULL',
       req.params.id,
     ) as any[];
+    const { isR2Url, deleteFromR2 } = await import('../utils/r2.js');
     for (const item of photoItems) {
-      const fp = path.join(SHOP_UPLOAD_DIR, item.photo_filename);
-      try { if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch { /* ignore */ }
+      if (isR2Url(item.photo_url)) { try { await deleteFromR2(item.photo_url); } catch { /* ignore */ } }
     }
     await dbRun(
       'UPDATE shop_menu_items SET photo_url = NULL, photo_filename = NULL WHERE tenant_id = ?',
