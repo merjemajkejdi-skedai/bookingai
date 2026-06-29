@@ -244,6 +244,9 @@ function OrderCard({
   const [busy, setBusy] = useState(false);
   const [paidBusy, setPaidBusy] = useState(false);
 
+  // TEMP DEBUG — remove after identifying "000" source
+  console.log('[OrderCard]', order.id, JSON.stringify({ notes: order.notes, pickup_name: order.pickup_name, guest_phone: order.guest_phone, table_name: order.table_name, qr_session: order.qr_session, payment_type: (order as any).payment_type, fiscal_status: order.fiscal_status }));
+
   async function changeStatus(status: string) {
     if (status === 'picked_up' && order.source === 'manual' && !order.is_paid && shopConfig?.fiscal_enabled) {
       alert('Please mark this order as paid before moving to Picked Up.');
