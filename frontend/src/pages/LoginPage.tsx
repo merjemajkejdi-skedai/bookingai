@@ -26,7 +26,7 @@ export function LoginPage({ onLogin }: Props) {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="flex justify-center mb-8">
@@ -88,6 +88,18 @@ export function LoginPage({ onLogin }: Props) {
           SkedAI · Forgot your password? Contact your administrator.
         </p>
       </div>
+
+      <footer style={{
+        textAlign: 'center',
+        padding: '16px',
+        fontSize: '12px',
+        color: '#94a3b8',
+        borderTop: '1px solid #f1f5f9',
+        marginTop: 'auto',
+        width: '100%',
+      }}>
+        Kejdi Merjemaj PF · NUIS: M41721007Q
+      </footer>
     </div>
   );
 }
