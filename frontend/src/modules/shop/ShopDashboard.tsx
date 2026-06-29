@@ -281,7 +281,7 @@ function OrderCard({
     <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-col gap-2">
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-1.5">
-          <span className="text-xs font-bold text-slate-800">#{order.order_number}</span>
+          <span className="text-xs font-bold text-slate-800">{order.order_number ? `#${String(order.order_number).padStart(3, '0')}` : ''}</span>
           {order.pickup_name && <span className="text-xs text-slate-500">· {order.pickup_name}</span>}
           {order.source === 'manual' && (
             <span className="text-xs bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded font-medium">Manual</span>
