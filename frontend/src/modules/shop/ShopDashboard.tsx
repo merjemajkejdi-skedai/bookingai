@@ -335,7 +335,7 @@ function OrderCard({
         <div className="text-xs text-slate-400">⏱ Est. {deliveryInfo.label}</div>
       )}
 
-      {order.notes && order.notes.trim() !== '000' && <div className="text-xs text-slate-400 italic">Note: {order.notes}</div>}
+      {order.notes && !/^[0Oo]+$/.test(order.notes.trim()) && <div className="text-xs text-slate-400 italic">Note: {order.notes}</div>}
 
       {/* Pay & Fiscalize */}
       {shopConfig?.fiscal_enabled && !order.is_paid && order.status !== 'cancelled' && order.status !== 'picked_up' && (
