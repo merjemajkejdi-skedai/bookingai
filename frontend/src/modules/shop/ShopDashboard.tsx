@@ -244,9 +244,6 @@ function OrderCard({
   const [busy, setBusy] = useState(false);
   const [paidBusy, setPaidBusy] = useState(false);
 
-  // TEMP DEBUG — remove after identifying "000" source
-  console.log('[OrderCard]', order.id, JSON.stringify({ notes: order.notes, pickup_name: order.pickup_name, guest_phone: order.guest_phone, table_name: order.table_name, qr_session: order.qr_session, payment_type: (order as any).payment_type, fiscal_status: order.fiscal_status }));
-
   async function changeStatus(status: string) {
     if (status === 'picked_up' && order.source === 'manual' && !order.is_paid && shopConfig?.fiscal_enabled) {
       alert('Please mark this order as paid before moving to Picked Up.');
@@ -755,7 +752,13 @@ function OrdersTab() {
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
-    shopApi.getConfig().then(setShopConfig).catch(() => {});
+    let cancelled = false;
+    function fetchCfg(attempt = 0) {
+      shopApi.getConfig()
+        .then(cfg => { if (!cancelled) setShopConfig(cfg); })
+        .catch(() => { if (!cancelled && attempt < 3) setTimeout(() => fetchCfg(attempt + 1), 2000); });
+    }
+    fetchCfg();
     shopApi.getTables().then(setTables).catch(() => {});
     shopApi.getDeliveryTime().then(setDeliveryInfo).catch(() => {});
   }, []);
