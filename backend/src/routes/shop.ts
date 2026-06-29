@@ -375,9 +375,12 @@ shopRouter.patch('/orders/:id', authenticateShopOrTenant, async (req: any, res: 
     if (!order) return res.status(404).json({ success: false, error: 'Not found' });
     const prevStatus = order.status;
 
-    // Block unpaid manual orders from moving to Picked Up
+    // Block unpaid manual orders from moving to Picked Up — only when fiscal is enabled
     if (status === 'picked_up' && order.source === 'manual' && !order.is_paid) {
-      return res.status(400).json({ success: false, error: 'Mark order as paid before moving to Picked Up' });
+      const shopCfg = await dbGet(`SELECT fiscal_enabled FROM shop_config WHERE tenant_id=?`, tenantId);
+      if (shopCfg?.fiscal_enabled) {
+        return res.status(400).json({ success: false, error: 'Mark order as paid before moving to Picked Up' });
+      }
     }
 
     // Handle is_paid toggle

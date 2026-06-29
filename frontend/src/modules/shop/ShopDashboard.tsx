@@ -245,7 +245,7 @@ function OrderCard({
   const [paidBusy, setPaidBusy] = useState(false);
 
   async function changeStatus(status: string) {
-    if (status === 'picked_up' && order.source === 'manual' && !order.is_paid) {
+    if (status === 'picked_up' && order.source === 'manual' && !order.is_paid && shopConfig?.fiscal_enabled) {
       alert('Please mark this order as paid before moving to Picked Up.');
       return;
     }
