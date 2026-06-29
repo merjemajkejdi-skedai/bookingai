@@ -761,6 +761,7 @@ function OrdersTab() {
     fetchCfg();
     shopApi.getTables().then(setTables).catch(() => {});
     shopApi.getDeliveryTime().then(setDeliveryInfo).catch(() => {});
+    return () => { cancelled = true; };
   }, []);
 
   async function handleStatusChange(id: string, status: string) {
