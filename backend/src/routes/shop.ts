@@ -223,16 +223,39 @@ shopRouter.get('/items', authenticateShopOrTenant, async (req: any, res: Respons
 shopRouter.post('/items', authenticateShopOrTenant, upload.single('photo'), async (req: any, res: Response) => {
   try {
     const tenantId = resolveTenantId(req);
+    console.log('[Photo upload] POST /items — request received, tenantId:', tenantId);
+    console.log('[Photo upload] File present:', !!req.file);
+    console.log('[Photo upload] File details:', req.file ? {
+      originalname: req.file.originalname,
+      mimetype:     req.file.mimetype,
+      size:         req.file.size,
+      hasBuffer:    !!req.file.buffer,
+    } : 'NO FILE');
+    console.log('[R2] Env check:', {
+      endpoint:  !!process.env.R2_ENDPOINT,
+      bucket:    !!process.env.R2_BUCKET_NAME,
+      publicUrl: !!process.env.R2_PUBLIC_URL,
+      accessKey: !!process.env.R2_ACCESS_KEY_ID,
+      secretKey: !!process.env.R2_SECRET_ACCESS_KEY,
+    });
     let photo_url: string | null = null;
     if (req.file) {
       const tenant = await dbGet(`SELECT shop_photos_enabled FROM tenants WHERE id = ?`, tenantId);
+      console.log('[Photo upload] Tenant photos enabled:', tenant?.shop_photos_enabled);
       if (!tenant?.shop_photos_enabled) {
         return res.status(403).json({ success: false, error: 'Photo uploads are disabled for this shop' });
       }
       const { uploadToR2 } = await import('../utils/r2.js');
       const ext = path.extname(req.file.originalname);
       const key = `shop/${tenantId}/menu/${crypto.randomUUID()}${ext}`;
-      photo_url = await uploadToR2(key, req.file.buffer, req.file.mimetype);
+      try {
+        photo_url = await uploadToR2(key, req.file.buffer, req.file.mimetype);
+        console.log('[R2] Upload success:', photo_url);
+      } catch (r2err: any) {
+        console.error('[R2] Upload FAILED:', r2err.message);
+        console.error('[R2] Full error:', JSON.stringify(r2err, null, 2));
+        return res.status(500).json({ error: 'Photo upload failed', details: r2err.message });
+      }
     }
     const { name, description, price, currency, category_id, stock_type, stock_limit, sort_order, vat_rate, item_code, unit } = req.body;
     const id = crypto.randomUUID();
@@ -247,12 +270,28 @@ shopRouter.post('/items', authenticateShopOrTenant, upload.single('photo'), asyn
 shopRouter.put('/items/:id', authenticateShopOrTenant, upload.single('photo'), async (req: any, res: Response) => {
   try {
     const tenantId = resolveTenantId(req);
+    console.log('[Photo upload] PUT /items/:id — request received, item:', req.params.id, 'tenantId:', tenantId);
+    console.log('[Photo upload] File present:', !!req.file);
+    console.log('[Photo upload] File details:', req.file ? {
+      originalname: req.file.originalname,
+      mimetype:     req.file.mimetype,
+      size:         req.file.size,
+      hasBuffer:    !!req.file.buffer,
+    } : 'NO FILE');
+    console.log('[R2] Env check:', {
+      endpoint:  !!process.env.R2_ENDPOINT,
+      bucket:    !!process.env.R2_BUCKET_NAME,
+      publicUrl: !!process.env.R2_PUBLIC_URL,
+      accessKey: !!process.env.R2_ACCESS_KEY_ID,
+      secretKey: !!process.env.R2_SECRET_ACCESS_KEY,
+    });
     const existing = await dbGet(`SELECT photo_url FROM shop_menu_items WHERE id=? AND tenant_id=?`, req.params.id, tenantId);
     if (!existing) return res.status(404).json({ success: false, error: 'Not found' });
 
     let photo_url: string | null = null;
     if (req.file) {
       const tenant = await dbGet(`SELECT shop_photos_enabled FROM tenants WHERE id = ?`, tenantId);
+      console.log('[Photo upload] Tenant photos enabled:', tenant?.shop_photos_enabled);
       if (!tenant?.shop_photos_enabled) {
         return res.status(403).json({ success: false, error: 'Photo uploads are disabled for this shop' });
       }
@@ -263,7 +302,14 @@ shopRouter.put('/items/:id', authenticateShopOrTenant, upload.single('photo'), a
       const { uploadToR2 } = await import('../utils/r2.js');
       const ext = path.extname(req.file.originalname);
       const key = `shop/${tenantId}/menu/${crypto.randomUUID()}${ext}`;
-      photo_url = await uploadToR2(key, req.file.buffer, req.file.mimetype);
+      try {
+        photo_url = await uploadToR2(key, req.file.buffer, req.file.mimetype);
+        console.log('[R2] Upload success:', photo_url);
+      } catch (r2err: any) {
+        console.error('[R2] Upload FAILED:', r2err.message);
+        console.error('[R2] Full error:', JSON.stringify(r2err, null, 2));
+        return res.status(500).json({ error: 'Photo upload failed', details: r2err.message });
+      }
     }
 
     const { name, description, price, currency, category_id, stock_type, stock_limit, stock_used, is_active, sort_order, vat_rate, item_code, unit } = req.body;
