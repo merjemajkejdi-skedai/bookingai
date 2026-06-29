@@ -31,7 +31,7 @@ const messageBuffer = new Map<string, {
  * the timer resets and the messages are combined.
  * Returns null for the 2nd+ caller — only the first awaiter processes.
  */
-async function bufferMessage(
+export async function bufferMessage(
   tenantId:    string,
   guestPhone:  string,
   messageText: string,

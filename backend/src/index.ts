@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import { runMigrations } from './db/database.js';
 import { whatsappRouter } from './whatsapp/webhook.js';
+import metaRouter from './whatsapp/metaWebhook.js';
 import { authRouter } from './routes/auth.js';
 import { adminRouter } from './routes/admin.js';
 import { bookingRouter } from './modules/booking/routes.js';
@@ -52,6 +53,7 @@ app.use('/hotel', hotelMenusRouter);
 app.use('/shop', shopRouter);
 app.use('/api', skedaiRouter);
 app.use('/whatsapp', whatsappRouter);
+app.use('/', metaRouter);
 app.use('/', emailWebhookRouter);
 
 async function start() {
