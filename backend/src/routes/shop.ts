@@ -1877,45 +1877,59 @@ shopRouter.get('/menu-documents', authenticateShopOrTenant, async (req: any, res
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-shopRouter.post('/menu-documents', authenticateShopOrTenant, requireShopAdmin, uploadPdf.single('file'), async (req: any, res: Response) => {
-  try {
-    const tenantId = resolveTenantId(req);
-    const { label, doc_type, external_url, sort_order } = req.body;
+shopRouter.post('/menu-documents', authenticateShopOrTenant, requireShopAdmin,
+  // Wrap multer so MulterError (e.g. LIMIT_FILE_SIZE) returns clean JSON instead of hitting Express's default error handler
+  (req: any, res: Response, next: any) => {
+    uploadPdf.single('file')(req, res, (err: any) => {
+      if (err) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          return res.status(413).json({ error: 'File too large. Maximum size is 15MB.' });
+        }
+        return res.status(400).json({ error: err.message || 'File upload error' });
+      }
+      next();
+    });
+  },
+  async (req: any, res: Response) => {
+    try {
+      const tenantId = resolveTenantId(req);
+      const { label, doc_type, external_url, sort_order } = req.body;
 
-    if (!label || !doc_type) return res.status(400).json({ error: 'label and doc_type are required' });
-    if (!['pdf', 'url'].includes(doc_type)) return res.status(400).json({ error: 'doc_type must be pdf or url' });
+      if (!label || !doc_type) return res.status(400).json({ error: 'label and doc_type are required' });
+      if (!['pdf', 'url'].includes(doc_type)) return res.status(400).json({ error: 'doc_type must be pdf or url' });
 
-    if (doc_type === 'pdf') {
-      if (!req.file) return res.status(400).json({ error: 'PDF file is required for doc_type=pdf' });
-      if (req.file.mimetype !== 'application/pdf') return res.status(400).json({ error: 'Only PDF files are allowed' });
+      if (doc_type === 'pdf') {
+        if (!req.file) return res.status(400).json({ error: 'PDF file is required for doc_type=pdf' });
+        if (req.file.mimetype !== 'application/pdf') return res.status(400).json({ error: 'Only PDF files are allowed' });
 
-      const { uploadToR2 } = await import('../utils/r2.js');
-      const safeName = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const key = `shop/${tenantId}/menu-documents/${Date.now()}-${safeName}`;
-      const fileUrl = await uploadToR2(key, req.file.buffer, req.file.mimetype);
+        const { uploadToR2 } = await import('../utils/r2.js');
+        const safeName = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const key = `shop/${tenantId}/menu-documents/${Date.now()}-${safeName}`;
+        const fileUrl = await uploadToR2(key, req.file.buffer, req.file.mimetype);
 
+        const id = crypto.randomUUID();
+        await dbRun(
+          `INSERT INTO shop_menu_documents (id, tenant_id, label, doc_type, file_url, sort_order) VALUES (?,?,?,?,?,?)`,
+          id, tenantId, label, 'pdf', fileUrl, sort_order || 0,
+        );
+        const doc = await dbGet(`SELECT * FROM shop_menu_documents WHERE id = ?`, id);
+        return res.json(doc);
+      }
+
+      // doc_type === 'url'
+      if (!external_url || !/^https?:\/\//.test(external_url)) {
+        return res.status(400).json({ error: 'A valid external_url (http/https) is required for doc_type=url' });
+      }
       const id = crypto.randomUUID();
       await dbRun(
-        `INSERT INTO shop_menu_documents (id, tenant_id, label, doc_type, file_url, sort_order) VALUES (?,?,?,?,?,?)`,
-        id, tenantId, label, 'pdf', fileUrl, sort_order || 0,
+        `INSERT INTO shop_menu_documents (id, tenant_id, label, doc_type, external_url, sort_order) VALUES (?,?,?,?,?,?)`,
+        id, tenantId, label, 'url', external_url, sort_order || 0,
       );
       const doc = await dbGet(`SELECT * FROM shop_menu_documents WHERE id = ?`, id);
-      return res.json(doc);
-    }
-
-    // doc_type === 'url'
-    if (!external_url || !/^https?:\/\//.test(external_url)) {
-      return res.status(400).json({ error: 'A valid external_url (http/https) is required for doc_type=url' });
-    }
-    const id = crypto.randomUUID();
-    await dbRun(
-      `INSERT INTO shop_menu_documents (id, tenant_id, label, doc_type, external_url, sort_order) VALUES (?,?,?,?,?,?)`,
-      id, tenantId, label, 'url', external_url, sort_order || 0,
-    );
-    const doc = await dbGet(`SELECT * FROM shop_menu_documents WHERE id = ?`, id);
-    res.json(doc);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+      res.json(doc);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  },
+);
 
 shopRouter.patch('/menu-documents/:id', authenticateShopOrTenant, requireShopAdmin, async (req: any, res: Response) => {
   try {
