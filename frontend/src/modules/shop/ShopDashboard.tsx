@@ -751,6 +751,45 @@ function OrdersTab() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Silent background polling — no spinner, no error display, no clearing orders on failure
+  useEffect(() => {
+    let isMounted = true;
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    async function silentRefresh() {
+      if (!isMounted) return;
+      try {
+        const data = await shopApi.getOrders('all', date);
+        if (isMounted) setOrders(data);
+      } catch {
+        // swallow — existing orders stay visible; retry on next tick
+      }
+    }
+
+    function startPolling() {
+      if (interval) return;
+      interval = setInterval(silentRefresh, 8_000);
+    }
+
+    function stopPolling() {
+      if (interval) { clearInterval(interval); interval = null; }
+    }
+
+    function handleVisibilityChange() {
+      if (document.hidden) stopPolling();
+      else { silentRefresh(); startPolling(); }
+    }
+
+    startPolling();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      isMounted = false;
+      stopPolling();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [date]);
+
   useEffect(() => {
     let cancelled = false;
     function fetchCfg(attempt = 0) {
