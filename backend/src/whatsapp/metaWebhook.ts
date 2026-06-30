@@ -152,9 +152,29 @@ metaRouter.post('/meta/webhook', async (req: Request, res: Response) => {
             if (!reply) continue; // blocked number or silent mode
             updateSession(customerPhone, combined, reply);
 
-            await sendWhatsAppMessage(customerPhone, reply, tenant).catch(
-              (e: any) => console.error('[Meta] Send failed:', e.message),
-            );
+            let hotelDelivered = true;
+            try {
+              await sendWhatsAppMessage(customerPhone, reply, tenant);
+              console.log(`[Meta] ✅ Reply sent to ${customerPhone}`);
+            } catch (sendErr: any) {
+              hotelDelivered = false;
+              console.error('[Meta] Hotel send failed:', sendErr.message);
+            }
+            if (!hotelDelivered && tenant.email_fallback_enabled && tenant.notification_email) {
+              try {
+                await sendEmailFallback({
+                  toEmail:           tenant.notification_email,
+                  tenantName:        tenant.name || 'Hotel',
+                  guestPhone:        customerPhone,
+                  guestName,
+                  guestMessage:      textToAgent,
+                  aiReply:           reply,
+                  whatsappDelivered: false,
+                });
+              } catch (emailErr: any) {
+                console.error('[Meta] Hotel email fallback failed:', emailErr.message);
+              }
+            }
             continue;
           }
 

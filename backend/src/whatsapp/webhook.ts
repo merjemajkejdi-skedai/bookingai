@@ -380,8 +380,30 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
         return;
       }
       if (skedReply) {
-        await sendWhatsAppMessage(phone, skedReply, tenant);
-        console.log(`✅ SkedAI reply sent to ${phone}`);
+        let waDelivered = true;
+        try {
+          await sendWhatsAppMessage(phone, skedReply, tenant);
+          console.log(`✅ SkedAI reply sent to ${phone}`);
+        } catch (waErr: any) {
+          waDelivered = false;
+          console.error('❌ SkedAI send failed:', waErr.message);
+        }
+        if (!waDelivered && tenant.email_fallback_enabled && tenant.notification_email) {
+          try {
+            const { sendEmailFallback } = await import('../utils/emailFallback.js');
+            await sendEmailFallback({
+              toEmail:           tenant.notification_email,
+              tenantName:        tenant.name || 'Tenant',
+              guestPhone:        phone,
+              guestName:         ProfileName || undefined,
+              guestMessage:      messageText,
+              aiReply:           skedReply,
+              whatsappDelivered: false,
+            });
+          } catch (emailErr: any) {
+            console.error('[Email fallback] SkedAI failed:', emailErr.message);
+          }
+        }
       }
       return;
     }
@@ -399,8 +421,30 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
         return;
       }
       if (shopReply) {
-        await sendWhatsAppMessage(phone, shopReply, tenant);
-        console.log(`✅ Shop reply sent to ${phone}`);
+        let waDelivered = true;
+        try {
+          await sendWhatsAppMessage(phone, shopReply, tenant);
+          console.log(`✅ Shop reply sent to ${phone}`);
+        } catch (waErr: any) {
+          waDelivered = false;
+          console.error('❌ Shop send failed:', waErr.message);
+        }
+        if (!waDelivered && tenant.email_fallback_enabled && tenant.notification_email) {
+          try {
+            const { sendEmailFallback } = await import('../utils/emailFallback.js');
+            await sendEmailFallback({
+              toEmail:           tenant.notification_email,
+              tenantName:        tenant.name || 'Tenant',
+              guestPhone:        phone,
+              guestName:         ProfileName || undefined,
+              guestMessage:      messageText,
+              aiReply:           shopReply,
+              whatsappDelivered: false,
+            });
+          } catch (emailErr: any) {
+            console.error('[Email fallback] Shop failed:', emailErr.message);
+          }
+        }
       }
       return;
     }
