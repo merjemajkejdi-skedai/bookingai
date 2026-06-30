@@ -1880,6 +1880,170 @@ function ConfigTab() {
           </div>
         </div>
       )}
+
+      <MenuDocumentsSection />
+    </div>
+  );
+}
+
+// ── Menu Documents Section ─────────────────────────────────────────────────────
+
+function MenuDocumentsSection() {
+  const [documents, setDocuments] = useState<any[]>([]);
+  const [showAddModal, setShowAddModal] = useState(false);
+
+  useEffect(() => {
+    shopApi.getMenuDocuments().then((docs: any) => {
+      if (Array.isArray(docs)) setDocuments(docs);
+    }).catch(() => {});
+  }, []);
+
+  async function handleDelete(id: string) {
+    if (!confirm('Remove this menu document?')) return;
+    await shopApi.deleteMenuDocument(id);
+    setDocuments(docs => docs.filter((d: any) => d.id !== id));
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <h4 className="text-sm font-semibold text-slate-800">Menu documents</h4>
+          <p className="text-xs text-slate-400 mt-0.5">Upload a PDF or paste a link. The AI sends this only when a guest asks for the menu.</p>
+        </div>
+        <button onClick={() => setShowAddModal(true)} className="text-sm font-medium text-teal-600 hover:text-teal-700">
+          + Add
+        </button>
+      </div>
+
+      <div className="space-y-2">
+        {documents.map((doc: any) => (
+          <div key={doc.id} className="flex items-center gap-3 bg-slate-50 rounded-xl border border-slate-100 px-3 py-2.5">
+            <span className="text-lg">{doc.doc_type === 'pdf' ? '📄' : '🔗'}</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-slate-700">{doc.label}</p>
+              <p className="text-xs text-slate-400 truncate">{doc.doc_type === 'pdf' ? 'PDF file' : doc.external_url}</p>
+            </div>
+            <button onClick={() => handleDelete(doc.id)} className="text-xs text-red-400 hover:text-red-600 flex-shrink-0">Remove</button>
+          </div>
+        ))}
+        {documents.length === 0 && (
+          <p className="text-xs text-slate-400 italic">No menu documents added yet.</p>
+        )}
+      </div>
+
+      {showAddModal && (
+        <AddMenuDocumentModal
+          onClose={() => setShowAddModal(false)}
+          onSaved={(doc: any) => { setDocuments(prev => [...prev, doc]); setShowAddModal(false); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function AddMenuDocumentModal({ onClose, onSaved }: { onClose: () => void; onSaved: (doc: any) => void }) {
+  const [label, setLabel]           = useState('');
+  const [docType, setDocType]       = useState<'pdf' | 'url'>('pdf');
+  const [file, setFile]             = useState<File | null>(null);
+  const [externalUrl, setExternalUrl] = useState('');
+  const [saving, setSaving]         = useState(false);
+  const [err, setErr]               = useState('');
+
+  async function save() {
+    setErr('');
+    if (!label.trim()) { setErr('Label is required'); return; }
+    if (docType === 'pdf' && !file)        { setErr('Please select a PDF file'); return; }
+    if (docType === 'url' && !externalUrl) { setErr('Please enter a URL'); return; }
+
+    setSaving(true);
+    try {
+      const formData = new FormData();
+      formData.append('label', label.trim());
+      formData.append('doc_type', docType);
+      if (docType === 'pdf' && file) formData.append('file', file);
+      if (docType === 'url') formData.append('external_url', externalUrl.trim());
+
+      const result = await shopApi.createMenuDocument(formData);
+      if (result?.error) { setErr(result.error); return; }
+      onSaved(result);
+    } catch (e: any) {
+      setErr(e.message || 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <h2 className="text-base font-semibold text-slate-800">Add menu document</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div>
+            <label className="text-xs font-medium text-slate-600">Label</label>
+            <input
+              value={label}
+              onChange={e => setLabel(e.target.value)}
+              placeholder="e.g. Food Menu, Drinks Menu"
+              className="w-full mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            />
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              onClick={() => setDocType('pdf')}
+              className={`flex-1 py-2 text-sm font-medium rounded-lg border transition-colors ${docType === 'pdf' ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-500'}`}
+            >
+              📄 Upload PDF
+            </button>
+            <button
+              onClick={() => setDocType('url')}
+              className={`flex-1 py-2 text-sm font-medium rounded-lg border transition-colors ${docType === 'url' ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-500'}`}
+            >
+              🔗 Paste link
+            </button>
+          </div>
+
+          {docType === 'pdf' ? (
+            <div>
+              <label className="text-xs font-medium text-slate-600">PDF file</label>
+              <input
+                type="file"
+                accept="application/pdf"
+                onChange={e => setFile(e.target.files?.[0] || null)}
+                className="w-full mt-1 text-sm text-slate-600 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-sm file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
+              />
+            </div>
+          ) : (
+            <div>
+              <label className="text-xs font-medium text-slate-600">Menu URL</label>
+              <input
+                value={externalUrl}
+                onChange={e => setExternalUrl(e.target.value)}
+                placeholder="https://..."
+                className="w-full mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              />
+            </div>
+          )}
+
+          {err && <p className="text-xs text-red-500">{err}</p>}
+        </div>
+
+        <div className="flex gap-2 px-5 pb-5">
+          <button onClick={onClose} className="flex-1 py-2 text-sm text-slate-500 border border-slate-200 rounded-xl">Cancel</button>
+          <button
+            onClick={save}
+            disabled={saving || !label.trim() || (docType === 'pdf' ? !file : !externalUrl.trim())}
+            className="flex-1 py-2 text-sm font-semibold bg-teal-500 text-white rounded-xl disabled:opacity-40"
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

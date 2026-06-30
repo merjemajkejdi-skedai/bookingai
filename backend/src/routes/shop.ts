@@ -61,6 +61,12 @@ const upload = multer({
   fileFilter: (_, file, cb) => { cb(null, file.mimetype.startsWith('image/')); },
 });
 
+const uploadPdf = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (_, file, cb) => { cb(null, file.mimetype === 'application/pdf'); },
+});
+
 function baseUrl(): string {
   return process.env.RAILWAY_PUBLIC_DOMAIN
     ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
@@ -1856,4 +1862,85 @@ shopRouter.get('/inventory/reports/stock-value', authenticateShopOrTenant, requi
     const total = rows.reduce((sum: number, r: any) => sum + parseFloat(r.stock_value || 0), 0);
     res.json({ success: true, data: { items: rows, total_value: total } });
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ── Menu Documents (PDF / URL) ─────────────────────────────────────────────────
+
+shopRouter.get('/menu-documents', authenticateShopOrTenant, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const docs = await dbAll(
+      `SELECT * FROM shop_menu_documents WHERE tenant_id = ? ORDER BY sort_order ASC, created_at ASC`,
+      tenantId,
+    );
+    res.json(docs);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+shopRouter.post('/menu-documents', authenticateShopOrTenant, requireShopAdmin, uploadPdf.single('file'), async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const { label, doc_type, external_url, sort_order } = req.body;
+
+    if (!label || !doc_type) return res.status(400).json({ error: 'label and doc_type are required' });
+    if (!['pdf', 'url'].includes(doc_type)) return res.status(400).json({ error: 'doc_type must be pdf or url' });
+
+    if (doc_type === 'pdf') {
+      if (!req.file) return res.status(400).json({ error: 'PDF file is required for doc_type=pdf' });
+      if (req.file.mimetype !== 'application/pdf') return res.status(400).json({ error: 'Only PDF files are allowed' });
+
+      const { uploadToR2 } = await import('../utils/r2.js');
+      const safeName = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const key = `shop/${tenantId}/menu-documents/${Date.now()}-${safeName}`;
+      const fileUrl = await uploadToR2(key, req.file.buffer, req.file.mimetype);
+
+      const id = crypto.randomUUID();
+      await dbRun(
+        `INSERT INTO shop_menu_documents (id, tenant_id, label, doc_type, file_url, sort_order) VALUES (?,?,?,?,?,?)`,
+        id, tenantId, label, 'pdf', fileUrl, sort_order || 0,
+      );
+      const doc = await dbGet(`SELECT * FROM shop_menu_documents WHERE id = ?`, id);
+      return res.json(doc);
+    }
+
+    // doc_type === 'url'
+    if (!external_url || !/^https?:\/\//.test(external_url)) {
+      return res.status(400).json({ error: 'A valid external_url (http/https) is required for doc_type=url' });
+    }
+    const id = crypto.randomUUID();
+    await dbRun(
+      `INSERT INTO shop_menu_documents (id, tenant_id, label, doc_type, external_url, sort_order) VALUES (?,?,?,?,?,?)`,
+      id, tenantId, label, 'url', external_url, sort_order || 0,
+    );
+    const doc = await dbGet(`SELECT * FROM shop_menu_documents WHERE id = ?`, id);
+    res.json(doc);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+shopRouter.patch('/menu-documents/:id', authenticateShopOrTenant, requireShopAdmin, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const { label, sort_order } = req.body;
+    await dbRun(
+      `UPDATE shop_menu_documents SET label = COALESCE(?, label), sort_order = COALESCE(?, sort_order), updated_at = CURRENT_TIMESTAMP WHERE id = ? AND tenant_id = ?`,
+      label ?? null, sort_order ?? null, req.params.id, tenantId,
+    );
+    res.json({ success: true });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+shopRouter.delete('/menu-documents/:id', authenticateShopOrTenant, requireShopAdmin, async (req: any, res: Response) => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const existing = await dbGet(
+      `SELECT file_url FROM shop_menu_documents WHERE id = ? AND tenant_id = ?`,
+      req.params.id, tenantId,
+    );
+    if (existing?.file_url) {
+      const { deleteFromR2 } = await import('../utils/r2.js');
+      await deleteFromR2(existing.file_url).catch(() => {});
+    }
+    await dbRun(`DELETE FROM shop_menu_documents WHERE id = ? AND tenant_id = ?`, req.params.id, tenantId);
+    res.json({ success: true });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
 });

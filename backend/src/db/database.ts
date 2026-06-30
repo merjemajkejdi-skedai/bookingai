@@ -953,6 +953,9 @@ export async function runMigrations() {
       `ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS fiscal_token TEXT`,
       `ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS fiscal_token_exp TEXT`,
       `ALTER TABLE shop_users ADD COLUMN IF NOT EXISTS fiscal_operator_code TEXT`,
+      // shop_menu_docs_001 — PDF/URL menu documents for the shop agent
+      `CREATE TABLE IF NOT EXISTS shop_menu_documents (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, label TEXT NOT NULL, doc_type TEXT NOT NULL CHECK (doc_type IN ('pdf', 'url')), file_url TEXT, external_url TEXT, sort_order INTEGER DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+      `CREATE INDEX IF NOT EXISTS idx_shop_menu_docs_tenant ON shop_menu_documents(tenant_id, sort_order)`,
       // shop_inventory_001 — Inventory & Recipe Module
       `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS inventory_enabled INTEGER DEFAULT 0`,
       `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS inventory_alert_mode TEXT DEFAULT 'daily'`,
@@ -1315,6 +1318,10 @@ export async function runMigrations() {
     .all().map((r: any) => r.name as string);
   if (!shopItemInvCols.includes('stock_mode'))
     exec("ALTER TABLE shop_menu_items ADD COLUMN stock_mode TEXT DEFAULT 'simple'");
+
+  // shop_menu_docs_001 — PDF/URL menu documents
+  exec(`CREATE TABLE IF NOT EXISTS shop_menu_documents (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, label TEXT NOT NULL, doc_type TEXT NOT NULL CHECK (doc_type IN ('pdf', 'url')), file_url TEXT, external_url TEXT, sort_order INTEGER DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`);
+  exec(`CREATE INDEX IF NOT EXISTS idx_shop_menu_docs_tenant ON shop_menu_documents(tenant_id, sort_order)`);
 
   console.log('✅ SQLite migrations complete');
 }

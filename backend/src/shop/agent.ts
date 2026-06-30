@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { buildShopSystemPrompt } from './prompts.js';
 import { shopTools, executeShopTool } from './tools.js';
+import { sendWhatsAppMedia } from '../whatsapp/twilio.js';
 
 const anthropic = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
 
@@ -87,6 +88,7 @@ export async function runShopAgent(
     const systemPrompt = buildShopSystemPrompt(tenant, config, deliveryInfo);
     const messages = [...history];
     let finalReply = '';
+    let pendingMenuPdf: { url: string; label: string } | null = null;
 
     // Agentic tool-use loop
     while (true) {
@@ -109,6 +111,16 @@ export async function runShopAgent(
           try {
             const result = await executeShopTool(block.name, block.input as any, tenantId, guestPhone);
             toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) });
+
+            // Track a single PDF document to send after the text reply
+            if (block.name === 'get_menu_documents' && result.found && Array.isArray(result.documents)) {
+              const pdfs = result.documents.filter((d: any) => d.type === 'pdf' && d.value);
+              if (pdfs.length === 1) {
+                pendingMenuPdf = { url: pdfs[0].value, label: pdfs[0].label };
+              } else {
+                pendingMenuPdf = null; // multi-PDF or no PDF: Claude handles via text
+              }
+            }
           } catch (toolErr: any) {
             console.error(`[Shop] tool ${block.name} threw:`, toolErr.message);
             toolResults.push({
@@ -127,6 +139,16 @@ export async function runShopAgent(
         if (block.type === 'text') finalReply += block.text;
       }
       break;
+    }
+
+    // Send pending PDF document after the text reply
+    if (pendingMenuPdf && finalReply) {
+      try {
+        await sendWhatsAppMedia(guestPhone, pendingMenuPdf.url, pendingMenuPdf.label, tenant);
+        console.log('[Shop] ✅ Menu PDF sent:', pendingMenuPdf.label);
+      } catch (pdfErr: any) {
+        console.error('[Shop] Menu PDF send failed:', pdfErr.message);
+      }
     }
 
     // Reset consecutive error counter on success (fire-and-forget, must not break reply)

@@ -168,6 +168,12 @@ export const shopApi = {
   getWasteReport:      (days?: number)          => req<any[]>(`/shop/inventory/reports/waste?days=${days ?? 30}`),
   getStockValue:       ()                       => req<any>('/shop/inventory/reports/stock-value'),
 
+  // Menu documents (PDF / URL) — admin only
+  getMenuDocuments:    ()                      => rawReq('/shop/menu-documents'),
+  createMenuDocument:  (formData: FormData)    => rawReq('/shop/menu-documents', { method: 'POST', body: formData }),
+  updateMenuDocument:  (id: string, data: any) => rawReq(`/shop/menu-documents/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteMenuDocument:  (id: string)            => rawReq(`/shop/menu-documents/${id}`, { method: 'DELETE' }),
+
   // Logo upload (admin only)
   uploadLogo: (file: File) => {
     const fd = new FormData();

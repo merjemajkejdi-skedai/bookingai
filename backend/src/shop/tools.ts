@@ -109,6 +109,16 @@ export const shopTools: Anthropic.Tool[] = [
       required: ['query'],
     },
   },
+  {
+    name: 'get_menu_documents',
+    description: 'Retrieves the shop\'s menu documents (PDF files or external links) to share with the guest. Call this ONLY when the guest explicitly asks for "the menu", "a menu", "do you have a menu", or similar. Never call proactively.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        label_filter: { type: 'string', description: 'Optional: if the guest already specified which menu (e.g. "drinks menu", "food menu"), pass that keyword here to narrow to the matching document' },
+      },
+    },
+  },
 ];
 
 export async function executeShopTool(
@@ -338,6 +348,29 @@ export async function executeShopTool(
         tenantId,
       );
       return { faqs };
+    }
+
+    case 'get_menu_documents': {
+      let docs = await dbAll(
+        `SELECT id, label, doc_type, file_url, external_url FROM shop_menu_documents WHERE tenant_id = ? ORDER BY sort_order ASC, created_at ASC`,
+        tenantId,
+      );
+      if (docs.length === 0) return { found: false };
+
+      if (input.label_filter) {
+        const filter = String(input.label_filter).toLowerCase();
+        const filtered = docs.filter((d: any) => d.label.toLowerCase().includes(filter));
+        if (filtered.length > 0) docs = filtered;
+      }
+
+      return {
+        found: true,
+        documents: docs.map((d: any) => ({
+          label: d.label,
+          type:  d.doc_type,
+          value: d.doc_type === 'pdf' ? d.file_url : d.external_url,
+        })),
+      };
     }
 
     default:
