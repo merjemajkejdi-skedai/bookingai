@@ -779,19 +779,23 @@ function OrdersTab() {
 
   return (
     <div className="flex flex-col gap-4 h-full">
-      <div className="flex items-center gap-3 flex-wrap">
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
-        <button onClick={load} className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors"><RefreshCw size={15} className={loading ? 'animate-spin text-slate-400' : 'text-slate-500'} /></button>
-        <span className="text-xs text-slate-400">{orders.filter(o => o.status !== 'cancelled').length} orders</span>
-        <DeliveryTimeBadge />
-        {shopConfig?.manual_orders_enabled && (
-          <button
-            onClick={() => setShowManualOrderModal(true)}
-            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-brand-500 hover:bg-brand-600 text-white text-sm font-medium rounded-lg transition-colors"
-          >
-            <Plus size={14} /> New order
-          </button>
-        )}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap sm:gap-3">
+        <div className="flex items-center gap-2">
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
+          <button onClick={load} className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors"><RefreshCw size={15} className={loading ? 'animate-spin text-slate-400' : 'text-slate-500'} /></button>
+          <span className="text-xs text-slate-400">{orders.filter(o => o.status !== 'cancelled').length} orders</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <DeliveryTimeBadge />
+          {shopConfig?.manual_orders_enabled && (
+            <button
+              onClick={() => setShowManualOrderModal(true)}
+              className="ml-auto sm:ml-0 flex items-center gap-1.5 px-3 py-1.5 bg-brand-500 hover:bg-brand-600 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              <Plus size={14} /> New order
+            </button>
+          )}
+        </div>
       </div>
 
       {loadError && (
@@ -1241,8 +1245,8 @@ function ConversationsTab() {
   }
 
   return (
-    <div className="flex gap-4 h-full overflow-hidden">
-      <div className="w-64 flex-shrink-0 overflow-y-auto space-y-1">
+    <div className="flex flex-col md:flex-row gap-3 h-full overflow-hidden">
+      <div className="w-full md:w-56 lg:w-64 flex-shrink-0 overflow-y-auto space-y-1 max-h-44 md:max-h-full">
         {loading && <div className="text-slate-400 text-sm p-2">Loading…</div>}
         {convs.map(c => (
           <button key={c.id} onClick={() => open(c)} className={`w-full text-left px-3 py-2.5 rounded-xl transition-colors ${selected?.id === c.id ? 'bg-brand-50 border border-brand-200' : 'hover:bg-slate-100'}`}>
@@ -1975,58 +1979,90 @@ export function ShopDashboard({ onLogout, tenantId }: { onLogout: () => void; te
   return (
     <div className="flex flex-col h-full bg-slate-50">
       {/* Header */}
-      <div className="bg-white border-b border-slate-200 px-4 flex items-center gap-1">
-        <div className="flex items-center gap-2 py-3 mr-4">
-          <ShoppingBag size={18} className="text-brand-600" />
-          <span className="font-semibold text-slate-800 text-sm">Shop</span>
-        </div>
-        {visibleTabs.map(t => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`flex items-center gap-1.5 px-3 py-3 text-sm border-b-2 transition-colors ${
-              tab === t.id
-                ? 'border-brand-600 text-brand-700 font-medium'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            {t.icon}
-            {t.label}
-          </button>
-        ))}
-
-        {/* Right side: staff user info OR staff sign-in link + main logout */}
-        <div className="ml-auto flex items-center gap-3">
-          {shopUser ? (
-            <>
-              <span className="text-sm font-medium text-slate-700">{shopUser.name} {shopUser.surname}</span>
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                role === 'admin'      ? 'bg-purple-50 text-purple-700' :
-                role === 'supervisor' ? 'bg-blue-50 text-blue-700' :
-                                        'bg-slate-100 text-slate-600'
-              }`}>
-                {role.charAt(0).toUpperCase() + role.slice(1)}
-              </span>
-              <button onClick={signOutStaff} className="text-xs text-slate-400 hover:text-slate-700 transition-colors">
-                Sign out staff
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={() => setShowStaffLogin(true)}
-              className="text-xs text-brand-600 hover:text-brand-700 font-medium transition-colors"
-            >
-              Staff sign in
+      <div className="bg-white border-b border-slate-200">
+        {/* Mobile-only top strip: logo + user controls */}
+        <div className="md:hidden flex items-center justify-between px-3 py-2 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <ShoppingBag size={16} className="text-brand-600" />
+            <span className="font-semibold text-slate-800 text-sm">Shop</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {shopUser ? (
+              <>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                  role === 'admin'      ? 'bg-purple-50 text-purple-700' :
+                  role === 'supervisor' ? 'bg-blue-50 text-blue-700' :
+                                          'bg-slate-100 text-slate-600'
+                }`}>
+                  {role.charAt(0).toUpperCase() + role.slice(1)}
+                </span>
+                <button onClick={signOutStaff} className="text-xs text-slate-400 hover:text-slate-700">Sign out</button>
+              </>
+            ) : (
+              <button onClick={() => setShowStaffLogin(true)} className="text-xs text-brand-600 font-medium">Staff sign in</button>
+            )}
+            <button onClick={onLogout} className="flex items-center text-slate-400 hover:text-slate-600 transition-colors">
+              <LogOut size={14} />
             </button>
-          )}
-          <button onClick={onLogout} className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-700 transition-colors py-3 px-1">
-            <LogOut size={14} />
-          </button>
+          </div>
+        </div>
+
+        {/* Tab bar (scrollable on mobile) + desktop logo & controls inline */}
+        <div className="flex items-center overflow-x-auto px-2 md:px-4 gap-0 md:gap-1">
+          {/* Logo — desktop only */}
+          <div className="hidden md:flex items-center gap-2 py-3 mr-4 flex-shrink-0">
+            <ShoppingBag size={18} className="text-brand-600" />
+            <span className="font-semibold text-slate-800 text-sm">Shop</span>
+          </div>
+
+          {visibleTabs.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`flex-shrink-0 flex items-center gap-1 md:gap-1.5 px-2.5 md:px-3 py-3 text-xs md:text-sm border-b-2 transition-colors whitespace-nowrap ${
+                tab === t.id
+                  ? 'border-brand-600 text-brand-700 font-medium'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              {t.icon}
+              {t.label}
+            </button>
+          ))}
+
+          {/* Right controls — desktop only */}
+          <div className="hidden md:flex ml-auto items-center gap-3 flex-shrink-0">
+            {shopUser ? (
+              <>
+                <span className="text-sm font-medium text-slate-700">{shopUser.name} {shopUser.surname}</span>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                  role === 'admin'      ? 'bg-purple-50 text-purple-700' :
+                  role === 'supervisor' ? 'bg-blue-50 text-blue-700' :
+                                          'bg-slate-100 text-slate-600'
+                }`}>
+                  {role.charAt(0).toUpperCase() + role.slice(1)}
+                </span>
+                <button onClick={signOutStaff} className="text-xs text-slate-400 hover:text-slate-700 transition-colors">
+                  Sign out staff
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => setShowStaffLogin(true)}
+                className="text-xs text-brand-600 hover:text-brand-700 font-medium transition-colors"
+              >
+                Staff sign in
+              </button>
+            )}
+            <button onClick={onLogout} className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-700 transition-colors py-3 px-1">
+              <LogOut size={14} />
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Body */}
-      <div className="flex-1 overflow-hidden p-4">
+      <div className="flex-1 overflow-hidden p-2 sm:p-4">
         {tab === 'orders'        && <OrdersTab />}
         {tab === 'conversations' && <ConversationsTab />}
         {tab === 'menu'          && <MenuTab />}
