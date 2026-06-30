@@ -481,7 +481,7 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
             >
               <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ${emailFallbackEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
             </button>
-            <span className="text-sm text-slate-700">Forward undelivered messages to email</span>
+            <span className="text-sm text-slate-700">Forward failed messages to email</span>
             <span className="text-xs text-slate-400">{emailFallbackEnabled ? 'Enabled' : 'Disabled'}</span>
           </label>
           <p className="text-xs text-slate-400">When ON: only messages that fail to send via WhatsApp are forwarded to the email above, including the guest's message and the AI reply that could not be delivered.</p>
