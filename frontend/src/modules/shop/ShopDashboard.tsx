@@ -1353,12 +1353,50 @@ function Toggle({ label, desc, value, onChange }: { label: string; desc?: string
   );
 }
 
+function ConfigSection({
+  title,
+  children,
+  onSave,
+  saving,
+  saved,
+  className = '',
+}: {
+  title: string;
+  children: React.ReactNode;
+  onSave: () => void;
+  saving: boolean;
+  saved: boolean;
+  className?: string;
+}) {
+  return (
+    <div className={`bg-white rounded-2xl border border-slate-100 p-4 space-y-3 ${className}`}>
+      <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
+      <div className="space-y-3">
+        {children}
+      </div>
+      <div className="flex justify-end pt-1">
+        <button
+          onClick={onSave}
+          disabled={saving}
+          className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${
+            saved
+              ? 'bg-green-50 text-green-700'
+              : 'bg-teal-500 text-white hover:bg-teal-600 disabled:opacity-50'
+          }`}
+        >
+          {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ConfigTab() {
   const [cfg, setCfg]           = useState<Partial<ShopConfig>>({});
   const [loading, setLoading]   = useState(true);
-  const [busy, setBusy]         = useState(false);
-  const [saved, setSaved]       = useState(false);
-  const [configError, setConfigError] = useState('');
+  const [savingSection, setSavingSection] = useState<string | null>(null);
+  const [savedSection, setSavedSection]   = useState<string | null>(null);
+  const [saveAllBusy, setSaveAllBusy]     = useState(false);
   const [tables, setTables]     = useState<any[]>([]);
   const [newTableName, setNewTableName] = useState('');
   const [bulkPrefix, setBulkPrefix] = useState('Table');
@@ -1378,14 +1416,25 @@ function ConfigTab() {
 
   function set(key: keyof ShopConfig, value: any) { setCfg(prev => ({ ...prev, [key]: value })); }
 
-  async function save() {
-    setBusy(true); setConfigError('');
+  async function saveSection(sectionKey: string, fields: (keyof ShopConfig)[]) {
+    setSavingSection(sectionKey);
+    const payload: Partial<ShopConfig> = {};
+    fields.forEach(f => { (payload as any)[f] = (cfg as any)[f]; });
     try {
-      await shopApi.putConfig(cfg);
-      setSaved(true); setTimeout(() => setSaved(false), 2000);
+      await shopApi.putConfig(payload);
+      setSavedSection(sectionKey);
+      setTimeout(() => setSavedSection(null), 2000);
     } catch (e: any) {
-      setConfigError(e.message || 'Save failed');
-    } finally { setBusy(false); }
+      console.error(`[Config] Failed to save section ${sectionKey}:`, e);
+    } finally {
+      setSavingSection(null);
+    }
+  }
+
+  async function saveAll() {
+    setSaveAllBusy(true);
+    try { await shopApi.putConfig(cfg); } catch (e: any) { console.error('[Config] Save all failed:', e); }
+    finally { setSaveAllBusy(false); }
   }
 
   async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -1450,203 +1499,391 @@ function ConfigTab() {
   const slugUrl = cfg.qr_slug ? `${origin}/shop/${cfg.qr_slug}` : '';
 
   return (
-    <div className="max-w-lg space-y-5 overflow-y-auto h-full">
-      <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
-        <h4 className="font-medium text-slate-800">Shop Settings</h4>
-        <Field label="Shop Name" value={cfg.shop_name || ''} onChange={v => set('shop_name', v)} placeholder="My Shop" />
-        <Field label="Opening Hours" value={cfg.opening_hours || ''} onChange={v => set('opening_hours', v)} placeholder="Mon–Sat 9:00–20:00" />
-        <Field label="Address" value={cfg.address || ''} onChange={v => set('address', v)} placeholder="Street, City" />
-        <Field label="Phone" value={cfg.phone || ''} onChange={v => set('phone', v)} placeholder="+355 69 123 4567" />
-        <div className="space-y-3">
-          <div>
-            <h5 className="text-xs text-slate-500 font-medium mb-0.5">Estimated delivery time</h5>
-            <p className="text-xs text-slate-400">Set different times based on how busy the shop is. Active orders = New + In Progress.</p>
-          </div>
-          <div className="bg-green-50 border border-green-200 rounded-xl p-3">
-            <p className="text-xs font-semibold text-green-700 mb-2">🟢 Tier 1 — Quiet</p>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs text-green-600">0 to</span>
-              <input type="number" value={cfg.delivery_threshold_1 ?? 5} onChange={e => set('delivery_threshold_1', +e.target.value)} min={1}
-                className="w-16 rounded-lg border border-green-200 px-2 py-1.5 text-sm text-center bg-white" />
-              <span className="text-xs text-green-600">active orders →</span>
-              <input type="number" value={cfg.delivery_time_1 ?? 15} onChange={e => set('delivery_time_1', +e.target.value)} min={1}
-                className="w-16 rounded-lg border border-green-200 px-2 py-1.5 text-sm text-center bg-white" />
-              <span className="text-xs text-green-600">min</span>
-            </div>
-          </div>
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
-            <p className="text-xs font-semibold text-amber-700 mb-2">🟡 Tier 2 — Busy</p>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs text-amber-600">{cfg.delivery_threshold_1 ?? 5} to</span>
-              <input type="number" value={cfg.delivery_threshold_2 ?? 15} onChange={e => set('delivery_threshold_2', +e.target.value)} min={(cfg.delivery_threshold_1 ?? 5) + 1}
-                className="w-16 rounded-lg border border-amber-200 px-2 py-1.5 text-sm text-center bg-white" />
-              <span className="text-xs text-amber-600">active orders →</span>
-              <input type="number" value={cfg.delivery_time_2 ?? 30} onChange={e => set('delivery_time_2', +e.target.value)} min={1}
-                className="w-16 rounded-lg border border-amber-200 px-2 py-1.5 text-sm text-center bg-white" />
-              <span className="text-xs text-amber-600">min</span>
-            </div>
-          </div>
-          <div className="bg-red-50 border border-red-200 rounded-xl p-3">
-            <p className="text-xs font-semibold text-red-700 mb-2">🔴 Tier 3 — Very busy</p>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs text-red-600">{cfg.delivery_threshold_2 ?? 15}+ active orders →</span>
-              <input type="number" value={cfg.delivery_time_3 ?? 45} onChange={e => set('delivery_time_3', +e.target.value)} min={1}
-                className="w-16 rounded-lg border border-red-200 px-2 py-1.5 text-sm text-center bg-white" />
-              <span className="text-xs text-red-600">min</span>
-            </div>
-          </div>
-          <div className="bg-slate-50 rounded-xl p-3 text-xs text-slate-500 space-y-1">
-            <p className="font-medium text-slate-600">Summary</p>
-            <p>0–{cfg.delivery_threshold_1 ?? 5} orders → {cfg.delivery_time_1 ?? 15} min</p>
-            <p>{cfg.delivery_threshold_1 ?? 5}–{cfg.delivery_threshold_2 ?? 15} orders → {cfg.delivery_time_2 ?? 30} min</p>
-            <p>{cfg.delivery_threshold_2 ?? 15}+ orders → {cfg.delivery_time_3 ?? 45} min</p>
-          </div>
-        </div>
-        <div>
-          <label className="text-xs text-slate-500 font-medium">Agent Personality</label>
-          <select value={cfg.agent_personality || 'friendly'} onChange={e => set('agent_personality', e.target.value)} className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white">
-            <option value="friendly">Friendly</option>
-            <option value="professional">Professional</option>
-            <option value="playful">Playful</option>
-          </select>
-        </div>
-      </div>
+    <div className="space-y-4 overflow-y-auto h-full">
 
-      <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
-        <h4 className="font-medium text-slate-800">Social Links</h4>
-        <Field label="Instagram" value={cfg.instagram_url || ''} onChange={v => set('instagram_url', v)} placeholder="https://instagram.com/..." />
-        <Field label="Facebook" value={cfg.facebook_url || ''} onChange={v => set('facebook_url', v)} placeholder="https://facebook.com/..." />
-        <Field label="TikTok" value={cfg.tiktok_url || ''} onChange={v => set('tiktok_url', v)} placeholder="https://tiktok.com/@..." />
-        <Field label="Website" value={cfg.website_url || ''} onChange={v => set('website_url', v)} placeholder="https://myshop.com" />
-      </div>
+      {/* 3-column grid — each column is an independent stack, no empty cells */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
 
-      <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
-        <div>
-          <h4 className="font-medium text-slate-800">Fallback &amp; Error Handling</h4>
-          <p className="text-xs text-slate-400 mt-0.5">When orders cannot be processed, guests receive this message instead of a generic error.</p>
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs text-slate-500 font-medium">Fallback message</label>
-          <textarea rows={2} value={cfg.fallback_message || ''} onChange={e => set('fallback_message', e.target.value)}
-            placeholder="We are temporarily unable to process your order online."
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm resize-none" />
-          <p className="text-xs text-slate-400">Shown to guest when the AI encounters an error</p>
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs text-slate-500 font-medium">Backup WhatsApp number</label>
-          <input type="text" value={cfg.fallback_backup_number || ''} onChange={e => set('fallback_backup_number', e.target.value)}
-            placeholder="+355691234567" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
-          <p className="text-xs text-slate-400">Shared with guest when error threshold is reached. Leave empty to not share.</p>
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs text-slate-500 font-medium">Share backup number after</label>
-          <select value={cfg.fallback_after_attempts ?? 1} onChange={e => set('fallback_after_attempts', parseInt(e.target.value))}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white">
-            <option value={1}>1st error (immediately)</option>
-            <option value={2}>2nd consecutive error</option>
-            <option value={3}>3rd consecutive error</option>
-          </select>
-        </div>
-        {cfg.fallback_backup_number && (
-          <div className="bg-slate-50 rounded-lg px-3 py-2.5 border border-slate-200">
-            <p className="text-xs font-medium text-slate-600 mb-1">Preview — after {cfg.fallback_after_attempts ?? 1} error(s):</p>
-            <p className="text-xs text-slate-700 whitespace-pre-wrap">
-              {cfg.fallback_message || 'We are temporarily unable to process your order online.'}
-              {'\n\nPlease contact us directly on WhatsApp:\n📱 '}{cfg.fallback_backup_number}
-            </p>
-          </div>
-        )}
-      </div>
+        {/* ── Column 1: Identity ── */}
+        <div className="space-y-4">
+          <ConfigSection
+            title="General"
+            onSave={() => saveSection('general', ['shop_name', 'opening_hours', 'address', 'phone'])}
+            saving={savingSection === 'general'}
+            saved={savedSection === 'general'}
+          >
+            <Field label="Shop Name" value={cfg.shop_name || ''} onChange={v => set('shop_name', v)} placeholder="My Shop" />
+            <Field label="Opening Hours" value={cfg.opening_hours || ''} onChange={v => set('opening_hours', v)} placeholder="Mon–Sat 9:00–20:00" />
+            <Field label="Address" value={cfg.address || ''} onChange={v => set('address', v)} placeholder="Street, City" />
+            <Field label="Phone" value={cfg.phone || ''} onChange={v => set('phone', v)} placeholder="+355 69 123 4567" />
+          </ConfigSection>
 
-      <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
-        <h4 className="font-medium text-slate-800">Order Settings</h4>
-        <Toggle
-          label="Manual order creation"
-          desc="Allow staff to create orders directly from the dashboard"
-          value={cfg.manual_orders_enabled}
-          onChange={v => set('manual_orders_enabled', v)}
-        />
-      </div>
-
-      {/* QR Self-Ordering */}
-      <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
-        <div className="flex items-center gap-2">
-          <QrCode size={16} className="text-teal-600" />
-          <h4 className="font-medium text-slate-800">QR Self-Ordering</h4>
+          <ConfigSection
+            title="Social Links"
+            onSave={() => saveSection('social', ['instagram_url', 'facebook_url', 'tiktok_url', 'website_url'])}
+            saving={savingSection === 'social'}
+            saved={savedSection === 'social'}
+          >
+            <Field label="Instagram" value={cfg.instagram_url || ''} onChange={v => set('instagram_url', v)} placeholder="https://instagram.com/..." />
+            <Field label="Facebook" value={cfg.facebook_url || ''} onChange={v => set('facebook_url', v)} placeholder="https://facebook.com/..." />
+            <Field label="TikTok" value={cfg.tiktok_url || ''} onChange={v => set('tiktok_url', v)} placeholder="https://tiktok.com/@..." />
+            <Field label="Website" value={cfg.website_url || ''} onChange={v => set('website_url', v)} placeholder="https://myshop.com" />
+          </ConfigSection>
         </div>
-        <Toggle
-          label="Enable QR ordering"
-          desc="Let customers scan a QR code to order directly from their phone"
-          value={cfg.qr_ordering_enabled}
-          onChange={v => set('qr_ordering_enabled', v)}
-        />
 
-        {cfg.qr_ordering_enabled ? (
-          <>
-            <div>
-              <label className="text-xs text-slate-500 font-medium">Shop URL slug *</label>
-              <div className="flex items-center gap-1 mt-1">
-                <span className="text-xs text-slate-400 whitespace-nowrap">{origin}/shop/</span>
-                <input
-                  value={cfg.qr_slug || ''}
-                  onChange={e => set('qr_slug', e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-'))}
-                  placeholder="my-shop-name"
-                  className="flex-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm min-w-0"
-                />
+        {/* ── Column 2: Operations ── */}
+        <div className="space-y-4">
+          <ConfigSection
+            title="Ordering"
+            onSave={() => saveSection('ordering', [
+              'manual_orders_enabled',
+              'delivery_threshold_1', 'delivery_threshold_2',
+              'delivery_time_1', 'delivery_time_2', 'delivery_time_3',
+            ])}
+            saving={savingSection === 'ordering'}
+            saved={savedSection === 'ordering'}
+          >
+            <Toggle
+              label="Manual order creation"
+              desc="Allow staff to create orders directly from the dashboard"
+              value={cfg.manual_orders_enabled}
+              onChange={v => set('manual_orders_enabled', v)}
+            />
+            <div className="space-y-2">
+              <div>
+                <p className="text-xs font-medium text-slate-500 mb-0.5">Estimated delivery time</p>
+                <p className="text-xs text-slate-400">Set different times based on how busy the shop is. Active orders = New + In Progress.</p>
               </div>
-              <p className="text-xs text-slate-400 mt-1">Used in QR codes and the ordering URL. Cannot be changed after sharing.</p>
-            </div>
-
-            <Toggle label="Ask customer for name" value={cfg.qr_collect_name ?? 1} onChange={v => set('qr_collect_name', v)} />
-            <Toggle label="Enable table QR codes" value={cfg.qr_collect_table} onChange={v => set('qr_collect_table', v)} />
-
-            <div>
-              <label className="text-xs text-slate-500 font-medium">Welcome message</label>
-              <textarea rows={2} value={cfg.qr_welcome_message || ''} onChange={e => set('qr_welcome_message', e.target.value)}
-                placeholder="Welcome! Please enter your name to start ordering."
-                className="w-full mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm resize-none" />
-            </div>
-
-            {/* Logo upload */}
-            <div>
-              <label className="text-xs text-slate-500 font-medium">Shop logo (shown on ordering page)</label>
-              {cfg.shop_logo_url ? (
-                <div className="flex items-center gap-3 mt-1 bg-slate-50 rounded-lg px-3 py-2 border border-slate-200">
-                  <img src={cfg.shop_logo_url} alt="Logo" className="h-10 object-contain" />
-                  <button onClick={removeLogo} className="text-xs text-red-400 hover:text-red-600 ml-auto">Remove</button>
+              <div className="bg-green-50 border border-green-200 rounded-xl p-3">
+                <p className="text-xs font-semibold text-green-700 mb-2">🟢 Tier 1 — Quiet</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-green-600">0 to</span>
+                  <input type="number" value={cfg.delivery_threshold_1 ?? 5} onChange={e => set('delivery_threshold_1', +e.target.value)} min={1}
+                    className="w-16 rounded-lg border border-green-200 px-2 py-1.5 text-sm text-center bg-white" />
+                  <span className="text-xs text-green-600">active orders →</span>
+                  <input type="number" value={cfg.delivery_time_1 ?? 15} onChange={e => set('delivery_time_1', +e.target.value)} min={1}
+                    className="w-16 rounded-lg border border-green-200 px-2 py-1.5 text-sm text-center bg-white" />
+                  <span className="text-xs text-green-600">min</span>
                 </div>
-              ) : (
-                <div onClick={() => logoRef.current?.click()}
-                  className="mt-1 border-2 border-dashed border-slate-200 rounded-lg p-4 text-center cursor-pointer hover:border-teal-400 transition-colors">
-                  <p className="text-xs text-slate-400">Click to upload logo · PNG, JPG, WebP · max 5 MB</p>
+              </div>
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                <p className="text-xs font-semibold text-amber-700 mb-2">🟡 Tier 2 — Busy</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-amber-600">{cfg.delivery_threshold_1 ?? 5} to</span>
+                  <input type="number" value={cfg.delivery_threshold_2 ?? 15} onChange={e => set('delivery_threshold_2', +e.target.value)} min={(cfg.delivery_threshold_1 ?? 5) + 1}
+                    className="w-16 rounded-lg border border-amber-200 px-2 py-1.5 text-sm text-center bg-white" />
+                  <span className="text-xs text-amber-600">active orders →</span>
+                  <input type="number" value={cfg.delivery_time_2 ?? 30} onChange={e => set('delivery_time_2', +e.target.value)} min={1}
+                    className="w-16 rounded-lg border border-amber-200 px-2 py-1.5 text-sm text-center bg-white" />
+                  <span className="text-xs text-amber-600">min</span>
                 </div>
-              )}
-              <input ref={logoRef} type="file" accept=".png,.jpg,.jpeg,.webp" className="hidden" onChange={handleLogoUpload} />
+              </div>
+              <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+                <p className="text-xs font-semibold text-red-700 mb-2">🔴 Tier 3 — Very busy</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-red-600">{cfg.delivery_threshold_2 ?? 15}+ active orders →</span>
+                  <input type="number" value={cfg.delivery_time_3 ?? 45} onChange={e => set('delivery_time_3', +e.target.value)} min={1}
+                    className="w-16 rounded-lg border border-red-200 px-2 py-1.5 text-sm text-center bg-white" />
+                  <span className="text-xs text-red-600">min</span>
+                </div>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3 text-xs text-slate-500 space-y-1">
+                <p className="font-medium text-slate-600">Summary</p>
+                <p>0–{cfg.delivery_threshold_1 ?? 5} orders → {cfg.delivery_time_1 ?? 15} min</p>
+                <p>{cfg.delivery_threshold_1 ?? 5}–{cfg.delivery_threshold_2 ?? 15} orders → {cfg.delivery_time_2 ?? 30} min</p>
+                <p>{cfg.delivery_threshold_2 ?? 15}+ orders → {cfg.delivery_time_3 ?? 45} min</p>
+              </div>
             </div>
+          </ConfigSection>
 
-            {/* QR code display */}
-            {cfg.qr_slug && (
-              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
-                <p className="text-xs font-medium text-slate-600 mb-3">Shop QR Code</p>
-                <div className="flex items-start gap-4">
-                  <QRCodeCanvas id="qr-shop" value={slugUrl} size={100} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-slate-500 break-all mb-2">{slugUrl}</p>
-                    <button onClick={() => downloadQr('shop', cfg.qr_slug!)}
-                      className="text-xs font-medium text-teal-600 hover:text-teal-700">
-                      ↓ Download PNG
-                    </button>
+          <ConfigSection
+            title="Inventory"
+            onSave={() => saveSection('inventory', ['inventory_enabled', 'inventory_alert_mode', 'inventory_alert_time', 'inventory_alert_whatsapp'])}
+            saving={savingSection === 'inventory'}
+            saved={savedSection === 'inventory'}
+          >
+            <p className="text-xs text-slate-400 -mt-1">Track ingredients, recipes, and stock levels</p>
+            <Toggle label="Enable inventory module" value={cfg.inventory_enabled} onChange={v => set('inventory_enabled', v)} />
+            {cfg.inventory_enabled ? (
+              <>
+                <div>
+                  <label className="text-xs font-medium text-slate-500">Low-stock alert mode</label>
+                  <div className="flex gap-2 mt-1">
+                    {([['immediate', 'Immediate (on each order)'], ['daily', 'Daily digest']] as const).map(([val, lbl]) => (
+                      <button key={val}
+                        onClick={() => set('inventory_alert_mode', val)}
+                        className={`flex-1 py-2 text-xs font-medium rounded-lg border transition-colors ${
+                          (cfg.inventory_alert_mode ?? 'daily') === val
+                            ? 'border-teal-500 bg-teal-50 text-teal-700'
+                            : 'border-slate-200 text-slate-500'
+                        }`}
+                      >
+                        {lbl}
+                      </button>
+                    ))}
                   </div>
                 </div>
+                {(cfg.inventory_alert_mode ?? 'daily') === 'daily' && (
+                  <div>
+                    <label className="text-xs font-medium text-slate-500">Daily digest time (Europe/Tirane)</label>
+                    <input
+                      type="time" value={cfg.inventory_alert_time ?? '09:00'}
+                      onChange={e => set('inventory_alert_time', e.target.value)}
+                      className="mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                    />
+                  </div>
+                )}
+                <Toggle
+                  label="Send low-stock alerts via WhatsApp"
+                  desc="Uses the backup WhatsApp number configured above"
+                  value={cfg.inventory_alert_whatsapp}
+                  onChange={v => set('inventory_alert_whatsapp', v)}
+                />
+              </>
+            ) : (
+              <p className="text-xs text-slate-400">Enable inventory to configure stock alerts and recipe tracking.</p>
+            )}
+          </ConfigSection>
+        </div>
+
+        {/* ── Column 3: Agent + QR — spans 2 on md, 1 on lg ── */}
+        <div className="space-y-4 md:col-span-2 lg:col-span-1">
+          <ConfigSection
+            title="Agent / AI"
+            onSave={() => saveSection('agent', ['agent_personality', 'fallback_message', 'fallback_backup_number', 'fallback_after_attempts'])}
+            saving={savingSection === 'agent'}
+            saved={savedSection === 'agent'}
+          >
+            <div>
+              <label className="text-xs text-slate-500 font-medium">Agent Personality</label>
+              <select value={cfg.agent_personality || 'friendly'} onChange={e => set('agent_personality', e.target.value)} className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white">
+                <option value="friendly">Friendly</option>
+                <option value="professional">Professional</option>
+                <option value="playful">Playful</option>
+              </select>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-slate-500 mb-0.5">Fallback &amp; Error Handling</p>
+              <p className="text-xs text-slate-400">When orders cannot be processed, guests receive this message instead of a generic error.</p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-slate-500 font-medium">Fallback message</label>
+              <textarea rows={2} value={cfg.fallback_message || ''} onChange={e => set('fallback_message', e.target.value)}
+                placeholder="We are temporarily unable to process your order online."
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm resize-none" />
+              <p className="text-xs text-slate-400">Shown to guest when the AI encounters an error</p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-slate-500 font-medium">Backup WhatsApp number</label>
+              <input type="text" value={cfg.fallback_backup_number || ''} onChange={e => set('fallback_backup_number', e.target.value)}
+                placeholder="+355691234567" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+              <p className="text-xs text-slate-400">Shared with guest when error threshold is reached. Leave empty to not share.</p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-slate-500 font-medium">Share backup number after</label>
+              <select value={cfg.fallback_after_attempts ?? 1} onChange={e => set('fallback_after_attempts', parseInt(e.target.value))}
+                className="rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white">
+                <option value={1}>1st error (immediately)</option>
+                <option value={2}>2nd consecutive error</option>
+                <option value={3}>3rd consecutive error</option>
+              </select>
+            </div>
+            {cfg.fallback_backup_number && (
+              <div className="bg-slate-50 rounded-lg px-3 py-2.5 border border-slate-200">
+                <p className="text-xs font-medium text-slate-600 mb-1">Preview — after {cfg.fallback_after_attempts ?? 1} error(s):</p>
+                <p className="text-xs text-slate-700 whitespace-pre-wrap">
+                  {cfg.fallback_message || 'We are temporarily unable to process your order online.'}
+                  {'\n\nPlease contact us directly on WhatsApp:\n📱 '}{cfg.fallback_backup_number}
+                </p>
               </div>
             )}
-          </>
-        ) : (
-          <p className="text-xs text-slate-400">Enable QR ordering to configure the self-service menu and generate QR codes.</p>
-        )}
+          </ConfigSection>
+
+          <ConfigSection
+            title="QR Ordering"
+            onSave={() => saveSection('qr', ['qr_ordering_enabled', 'qr_slug', 'qr_collect_name', 'qr_collect_table', 'qr_welcome_message', 'shop_logo_url'])}
+            saving={savingSection === 'qr'}
+            saved={savedSection === 'qr'}
+          >
+            <div className="flex items-center gap-2 -mt-1">
+              <QrCode size={14} className="text-teal-600" />
+              <span className="text-xs text-slate-400">Let customers scan a QR code to order directly from their phone</span>
+            </div>
+            <Toggle
+              label="Enable QR ordering"
+              value={cfg.qr_ordering_enabled}
+              onChange={v => set('qr_ordering_enabled', v)}
+            />
+            {cfg.qr_ordering_enabled ? (
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs text-slate-500 font-medium">Shop URL slug *</label>
+                  <div className="flex items-center gap-1 mt-1">
+                    <span className="text-xs text-slate-400 whitespace-nowrap">{origin}/shop/</span>
+                    <input
+                      value={cfg.qr_slug || ''}
+                      onChange={e => set('qr_slug', e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-'))}
+                      placeholder="my-shop-name"
+                      className="flex-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm min-w-0"
+                    />
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">Used in QR codes and the ordering URL. Cannot be changed after sharing.</p>
+                </div>
+                <Toggle label="Ask customer for name" value={cfg.qr_collect_name ?? 1} onChange={v => set('qr_collect_name', v)} />
+                <Toggle label="Enable table QR codes" value={cfg.qr_collect_table} onChange={v => set('qr_collect_table', v)} />
+                <div>
+                  <label className="text-xs text-slate-500 font-medium">Welcome message</label>
+                  <textarea rows={2} value={cfg.qr_welcome_message || ''} onChange={e => set('qr_welcome_message', e.target.value)}
+                    placeholder="Welcome! Please enter your name to start ordering."
+                    className="w-full mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm resize-none" />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 font-medium">Shop logo (shown on ordering page)</label>
+                  {cfg.shop_logo_url ? (
+                    <div className="flex items-center gap-3 mt-1 bg-slate-50 rounded-lg px-3 py-2 border border-slate-200">
+                      <img src={cfg.shop_logo_url} alt="Logo" className="h-10 object-contain" />
+                      <button onClick={removeLogo} className="text-xs text-red-400 hover:text-red-600 ml-auto">Remove</button>
+                    </div>
+                  ) : (
+                    <div onClick={() => logoRef.current?.click()}
+                      className="mt-1 border-2 border-dashed border-slate-200 rounded-lg p-4 text-center cursor-pointer hover:border-teal-400 transition-colors">
+                      <p className="text-xs text-slate-400">Click to upload logo · PNG, JPG, WebP · max 5 MB</p>
+                    </div>
+                  )}
+                  <input ref={logoRef} type="file" accept=".png,.jpg,.jpeg,.webp" className="hidden" onChange={handleLogoUpload} />
+                </div>
+                {cfg.qr_slug && (
+                  <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                    <p className="text-xs font-medium text-slate-600 mb-3">Shop QR Code</p>
+                    <div className="flex items-start gap-4">
+                      <QRCodeCanvas id="qr-shop" value={slugUrl} size={100} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-slate-500 break-all mb-2">{slugUrl}</p>
+                        <button onClick={() => downloadQr('shop', cfg.qr_slug!)}
+                          className="text-xs font-medium text-teal-600 hover:text-teal-700">
+                          ↓ Download PNG
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400">Enable QR ordering to configure the self-service menu and generate QR codes.</p>
+            )}
+          </ConfigSection>
+        </div>
+
       </div>
 
-      {/* Tables section */}
+      {/* Fiscalization — full width below the 3-column grid */}
+      <ConfigSection
+        title="Fiscalization"
+        onSave={() => saveSection('fiscal', [
+          'fiscal_enabled', 'fiscal_middleware', 'fiscal_environment',
+          'fiscal_username', 'fiscal_password', 'fiscal_nuis',
+          'fiscal_tcr_code', 'fiscal_busun_code', 'fiscal_soft_code',
+          'fiscal_default_client', 'fiscal_initial_cash',
+        ])}
+        saving={savingSection === 'fiscal'}
+        saved={savedSection === 'fiscal'}
+      >
+        <p className="text-xs text-slate-400 -mt-1">Albanian e-Fiskalizimi integration</p>
+        <Toggle label="Enable fiscalization" value={cfg.fiscal_enabled} onChange={v => set('fiscal_enabled', v)} />
+        {cfg.fiscal_enabled ? (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-medium text-slate-600 block mb-1.5">Fiscal middleware</label>
+                <select
+                  value={cfg.fiscal_middleware || 'nexia'}
+                  onChange={e => set('fiscal_middleware', e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                >
+                  {middlewares.map(m => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-slate-400 mt-1">Select the fiscal middleware provider for this shop</p>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600 block mb-1.5">Environment</label>
+                <div className="flex gap-3">
+                  {(['test', 'production'] as const).map(env => (
+                    <button
+                      key={env}
+                      onClick={() => set('fiscal_environment', env)}
+                      className={`flex-1 py-2 text-xs font-medium rounded-lg border transition-colors ${
+                        (cfg.fiscal_environment || 'test') === env
+                          ? 'border-teal-500 bg-teal-50 text-teal-700'
+                          : 'border-slate-200 text-slate-500'
+                      }`}
+                    >
+                      {env === 'test' ? '🧪 Test' : '🏦 Production'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <div>
+                <label className="text-xs font-medium text-slate-600">Username</label>
+                <input value={cfg.fiscal_username || ''} onChange={e => set('fiscal_username', e.target.value)}
+                  className="w-full mt-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600">Password</label>
+                <input type="password" value={cfg.fiscal_password || ''} onChange={e => set('fiscal_password', e.target.value)}
+                  className="w-full mt-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600">NUIS</label>
+                <input value={cfg.fiscal_nuis || ''} onChange={e => set('fiscal_nuis', e.target.value)}
+                  placeholder="e.g. L82210031Q"
+                  className="w-full mt-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600">TCR Code</label>
+                <input value={cfg.fiscal_tcr_code || ''} onChange={e => set('fiscal_tcr_code', e.target.value)}
+                  placeholder="e.g. xv496nk445"
+                  className="w-full mt-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600">Business Unit Code</label>
+                <input value={cfg.fiscal_busun_code || ''} onChange={e => set('fiscal_busun_code', e.target.value)}
+                  className="w-full mt-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600">Software Code</label>
+                <input value={cfg.fiscal_soft_code || ''} onChange={e => set('fiscal_soft_code', e.target.value)}
+                  className="w-full mt-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600">Default client name</label>
+                <input value={cfg.fiscal_default_client || 'Klient i Pergjithshem'}
+                  onChange={e => set('fiscal_default_client', e.target.value)}
+                  className="w-full mt-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600">Initial cash deposit (ALL)</label>
+                <input type="number" value={cfg.fiscal_initial_cash ?? 0}
+                  onChange={e => set('fiscal_initial_cash', +e.target.value)}
+                  className="w-full mt-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm" />
+              </div>
+            </div>
+            <button
+              onClick={handleRegisterCashDeposit}
+              className="text-xs font-medium px-3 py-2 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50"
+            >
+              Register today's cash deposit ({cfg.fiscal_initial_cash || 0} ALL)
+            </button>
+          </>
+        ) : (
+          <p className="text-xs text-slate-400">Enable fiscalization to configure the Albanian e-Fiskalizimi integration.</p>
+        )}
+      </ConfigSection>
+
+      {/* Tables section — entity management, not a config section */}
       {cfg.qr_ordering_enabled && cfg.qr_collect_table && (
         <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
           <div className="flex items-center justify-between">
@@ -1701,158 +1938,18 @@ function ConfigTab() {
         </div>
       )}
 
-      {/* Inventory Module */}
-      <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
-        <div>
-          <h4 className="font-medium text-slate-800">Inventory Module</h4>
-          <p className="text-xs text-slate-400 mt-0.5">Track ingredients, recipes, and stock levels</p>
-        </div>
-        <Toggle label="Enable inventory module" value={cfg.inventory_enabled} onChange={v => set('inventory_enabled', v)} />
-        {cfg.inventory_enabled ? (
-          <>
-            <div>
-              <label className="text-xs font-medium text-slate-500">Low-stock alert mode</label>
-              <div className="flex gap-2 mt-1">
-                {([['immediate', 'Immediate (on each order)'], ['daily', 'Daily digest']] as const).map(([val, lbl]) => (
-                  <button key={val}
-                    onClick={() => set('inventory_alert_mode', val)}
-                    className={`flex-1 py-2 text-xs font-medium rounded-lg border transition-colors ${
-                      (cfg.inventory_alert_mode ?? 'daily') === val
-                        ? 'border-teal-500 bg-teal-50 text-teal-700'
-                        : 'border-slate-200 text-slate-500'
-                    }`}
-                  >
-                    {lbl}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {(cfg.inventory_alert_mode ?? 'daily') === 'daily' && (
-              <div>
-                <label className="text-xs font-medium text-slate-500">Daily digest time (Europe/Tirane)</label>
-                <input
-                  type="time" value={cfg.inventory_alert_time ?? '09:00'}
-                  onChange={e => set('inventory_alert_time', e.target.value)}
-                  className="mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                />
-              </div>
-            )}
-            <Toggle
-              label="Send low-stock alerts via WhatsApp"
-              desc="Uses the backup WhatsApp number configured above"
-              value={cfg.inventory_alert_whatsapp}
-              onChange={v => set('inventory_alert_whatsapp', v)}
-            />
-          </>
-        ) : (
-          <p className="text-xs text-slate-400">Enable inventory to configure stock alerts and recipe tracking.</p>
-        )}
+      {/* Save all fallback */}
+      <div className="flex justify-end pt-2">
+        <button
+          onClick={saveAll}
+          disabled={saveAllBusy}
+          className="text-sm font-medium text-slate-500 hover:text-slate-700 border border-slate-200 rounded-xl px-4 py-2 disabled:opacity-50"
+        >
+          {saveAllBusy ? 'Saving…' : 'Save all settings'}
+        </button>
       </div>
-
-      {configError && <p className="text-xs text-red-500">{configError}</p>}
-
-      <button onClick={save} disabled={busy} className="px-5 py-2 bg-brand-600 text-white rounded-lg text-sm hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2">
-        {busy ? 'Saving…' : saved ? <><Check size={14} /> Saved!</> : 'Save Settings'}
-      </button>
 
       {/* Table QR modal */}
-      {/* Fiscalization */}
-      <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
-        <div>
-          <h4 className="font-medium text-slate-800">Fiscalization</h4>
-          <p className="text-xs text-slate-400 mt-0.5">Albanian e-Fiskalizimi integration</p>
-        </div>
-        <Toggle label="Enable fiscalization" value={cfg.fiscal_enabled} onChange={v => set('fiscal_enabled', v)} />
-        {cfg.fiscal_enabled ? (
-          <>
-            <div>
-              <label className="text-xs font-medium text-slate-600 block mb-1.5">Fiscal middleware</label>
-              <select
-                value={cfg.fiscal_middleware || 'nexia'}
-                onChange={e => set('fiscal_middleware', e.target.value)}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              >
-                {middlewares.map(m => (
-                  <option key={m.value} value={m.value}>{m.label}</option>
-                ))}
-              </select>
-              <p className="text-xs text-slate-400 mt-1">Select the fiscal middleware provider for this shop</p>
-            </div>
-            <div className="flex gap-3">
-              {(['test', 'production'] as const).map(env => (
-                <button
-                  key={env}
-                  onClick={() => set('fiscal_environment', env)}
-                  className={`flex-1 py-2 text-xs font-medium rounded-lg border transition-colors ${
-                    (cfg.fiscal_environment || 'test') === env
-                      ? 'border-teal-500 bg-teal-50 text-teal-700'
-                      : 'border-slate-200 text-slate-500'
-                  }`}
-                >
-                  {env === 'test' ? '🧪 Test' : '🏦 Production'}
-                </button>
-              ))}
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium text-slate-600">Username</label>
-                <input value={cfg.fiscal_username || ''} onChange={e => set('fiscal_username', e.target.value)}
-                  className="w-full mt-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm" />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-slate-600">Password</label>
-                <input type="password" value={cfg.fiscal_password || ''} onChange={e => set('fiscal_password', e.target.value)}
-                  className="w-full mt-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm" />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-slate-600">NUIS</label>
-                <input value={cfg.fiscal_nuis || ''} onChange={e => set('fiscal_nuis', e.target.value)}
-                  placeholder="e.g. L82210031Q"
-                  className="w-full mt-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm" />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-slate-600">TCR Code</label>
-                <input value={cfg.fiscal_tcr_code || ''} onChange={e => set('fiscal_tcr_code', e.target.value)}
-                  placeholder="e.g. xv496nk445"
-                  className="w-full mt-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm" />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-slate-600">Business Unit Code</label>
-                <input value={cfg.fiscal_busun_code || ''} onChange={e => set('fiscal_busun_code', e.target.value)}
-                  className="w-full mt-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm" />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-slate-600">Software Code</label>
-                <input value={cfg.fiscal_soft_code || ''} onChange={e => set('fiscal_soft_code', e.target.value)}
-                  className="w-full mt-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm" />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium text-slate-600">Default client name</label>
-                <input value={cfg.fiscal_default_client || 'Klient i Pergjithshem'}
-                  onChange={e => set('fiscal_default_client', e.target.value)}
-                  className="w-full mt-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm" />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-slate-600">Initial cash deposit (ALL)</label>
-                <input type="number" value={cfg.fiscal_initial_cash ?? 0}
-                  onChange={e => set('fiscal_initial_cash', +e.target.value)}
-                  className="w-full mt-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm" />
-              </div>
-            </div>
-            <button
-              onClick={handleRegisterCashDeposit}
-              className="text-xs font-medium px-3 py-2 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50"
-            >
-              Register today's cash deposit ({cfg.fiscal_initial_cash || 0} ALL)
-            </button>
-          </>
-        ) : (
-          <p className="text-xs text-slate-400">Enable fiscalization to configure the Albanian e-Fiskalizimi integration.</p>
-        )}
-      </div>
-
       {showTableQr && cfg.qr_slug && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl text-center">
