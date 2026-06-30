@@ -196,8 +196,7 @@ metaRouter.post('/meta/webhook', async (req: Request, res: Response) => {
             console.error('[Meta] Send failed:', sendErr.message);
           }
 
-          // Email fallback
-          if (tenant.email_fallback_enabled && tenant.notification_email) {
+          if (!waDelivered && tenant.email_fallback_enabled && tenant.notification_email) {
             try {
               await sendEmailFallback({
                 toEmail:           tenant.notification_email,
@@ -206,7 +205,7 @@ metaRouter.post('/meta/webhook', async (req: Request, res: Response) => {
                 guestName,
                 guestMessage:      textToAgent,
                 aiReply:           reply,
-                whatsappDelivered: waDelivered,
+                whatsappDelivered: false,
               });
             } catch (emailErr: any) {
               console.error('[Meta] Email fallback failed:', emailErr.message);
