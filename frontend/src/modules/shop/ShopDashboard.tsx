@@ -2245,6 +2245,7 @@ function StaffLoginModal({ tenantId, onLogin, onClose }: {
 export function ShopDashboard({ onLogout, tenantId }: { onLogout: () => void; tenantId?: string }) {
   const [tab, setTab]               = useState<Tab>('orders');
   const [showStaffLogin, setShowStaffLogin] = useState(false);
+  const [rootConfig, setRootConfig] = useState<ShopConfig | null>(null);
 
   // Shop sub-user state
   const [shopUser, setShopUser] = useState<any>(() => {
@@ -2256,8 +2257,17 @@ export function ShopDashboard({ onLogout, tenantId }: { onLogout: () => void; te
   const storedMainUser = getStoredUser();
   const loginTenantId = tenantId || storedMainUser?.tenantId || '';
 
-  // Filter tabs by role
-  const visibleTabs = TABS.filter(t => t.roles.includes(role));
+  // Fetch config once to gate feature-flagged tabs
+  useEffect(() => {
+    shopApi.getConfig().then(cfg => setRootConfig(cfg)).catch(() => {});
+  }, [tenantId]);
+
+  // Filter tabs by role, then by feature flags
+  const visibleTabs = TABS.filter(t => {
+    if (!t.roles.includes(role)) return false;
+    if (t.id === 'inventory') return rootConfig?.inventory_enabled === true;
+    return true;
+  });
 
   // When role changes (login/logout), make sure current tab is still accessible
   useEffect(() => {
