@@ -542,6 +542,7 @@ const SCHEMA = `
     vat_rate TEXT DEFAULT 'VAT_20',
     item_code TEXT,
     unit TEXT DEFAULT 'XPP',
+    pricing_type TEXT DEFAULT 'fixed',
     created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
   );
@@ -596,7 +597,8 @@ const SCHEMA = `
     item_name TEXT NOT NULL,
     item_price REAL NOT NULL,
     quantity INTEGER NOT NULL DEFAULT 1,
-    subtotal REAL NOT NULL
+    subtotal REAL NOT NULL,
+    rental_hours INTEGER
   );
   CREATE TABLE IF NOT EXISTS shop_conversations (
     id TEXT PRIMARY KEY,
@@ -953,6 +955,9 @@ export async function runMigrations() {
       `ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS fiscal_token TEXT`,
       `ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS fiscal_token_exp TEXT`,
       `ALTER TABLE shop_users ADD COLUMN IF NOT EXISTS fiscal_operator_code TEXT`,
+      // shop_rental_001 — per-item hourly/rental pricing
+      `ALTER TABLE shop_menu_items ADD COLUMN IF NOT EXISTS pricing_type TEXT DEFAULT 'fixed'`,
+      `ALTER TABLE shop_order_items ADD COLUMN IF NOT EXISTS rental_hours INTEGER`,
       // shop_menu_docs_001 — PDF/URL menu documents for the shop agent
       `CREATE TABLE IF NOT EXISTS shop_menu_documents (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, label TEXT NOT NULL, doc_type TEXT NOT NULL CHECK (doc_type IN ('pdf', 'url')), file_url TEXT, external_url TEXT, sort_order INTEGER DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
       `CREATE INDEX IF NOT EXISTS idx_shop_menu_docs_tenant ON shop_menu_documents(tenant_id, sort_order)`,
@@ -1318,6 +1323,17 @@ export async function runMigrations() {
     .all().map((r: any) => r.name as string);
   if (!shopItemInvCols.includes('stock_mode'))
     exec("ALTER TABLE shop_menu_items ADD COLUMN stock_mode TEXT DEFAULT 'simple'");
+
+  // shop_rental_001 — per-item hourly/rental pricing
+  const shopItemRentalCols = prepare("SELECT name FROM pragma_table_info('shop_menu_items')")
+    .all().map((r: any) => r.name as string);
+  if (!shopItemRentalCols.includes('pricing_type'))
+    exec("ALTER TABLE shop_menu_items ADD COLUMN pricing_type TEXT DEFAULT 'fixed'");
+
+  const shopOrderItemRentalCols = prepare("SELECT name FROM pragma_table_info('shop_order_items')")
+    .all().map((r: any) => r.name as string);
+  if (!shopOrderItemRentalCols.includes('rental_hours'))
+    exec('ALTER TABLE shop_order_items ADD COLUMN rental_hours INTEGER');
 
   // shop_menu_docs_001 — PDF/URL menu documents
   exec(`CREATE TABLE IF NOT EXISTS shop_menu_documents (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, label TEXT NOT NULL, doc_type TEXT NOT NULL CHECK (doc_type IN ('pdf', 'url')), file_url TEXT, external_url TEXT, sort_order INTEGER DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`);

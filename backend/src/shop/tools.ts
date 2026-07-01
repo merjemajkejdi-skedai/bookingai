@@ -53,7 +53,15 @@ export const shopTools: Anthropic.Tool[] = [
       properties: {
         items: {
           type: 'array',
-          items: { type: 'object', properties: { item_id: { type: 'string' }, quantity: { type: 'number' } }, required: ['item_id', 'quantity'] },
+          items: {
+            type: 'object',
+            properties: {
+              item_id:      { type: 'string' },
+              quantity:     { type: 'number', minimum: 1 },
+              rental_hours: { type: 'number', minimum: 1, description: 'Required for hourly/rental items. Number of hours to rent.' },
+            },
+            required: ['item_id', 'quantity'],
+          },
         },
         pickup_name: { type: 'string', description: 'Name to use for pickup — required' },
         notes: { type: 'string', description: 'Optional special instructions' },
@@ -172,7 +180,15 @@ export async function executeShopTool(
         return {
           success: true,
           categories,
-          items: items.map((item: any) => ({ ...item, stock_status: stockStatus(item), available: isAvailable(item) })),
+          items: items.map((item: any) => ({
+            ...item,
+            pricing_type: item.pricing_type || 'fixed',
+            price_label: item.pricing_type === 'hourly'
+              ? `${item.price} ALL/orë`
+              : `${item.price} ALL`,
+            stock_status: stockStatus(item),
+            available: isAvailable(item),
+          })),
           item_count: items.length,
         };
       } catch (err: any) {
@@ -202,7 +218,7 @@ export async function executeShopTool(
       console.log('[Shop create_order] tenantId:', tenantId);
       console.log('[Shop create_order] item IDs to find:', input.items?.map((i: any) => i.item_id));
 
-      const { items, pickup_name, notes } = input as { items: Array<{ item_id: string; quantity: number }>; pickup_name: string; notes?: string };
+      const { items, pickup_name, notes } = input as { items: Array<{ item_id: string; quantity: number; rental_hours?: number }>; pickup_name: string; notes?: string };
       if (!items?.length) return { success: false, message: 'No items provided' };
 
       const ids = items.map((i) => i.item_id);
@@ -212,13 +228,18 @@ export async function executeShopTool(
       console.log('[Shop create_order] items found in DB:', menuItems.length, 'of', items.length);
       console.log('[Shop create_order] found IDs:', menuItems.map((i: any) => i.id));
 
-      const lineItems: Array<{ item: any; qty: number }> = [];
+      const lineItems: Array<{ item: any; qty: number; rentalHours: number | null }> = [];
       const outOfStock: string[] = [];
       for (const req of items) {
         const item = menuItems.find((m: any) => m.id === req.item_id);
         if (!item) return { success: false, message: `Item not found or unavailable` };
-        if (!isAvailable(item, req.quantity)) outOfStock.push(item.name);
-        else lineItems.push({ item, qty: req.quantity });
+        if (!isAvailable(item, req.quantity)) { outOfStock.push(item.name); continue; }
+        const isHourly = (item.pricing_type || 'fixed') === 'hourly';
+        if (isHourly && !req.rental_hours) {
+          return { success: false, error: `rental_hours is required for hourly item "${item.name}" — ask the customer how many hours they need` };
+        }
+        const rentalHours = isHourly ? Math.max(1, Math.round(req.rental_hours!)) : null;
+        lineItems.push({ item, qty: req.quantity, rentalHours });
       }
 
       console.log('[Shop create_order] out of stock items:', outOfStock);
@@ -230,7 +251,12 @@ export async function executeShopTool(
         tenantId, today,
       );
       const orderNumber = Number(nextNumRow?.next_num ?? 1);
-      const totalPrice = lineItems.reduce((s, li) => s + parseFloat(li.item.price) * li.qty, 0);
+      const totalPrice = lineItems.reduce((s, li) => {
+        const lineTotal = li.rentalHours
+          ? parseFloat(li.item.price) * li.qty * li.rentalHours
+          : parseFloat(li.item.price) * li.qty;
+        return s + lineTotal;
+      }, 0);
       const currency = lineItems[0]?.item?.currency || 'ALL';
       const orderId = crypto.randomUUID();
 
@@ -242,9 +268,12 @@ export async function executeShopTool(
       );
 
       for (const li of lineItems) {
+        const lineTotal = li.rentalHours
+          ? parseFloat(li.item.price) * li.qty * li.rentalHours
+          : parseFloat(li.item.price) * li.qty;
         await dbRun(
-          `INSERT INTO shop_order_items (id, order_id, tenant_id, item_id, item_name, item_price, quantity, subtotal) VALUES (?,?,?,?,?,?,?,?)`,
-          crypto.randomUUID(), orderId, tenantId, li.item.id, li.item.name, li.item.price, li.qty, parseFloat(li.item.price) * li.qty,
+          `INSERT INTO shop_order_items (id, order_id, tenant_id, item_id, item_name, item_price, quantity, subtotal, rental_hours) VALUES (?,?,?,?,?,?,?,?,?)`,
+          crypto.randomUUID(), orderId, tenantId, li.item.id, li.item.name, li.item.price, li.qty, lineTotal, li.rentalHours,
         );
         if (li.item.stock_type !== 'unlimited') {
           await dbRun(`UPDATE shop_menu_items SET stock_used = stock_used + ? WHERE id = ?`, li.qty, li.item.id);
@@ -264,7 +293,12 @@ export async function executeShopTool(
         currency,
         estimated_pickup_minutes: deliveryInfo.minutes,
         eta: deliveryInfo.label,
-        items: lineItems.map((li) => ({ name: li.item.name, quantity: li.qty, subtotal: parseFloat(li.item.price) * li.qty })),
+        items: lineItems.map((li) => {
+          const lineTotal = li.rentalHours
+            ? parseFloat(li.item.price) * li.qty * li.rentalHours
+            : parseFloat(li.item.price) * li.qty;
+          return { name: li.item.name, quantity: li.qty, rental_hours: li.rentalHours, subtotal: lineTotal };
+        }),
       };
       } catch (err: any) {
         console.error('[Shop create_order] ❌ FAILED:', err.message, err.stack);

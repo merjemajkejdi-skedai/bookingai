@@ -309,7 +309,10 @@ function OrderCard({
       <div className="border-t border-slate-100 pt-2 space-y-1">
         {(order.items || []).map((it, i) => (
           <div key={i} className="flex justify-between text-xs text-slate-700">
-            <span>{it.item_name} × {it.quantity}</span>
+            <span>
+              {it.item_name} × {it.quantity}
+              {it.rental_hours ? <span className="text-blue-500 ml-1">({it.rental_hours}h)</span> : null}
+            </span>
             <span className="text-slate-500">{fmt(it.subtotal, order.currency)}</span>
           </div>
         ))}
@@ -900,6 +903,7 @@ function ItemModal({
   const [vatRate, setVatRate] = useState(item?.vat_rate || 'VAT_20');
   const [itemCode, setItemCode] = useState(item?.item_code || '');
   const [unit, setUnit] = useState(item?.unit || 'XPP');
+  const [pricingType, setPricingType] = useState<'fixed' | 'hourly'>(item?.pricing_type || 'fixed');
   const [isActive, setIsActive] = useState(item ? item.is_active === 1 : true);
   const [photo, setPhoto] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -921,6 +925,7 @@ function ItemModal({
       form.append('is_active', isActive ? '1' : '0');
       form.append('vat_rate', vatRate);
       form.append('unit', unit);
+      form.append('pricing_type', pricingType);
       if (itemCode) form.append('item_code', itemCode);
       if (photo) form.append('photo', photo);
 
@@ -946,10 +951,30 @@ function ItemModal({
             <label className="text-xs text-slate-500 font-medium">Description</label>
             <textarea value={description} onChange={e => setDescription(e.target.value)} rows={2} placeholder="Short description" className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm resize-none" />
           </div>
+          <div>
+            <label className="text-xs text-slate-500 font-medium">Pricing type</label>
+            <div className="flex gap-2 mt-1">
+              <button type="button" onClick={() => setPricingType('fixed')}
+                className={`flex-1 py-2 text-sm font-medium rounded-lg border transition-colors ${pricingType === 'fixed' ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-500'}`}>
+                Fixed price
+              </button>
+              <button type="button" onClick={() => setPricingType('hourly')}
+                className={`flex-1 py-2 text-sm font-medium rounded-lg border transition-colors ${pricingType === 'hourly' ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-500'}`}>
+                Per hour (rental)
+              </button>
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-xs text-slate-500 font-medium">Price *</label>
-              <input value={price} onChange={e => setPrice(e.target.value)} type="number" min="0" step="0.01" placeholder="0.00" className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+              <label className="text-xs text-slate-500 font-medium">
+                {pricingType === 'hourly' ? 'Price per hour *' : 'Price *'}
+              </label>
+              <input value={price} onChange={e => setPrice(e.target.value)} type="number" min="0" step="0.01"
+                placeholder={pricingType === 'hourly' ? 'e.g. 500' : '0.00'}
+                className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+              {pricingType === 'hourly' && (
+                <p className="text-xs text-slate-400 mt-0.5">Customer picks hours when ordering. Min 1 hour.</p>
+              )}
             </div>
             <div>
               <label className="text-xs text-slate-500 font-medium">Currency</label>
@@ -1136,8 +1161,12 @@ function MenuTab() {
                   </div>
                 </div>
                 {item.description && <p className="text-xs text-slate-400 truncate mt-0.5">{item.description}</p>}
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-sm font-semibold text-slate-700">{fmt(item.price, item.currency)}</span>
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                  {item.pricing_type === 'hourly' ? (
+                    <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium">⏱ {item.price} {item.currency}/hr</span>
+                  ) : (
+                    <span className="text-sm font-semibold text-slate-700">{fmt(item.price, item.currency)}</span>
+                  )}
                   <span className={`text-xs px-1.5 py-0.5 rounded-full ${STOCK_BADGE[item.stock_type]}`}>{item.stock_type}</span>
                   {item.stock_type !== 'unlimited' && item.stock_limit != null && (
                     <span className="text-xs text-slate-400">{item.stock_limit - item.stock_used}/{item.stock_limit} left</span>

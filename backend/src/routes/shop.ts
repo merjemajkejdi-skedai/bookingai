@@ -263,11 +263,11 @@ shopRouter.post('/items', authenticateShopOrTenant, upload.single('photo'), asyn
         return res.status(500).json({ error: 'Photo upload failed', details: r2err.message });
       }
     }
-    const { name, description, price, currency, category_id, stock_type, stock_limit, sort_order, vat_rate, item_code, unit } = req.body;
+    const { name, description, price, currency, category_id, stock_type, stock_limit, sort_order, vat_rate, item_code, unit, pricing_type } = req.body;
     const id = crypto.randomUUID();
     await dbRun(
-      `INSERT INTO shop_menu_items (id,tenant_id,category_id,name,description,price,currency,photo_url,photo_filename,stock_type,stock_limit,sort_order,vat_rate,item_code,unit) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      id, tenantId, category_id || null, name, description, parseFloat(price), currency || 'ALL', photo_url, null, stock_type || 'unlimited', stock_limit ? parseInt(stock_limit) : null, sort_order ?? 0, vat_rate || 'VAT_20', item_code || null, unit || 'XPP',
+      `INSERT INTO shop_menu_items (id,tenant_id,category_id,name,description,price,currency,photo_url,photo_filename,stock_type,stock_limit,sort_order,vat_rate,item_code,unit,pricing_type) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      id, tenantId, category_id || null, name, description, parseFloat(price), currency || 'ALL', photo_url, null, stock_type || 'unlimited', stock_limit ? parseInt(stock_limit) : null, sort_order ?? 0, vat_rate || 'VAT_20', item_code || null, unit || 'XPP', pricing_type || 'fixed',
     );
     res.json({ success: true, data: { id, photo_url } });
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
@@ -318,15 +318,16 @@ shopRouter.put('/items/:id', authenticateShopOrTenant, upload.single('photo'), a
       }
     }
 
-    const { name, description, price, currency, category_id, stock_type, stock_limit, stock_used, is_active, sort_order, vat_rate, item_code, unit } = req.body;
+    const { name, description, price, currency, category_id, stock_type, stock_limit, stock_used, is_active, sort_order, vat_rate, item_code, unit, pricing_type } = req.body;
     await dbRun(
-      `UPDATE shop_menu_items SET name=?,description=?,price=?,currency=?,category_id=?,stock_type=?,stock_limit=?,stock_used=?,is_active=?,sort_order=?,vat_rate=?,item_code=?,unit=?,photo_url=COALESCE(?,photo_url),photo_filename=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=? AND tenant_id=?`,
+      `UPDATE shop_menu_items SET name=?,description=?,price=?,currency=?,category_id=?,stock_type=?,stock_limit=?,stock_used=?,is_active=?,sort_order=?,vat_rate=?,item_code=?,unit=?,pricing_type=COALESCE(?,pricing_type),photo_url=COALESCE(?,photo_url),photo_filename=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=? AND tenant_id=?`,
       name, description, parseFloat(price), currency || 'ALL', category_id || null,
       stock_type || 'unlimited', stock_limit !== undefined ? parseInt(stock_limit) : null,
       stock_used !== undefined ? parseInt(stock_used) : undefined,
       is_active !== undefined ? (is_active ? 1 : 0) : 1,
       sort_order ?? 0,
       vat_rate || 'VAT_20', item_code || null, unit || 'XPP',
+      pricing_type || null,
       photo_url,
       req.params.id, tenantId,
     );
@@ -461,7 +462,7 @@ shopRouter.post('/orders/manual', authenticateShopOrTenant, async (req: any, res
     }
 
     const { items, pickup_name, guest_phone, notes } = req.body as {
-      items: { item_id: string; quantity: number }[];
+      items: { item_id: string; quantity: number; rental_hours?: number }[];
       pickup_name?: string; guest_phone?: string; notes?: string;
     };
     if (!items || items.length === 0) {
@@ -472,7 +473,7 @@ shopRouter.post('/orders/manual', authenticateShopOrTenant, async (req: any, res
     const itemIds: string[] = items.map((i) => i.item_id);
     const ph = itemIds.map(() => '?').join(',');
     const menuItems = await dbAll(
-      `SELECT id, name, price, currency, stock_type, stock_limit, stock_used FROM shop_menu_items WHERE tenant_id=? AND id IN (${ph}) AND is_active=1`,
+      `SELECT id, name, price, currency, pricing_type, stock_type, stock_limit, stock_used FROM shop_menu_items WHERE tenant_id=? AND id IN (${ph}) AND is_active=1`,
       tenantId, ...itemIds,
     );
     const itemMap = new Map(menuItems.map((i: any) => [i.id, i]));
@@ -495,9 +496,13 @@ shopRouter.post('/orders/manual', authenticateShopOrTenant, async (req: any, res
     let total = 0;
     const orderLines = items.map((oi) => {
       const mi = itemMap.get(oi.item_id) as any;
-      const subtotal = parseFloat(mi.price) * oi.quantity;
+      const isHourly = (mi.pricing_type || 'fixed') === 'hourly';
+      const rentalHours = isHourly ? Math.max(1, parseInt(String(oi.rental_hours)) || 1) : null;
+      const subtotal = isHourly
+        ? parseFloat(mi.price) * oi.quantity * rentalHours!
+        : parseFloat(mi.price) * oi.quantity;
       total += subtotal;
-      return { item_id: oi.item_id, item_name: mi.name, item_price: parseFloat(mi.price), quantity: oi.quantity, subtotal, currency: mi.currency };
+      return { item_id: oi.item_id, item_name: mi.name, item_price: parseFloat(mi.price), quantity: oi.quantity, subtotal, currency: mi.currency, rental_hours: rentalHours };
     });
 
     // Next order number for today — use JS date string to avoid text=date cast error in PG
@@ -521,8 +526,8 @@ shopRouter.post('/orders/manual', authenticateShopOrTenant, async (req: any, res
     // Insert order items
     for (const line of orderLines) {
       await dbRun(
-        `INSERT INTO shop_order_items (id,order_id,tenant_id,item_id,item_name,item_price,quantity,subtotal) VALUES (?,?,?,?,?,?,?,?)`,
-        crypto.randomUUID(), orderId, tenantId, line.item_id, line.item_name, line.item_price, line.quantity, line.subtotal,
+        `INSERT INTO shop_order_items (id,order_id,tenant_id,item_id,item_name,item_price,quantity,subtotal,rental_hours) VALUES (?,?,?,?,?,?,?,?,?)`,
+        crypto.randomUUID(), orderId, tenantId, line.item_id, line.item_name, line.item_price, line.quantity, line.subtotal, line.rental_hours,
       );
     }
 
@@ -1166,6 +1171,7 @@ shopRouter.get('/public/:slug', async (req: any, res: Response) => {
     const [items, shopTenant] = await Promise.all([
       dbAll(
         `SELECT i.id, i.name, i.description, i.price, i.currency, i.photo_url, i.sort_order,
+                i.pricing_type,
                 c.name AS category_name, c.sort_order AS category_order
          FROM shop_menu_items i
          LEFT JOIN shop_menu_categories c ON c.id = i.category_id
@@ -1224,7 +1230,7 @@ shopRouter.post('/public/:slug/order', async (req: any, res: Response) => {
     const itemIds = items.map((i: any) => i.item_id);
     const ph = itemIds.map(() => '?').join(',');
     const menuItems = await dbAll(
-      `SELECT id, name, price, currency, stock_type, stock_limit, stock_used, is_active FROM shop_menu_items WHERE tenant_id=? AND id IN (${ph}) AND is_active=1`,
+      `SELECT id, name, price, currency, pricing_type, stock_type, stock_limit, stock_used, is_active FROM shop_menu_items WHERE tenant_id=? AND id IN (${ph}) AND is_active=1`,
       tenantId, ...itemIds,
     );
     const itemMap = new Map(menuItems.map((i: any) => [i.id, i]));
@@ -1242,9 +1248,13 @@ shopRouter.post('/public/:slug/order', async (req: any, res: Response) => {
     let total = 0;
     const orderLines = items.map((oi: any) => {
       const mi = itemMap.get(oi.item_id) as any;
-      const subtotal = parseFloat(mi.price) * oi.quantity;
+      const isHourly = (mi.pricing_type || 'fixed') === 'hourly';
+      const rentalHours = isHourly ? Math.max(1, parseInt(oi.rental_hours) || 1) : null;
+      const subtotal = isHourly
+        ? parseFloat(mi.price) * oi.quantity * rentalHours!
+        : parseFloat(mi.price) * oi.quantity;
       total += subtotal;
-      return { item_id: oi.item_id, item_name: mi.name, item_price: parseFloat(mi.price), quantity: oi.quantity, subtotal, currency: mi.currency };
+      return { item_id: oi.item_id, item_name: mi.name, item_price: parseFloat(mi.price), quantity: oi.quantity, subtotal, currency: mi.currency, rental_hours: rentalHours };
     });
 
     const today = new Date().toISOString().split('T')[0];
@@ -1265,8 +1275,8 @@ shopRouter.post('/public/:slug/order', async (req: any, res: Response) => {
 
     for (const line of orderLines) {
       await dbRun(
-        `INSERT INTO shop_order_items (id,order_id,tenant_id,item_id,item_name,item_price,quantity,subtotal) VALUES (?,?,?,?,?,?,?,?)`,
-        crypto.randomUUID(), orderId, tenantId, line.item_id, line.item_name, line.item_price, line.quantity, line.subtotal,
+        `INSERT INTO shop_order_items (id,order_id,tenant_id,item_id,item_name,item_price,quantity,subtotal,rental_hours) VALUES (?,?,?,?,?,?,?,?,?)`,
+        crypto.randomUUID(), orderId, tenantId, line.item_id, line.item_name, line.item_price, line.quantity, line.subtotal, line.rental_hours,
       );
     }
     for (const line of orderLines) {

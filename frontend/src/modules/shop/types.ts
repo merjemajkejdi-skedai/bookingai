@@ -74,6 +74,7 @@ export interface ShopItem {
   vat_rate?: string;
   item_code?: string;
   unit?: string;
+  pricing_type?: 'fixed' | 'hourly';
   is_active: number;
   sort_order: number;
   created_at: string;
@@ -88,6 +89,7 @@ export interface ShopOrderItem {
   item_price: number;
   quantity: number;
   subtotal: number;
+  rental_hours?: number;
 }
 
 export interface ShopOrder {
