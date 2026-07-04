@@ -738,6 +738,21 @@ function playNotificationSound(type: string) {
   if (type === 'none') return;
   try {
     const ctx = new AudioContext();
+    if (type === 'alarm') {
+      [0, 0.4, 0.8].forEach(startOffset => {
+        const osc  = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.setValueAtTime(960, ctx.currentTime + startOffset);
+        osc.type = 'square';
+        gain.gain.setValueAtTime(0.5, ctx.currentTime + startOffset);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + startOffset + 0.3);
+        osc.start(ctx.currentTime + startOffset);
+        osc.stop(ctx.currentTime + startOffset + 0.3);
+      });
+      return;
+    }
     const oscillator = ctx.createOscillator();
     const gainNode = ctx.createGain();
     oscillator.connect(gainNode);
@@ -823,6 +838,21 @@ function OrdersTab() {
     if (!audioUnlockedRef.current) return;
     const ctx = audioCtxRef.current;
     if (!ctx || ctx.state !== 'running') return;
+    if (type === 'alarm') {
+      [0, 0.4, 0.8].forEach(startOffset => {
+        const osc  = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.setValueAtTime(960, ctx.currentTime + startOffset);
+        osc.type = 'square';
+        gain.gain.setValueAtTime(0.5, ctx.currentTime + startOffset);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + startOffset + 0.3);
+        osc.start(ctx.currentTime + startOffset);
+        osc.stop(ctx.currentTime + startOffset + 0.3);
+      });
+      return;
+    }
     const oscillator = ctx.createOscillator();
     const gainNode = ctx.createGain();
     oscillator.connect(gainNode);
@@ -2116,6 +2146,7 @@ function ConfigTab() {
                 { val: 'bell',  label: '🔔 Bell',  desc: 'Classic bell' },
                 { val: 'ping',  label: '📳 Ping',  desc: 'Short and sharp' },
                 { val: 'ding',  label: '✨ Ding',  desc: 'Light and clear' },
+                { val: 'alarm', label: '🚨 Alarm', desc: 'Loud — 3 beeps' },
               ] as const).map(opt => (
                 <button
                   key={opt.val}

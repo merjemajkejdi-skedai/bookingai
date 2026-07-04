@@ -972,6 +972,8 @@ export async function runMigrations() {
       `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS inventory_alert_time TEXT DEFAULT '09:00'`,
       `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS inventory_alert_whatsapp INTEGER DEFAULT 0`,
       // shop_notify_001 — staff WhatsApp notifications + browser sound
+      `ALTER TABLE shop_config DROP CONSTRAINT IF EXISTS shop_config_notify_sound_check`,
+      `ALTER TABLE shop_config ADD CONSTRAINT shop_config_notify_sound_check CHECK (notify_sound IN ('chime', 'bell', 'ping', 'ding', 'alarm', 'none'))`,
       `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS staff_notify_number TEXT`,
       `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS staff_notify_enabled INTEGER DEFAULT 0`,
       `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS staff_notify_keepalive_time TEXT DEFAULT '08:00'`,
