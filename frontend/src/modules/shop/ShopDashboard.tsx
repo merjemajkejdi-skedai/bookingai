@@ -790,8 +790,57 @@ function OrdersTab() {
   const [deliveryInfo, setDeliveryInfo] = useState<any>(null);
   const [newOrderBanner, setNewOrderBanner] = useState(false);
   const [soundMuted, setSoundMuted]         = useState(false);
+  const [audioUnlocked, setAudioUnlocked]   = useState(false);
   const prevOrderIdsRef                     = useRef<Set<string>>(new Set());
   const isInitialLoadRef                    = useRef(true);
+  const audioCtxRef                         = useRef<AudioContext | null>(null);
+  const audioUnlockedRef                    = useRef(false);
+
+  useEffect(() => {
+    audioCtxRef.current = new AudioContext();
+
+    function unlockAudio() {
+      audioCtxRef.current?.resume().then(() => {
+        audioUnlockedRef.current = true;
+        setAudioUnlocked(true);
+      });
+      document.removeEventListener('click', unlockAudio);
+      document.removeEventListener('touchstart', unlockAudio);
+    }
+
+    document.addEventListener('click', unlockAudio);
+    document.addEventListener('touchstart', unlockAudio);
+
+    return () => {
+      document.removeEventListener('click', unlockAudio);
+      document.removeEventListener('touchstart', unlockAudio);
+      audioCtxRef.current?.close();
+    };
+  }, []);
+
+  function playOrderSound(type: string) {
+    if (type === 'none') return;
+    if (!audioUnlockedRef.current) return;
+    const ctx = audioCtxRef.current;
+    if (!ctx || ctx.state !== 'running') return;
+    const oscillator = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+    oscillator.connect(gainNode);
+    gainNode.connect(ctx.destination);
+    const profiles: Record<string, { freq: number; type: OscillatorType; duration: number }> = {
+      chime: { freq: 880,  type: 'sine',     duration: 0.6 },
+      bell:  { freq: 660,  type: 'sine',     duration: 0.8 },
+      ping:  { freq: 1200, type: 'sine',     duration: 0.2 },
+      ding:  { freq: 520,  type: 'triangle', duration: 0.4 },
+    };
+    const profile = profiles[type] || profiles['chime'];
+    oscillator.frequency.setValueAtTime(profile.freq, ctx.currentTime);
+    oscillator.type = profile.type;
+    gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + profile.duration);
+    oscillator.start(ctx.currentTime);
+    oscillator.stop(ctx.currentTime + profile.duration);
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -819,7 +868,7 @@ function OrdersTab() {
           if (newIds.length > 0) {
             setNewOrderBanner(true);
             if (!soundMuted && shopConfig?.notify_sound_enabled !== false) {
-              playNotificationSound(shopConfig?.notify_sound || 'chime');
+              playOrderSound(shopConfig?.notify_sound || 'chime');
             }
           }
         }
@@ -884,6 +933,12 @@ function OrdersTab() {
   return (
     <div className="flex flex-col gap-4 h-full">
       <NewOrderBanner visible={newOrderBanner} onDismiss={() => setNewOrderBanner(false)} />
+      {!audioUnlocked && (
+        <div className="w-full bg-amber-50 border border-amber-200 text-amber-700 px-4 py-2 rounded-xl flex items-center gap-2 text-sm">
+          <span>🔔</span>
+          <span>Tap anywhere to enable sound alerts</span>
+        </div>
+      )}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap sm:gap-3">
         <div className="flex items-center gap-2">
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
