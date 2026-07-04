@@ -58,4 +58,29 @@ export function startShopCron() {
       console.error('[Inventory] Cron error:', err);
     }
   }, 60 * 1000);
+
+  // Staff keepalive reminder — fires at the configured time each day
+  setInterval(async () => {
+    try {
+      const now = new Date().toLocaleTimeString('en-GB', {
+        timeZone: 'Europe/Tirane',
+        hour: '2-digit', minute: '2-digit', hour12: false,
+      });
+      const shops = await dbAll(
+        `SELECT tenant_id FROM shop_config
+         WHERE staff_notify_enabled = 1
+           AND staff_notify_number IS NOT NULL
+           AND staff_notify_keepalive_time = ?`,
+        now,
+      );
+      for (const shop of shops) {
+        const { sendStaffKeepaliveReminder } = await import('../services/shopNotifications.js');
+        await sendStaffKeepaliveReminder(shop.tenant_id as string).catch(
+          (err: any) => console.error('[Shop notify] Keepalive error:', err.message),
+        );
+      }
+    } catch (err) {
+      console.error('[Shop notify] Keepalive cron error:', err);
+    }
+  }, 60 * 1000);
 }

@@ -511,6 +511,11 @@ const SCHEMA = `
     fiscal_initial_cash REAL DEFAULT 0,
     fiscal_default_client TEXT DEFAULT 'Klient i Pergjithshem',
     fiscal_environment TEXT DEFAULT 'test',
+    staff_notify_number TEXT,
+    staff_notify_enabled INTEGER DEFAULT 0,
+    staff_notify_keepalive_time TEXT DEFAULT '08:00',
+    notify_sound TEXT DEFAULT 'chime',
+    notify_sound_enabled INTEGER DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
   );
@@ -966,6 +971,12 @@ export async function runMigrations() {
       `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS inventory_alert_mode TEXT DEFAULT 'daily'`,
       `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS inventory_alert_time TEXT DEFAULT '09:00'`,
       `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS inventory_alert_whatsapp INTEGER DEFAULT 0`,
+      // shop_notify_001 — staff WhatsApp notifications + browser sound
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS staff_notify_number TEXT`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS staff_notify_enabled INTEGER DEFAULT 0`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS staff_notify_keepalive_time TEXT DEFAULT '08:00'`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS notify_sound TEXT DEFAULT 'chime'`,
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS notify_sound_enabled INTEGER DEFAULT 1`,
       `ALTER TABLE shop_menu_items ADD COLUMN IF NOT EXISTS stock_mode TEXT DEFAULT 'simple'`,
       `CREATE TABLE IF NOT EXISTS inventory_categories (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, name TEXT NOT NULL, sort_order INTEGER DEFAULT 0, created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP), UNIQUE(tenant_id, name))`,
       `CREATE TABLE IF NOT EXISTS inventory_suppliers (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, name TEXT NOT NULL, contact TEXT, phone TEXT, email TEXT, notes TEXT, is_active INTEGER DEFAULT 1, created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP), updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP))`,
@@ -1338,6 +1349,20 @@ export async function runMigrations() {
   // shop_menu_docs_001 — PDF/URL menu documents
   exec(`CREATE TABLE IF NOT EXISTS shop_menu_documents (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, label TEXT NOT NULL, doc_type TEXT NOT NULL CHECK (doc_type IN ('pdf', 'url')), file_url TEXT, external_url TEXT, sort_order INTEGER DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`);
   exec(`CREATE INDEX IF NOT EXISTS idx_shop_menu_docs_tenant ON shop_menu_documents(tenant_id, sort_order)`);
+
+  // shop_notify_001 — staff WhatsApp notifications + browser sound
+  const shopNotifyCols = prepare("SELECT name FROM pragma_table_info('shop_config')")
+    .all().map((r: any) => r.name as string);
+  if (!shopNotifyCols.includes('staff_notify_number'))
+    exec('ALTER TABLE shop_config ADD COLUMN staff_notify_number TEXT');
+  if (!shopNotifyCols.includes('staff_notify_enabled'))
+    exec('ALTER TABLE shop_config ADD COLUMN staff_notify_enabled INTEGER DEFAULT 0');
+  if (!shopNotifyCols.includes('staff_notify_keepalive_time'))
+    exec("ALTER TABLE shop_config ADD COLUMN staff_notify_keepalive_time TEXT DEFAULT '08:00'");
+  if (!shopNotifyCols.includes('notify_sound'))
+    exec("ALTER TABLE shop_config ADD COLUMN notify_sound TEXT DEFAULT 'chime'");
+  if (!shopNotifyCols.includes('notify_sound_enabled'))
+    exec('ALTER TABLE shop_config ADD COLUMN notify_sound_enabled INTEGER DEFAULT 1');
 
   console.log('✅ SQLite migrations complete');
 }

@@ -45,6 +45,11 @@ export interface ShopConfig {
   tiktok_url?: string;
   website_url?: string;
   phone?: string;
+  staff_notify_number?: string;
+  staff_notify_enabled?: boolean | number;
+  staff_notify_keepalive_time?: string;
+  notify_sound?: string;
+  notify_sound_enabled?: boolean | number;
 }
 
 export interface ShopCategory {

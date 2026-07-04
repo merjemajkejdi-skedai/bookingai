@@ -50,6 +50,16 @@ export async function runShopAgent(
       dbGet(`SELECT * FROM tenants WHERE id = ?`, tenantId),
     ]);
 
+    // Silently ignore keepalive replies from the configured staff notify number
+    if (config?.staff_notify_enabled && config?.staff_notify_number) {
+      const cleanNotify = String(config.staff_notify_number).replace(/\D/g, '');
+      const cleanGuest  = guestPhone.replace(/\D/g, '');
+      if (cleanNotify && (cleanGuest === cleanNotify || cleanGuest.endsWith(cleanNotify) || cleanNotify.endsWith(cleanGuest))) {
+        console.log(`[Shop] Ignoring message from staff notify number: ${guestPhone}`);
+        return '';
+      }
+    }
+
     const { getCurrentDeliveryTime } = await import('../services/deliveryTime.js');
     const deliveryInfo = await getCurrentDeliveryTime(tenantId);
 

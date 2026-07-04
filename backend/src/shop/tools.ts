@@ -282,6 +282,9 @@ export async function executeShopTool(
 
       console.log('[Shop create_order] ✅ order created:', orderId, 'number:', orderNumber);
 
+      const { sendStaffOrderNotification } = await import('../services/shopNotifications.js');
+      sendStaffOrderNotification(tenantId, orderId).catch(() => {});
+
       const { getCurrentDeliveryTime } = await import('../services/deliveryTime.js');
       const deliveryInfo = await getCurrentDeliveryTime(tenantId);
 

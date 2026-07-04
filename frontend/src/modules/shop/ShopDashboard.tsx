@@ -734,6 +734,51 @@ function ManualOrderModal({
 
 // ── Orders Tab ─────────────────────────────────────────────────────────────────
 
+function playNotificationSound(type: string) {
+  if (type === 'none') return;
+  try {
+    const ctx = new AudioContext();
+    const oscillator = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+    oscillator.connect(gainNode);
+    gainNode.connect(ctx.destination);
+    const profiles: Record<string, { freq: number; type: OscillatorType; duration: number }> = {
+      chime: { freq: 880,  type: 'sine',     duration: 0.6 },
+      bell:  { freq: 660,  type: 'sine',     duration: 0.8 },
+      ping:  { freq: 1200, type: 'sine',     duration: 0.2 },
+      ding:  { freq: 520,  type: 'triangle', duration: 0.4 },
+    };
+    const profile = profiles[type] || profiles['chime'];
+    oscillator.frequency.setValueAtTime(profile.freq, ctx.currentTime);
+    oscillator.type = profile.type;
+    gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + profile.duration);
+    oscillator.start(ctx.currentTime);
+    oscillator.stop(ctx.currentTime + profile.duration);
+  } catch { /* browser may block audio without user gesture */ }
+}
+
+function NewOrderBanner({ visible, onDismiss }: { visible: boolean; onDismiss: () => void }) {
+  useEffect(() => {
+    if (!visible) return;
+    const t = setTimeout(onDismiss, 10000);
+    return () => clearTimeout(t);
+  }, [visible, onDismiss]);
+  if (!visible) return null;
+  return (
+    <div
+      onClick={onDismiss}
+      className="w-full bg-teal-500 text-white px-4 py-3 rounded-xl flex items-center justify-between cursor-pointer animate-pulse shadow-lg mb-3"
+    >
+      <div className="flex items-center gap-2">
+        <span className="text-xl">🛎️</span>
+        <span className="font-semibold text-sm">New order received!</span>
+      </div>
+      <span className="text-xs opacity-75">Tap to dismiss</span>
+    </div>
+  );
+}
+
 function OrdersTab() {
   const [orders, setOrders] = useState<ShopOrder[]>([]);
   const [shopConfig, setShopConfig] = useState<ShopConfig | null>(null);
@@ -743,6 +788,10 @@ function OrdersTab() {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [showManualOrderModal, setShowManualOrderModal] = useState(false);
   const [deliveryInfo, setDeliveryInfo] = useState<any>(null);
+  const [newOrderBanner, setNewOrderBanner] = useState(false);
+  const [soundMuted, setSoundMuted]         = useState(false);
+  const prevOrderIdsRef                     = useRef<Set<string>>(new Set());
+  const isInitialLoadRef                    = useRef(true);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -754,7 +803,7 @@ function OrdersTab() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Silent background polling — no spinner, no error display, no clearing orders on failure
+  // Silent background polling — detects new orders for sound + banner
   useEffect(() => {
     let isMounted = true;
     let interval: ReturnType<typeof setInterval> | null = null;
@@ -763,7 +812,20 @@ function OrdersTab() {
       if (!isMounted) return;
       try {
         const data = await shopApi.getOrders('all', date);
-        if (isMounted) setOrders(data);
+        if (!isMounted) return;
+
+        if (!isInitialLoadRef.current) {
+          const newIds = data.filter((o: any) => !prevOrderIdsRef.current.has(o.id));
+          if (newIds.length > 0) {
+            setNewOrderBanner(true);
+            if (!soundMuted && shopConfig?.notify_sound_enabled !== false) {
+              playNotificationSound(shopConfig?.notify_sound || 'chime');
+            }
+          }
+        }
+        prevOrderIdsRef.current = new Set(data.map((o: any) => o.id));
+        isInitialLoadRef.current = false;
+        setOrders(data);
       } catch {
         // swallow — existing orders stay visible; retry on next tick
       }
@@ -821,6 +883,7 @@ function OrdersTab() {
 
   return (
     <div className="flex flex-col gap-4 h-full">
+      <NewOrderBanner visible={newOrderBanner} onDismiss={() => setNewOrderBanner(false)} />
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap sm:gap-3">
         <div className="flex items-center gap-2">
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
@@ -829,6 +892,13 @@ function OrdersTab() {
         </div>
         <div className="flex items-center gap-2">
           <DeliveryTimeBadge />
+          <button
+            onClick={() => setSoundMuted(m => !m)}
+            title={soundMuted ? 'Unmute order sounds' : 'Mute order sounds'}
+            className={`p-2 rounded-lg border text-sm transition-colors ${soundMuted ? 'border-slate-200 text-slate-400 bg-slate-50' : 'border-teal-200 text-teal-600 bg-teal-50'}`}
+          >
+            {soundMuted ? '🔇' : '🔔'}
+          </button>
           {shopConfig?.manual_orders_enabled && (
             <button
               onClick={() => setShowManualOrderModal(true)}
@@ -1966,6 +2036,87 @@ function ConfigTab() {
           </div>
         </div>
       )}
+
+      {/* Notifications */}
+      <ConfigSection
+        title="Notifications"
+        onSave={() => saveSection('notifications', ['staff_notify_enabled', 'staff_notify_number', 'staff_notify_keepalive_time', 'notify_sound', 'notify_sound_enabled'])}
+        saving={savingSection === 'notifications'}
+        saved={savedSection === 'notifications'}
+      >
+        {/* Browser sound alerts */}
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-slate-700">Browser sound alerts</p>
+            <p className="text-xs text-slate-400 mt-0.5">Play a sound when a new order arrives on this device</p>
+          </div>
+          <Toggle label="" value={cfg.notify_sound_enabled !== false && cfg.notify_sound_enabled !== 0} onChange={v => set('notify_sound_enabled', v)} />
+        </div>
+        {(cfg.notify_sound_enabled !== false && cfg.notify_sound_enabled !== 0) && (
+          <div>
+            <label className="text-xs font-medium text-slate-600">Sound type</label>
+            <div className="grid grid-cols-2 gap-2 mt-1.5">
+              {([
+                { val: 'chime', label: '🎵 Chime', desc: 'Soft and pleasant' },
+                { val: 'bell',  label: '🔔 Bell',  desc: 'Classic bell' },
+                { val: 'ping',  label: '📳 Ping',  desc: 'Short and sharp' },
+                { val: 'ding',  label: '✨ Ding',  desc: 'Light and clear' },
+              ] as const).map(opt => (
+                <button
+                  key={opt.val}
+                  onClick={() => { set('notify_sound', opt.val); playNotificationSound(opt.val); }}
+                  className={`p-2.5 rounded-xl border text-left transition-colors ${(cfg.notify_sound || 'chime') === opt.val ? 'border-teal-500 bg-teal-50' : 'border-slate-200 bg-white'}`}
+                >
+                  <p className="text-sm font-medium text-slate-700">{opt.label}</p>
+                  <p className="text-xs text-slate-400">{opt.desc}</p>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-slate-400 mt-1.5">Click a sound to preview it</p>
+          </div>
+        )}
+        {/* WhatsApp staff notification */}
+        <div className="border-t border-slate-100 pt-3 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-slate-700">WhatsApp order alerts</p>
+              <p className="text-xs text-slate-400 mt-0.5">Send a WhatsApp message to staff when a new order arrives</p>
+            </div>
+            <Toggle label="" value={!!cfg.staff_notify_enabled} onChange={v => set('staff_notify_enabled', v)} />
+          </div>
+          {!!cfg.staff_notify_enabled && (
+            <div className="space-y-3 pl-2 border-l-2 border-slate-100">
+              <div>
+                <label className="text-xs font-medium text-slate-600">Staff WhatsApp number</label>
+                <input
+                  type="tel"
+                  value={cfg.staff_notify_number || ''}
+                  onChange={e => set('staff_notify_number', e.target.value)}
+                  placeholder="+355XXXXXXXXX"
+                  className="w-full mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                />
+                <p className="text-xs text-slate-400 mt-0.5">This number must message the shop number daily to receive free WhatsApp notifications.</p>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600">Daily reminder time</label>
+                <input
+                  type="time"
+                  value={cfg.staff_notify_keepalive_time || '08:00'}
+                  onChange={e => set('staff_notify_keepalive_time', e.target.value)}
+                  className="mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                />
+                <p className="text-xs text-slate-400 mt-0.5">A daily reminder is sent at this time prompting staff to reply and keep notifications active.</p>
+              </div>
+              {cfg.staff_notify_number && (
+                <div className="bg-amber-50 rounded-lg px-3 py-2">
+                  <p className="text-xs text-amber-700 font-medium">⚠️ Setup required</p>
+                  <p className="text-xs text-amber-600 mt-0.5">Staff must send at least one WhatsApp message to the shop number today to activate notifications.</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </ConfigSection>
 
       {/* Save all fallback */}
       <div className="flex justify-end pt-2">

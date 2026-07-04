@@ -104,17 +104,21 @@ shopRouter.put('/config', authenticateShopOrTenant, async (req: any, res: Respon
       inventory_enabled, inventory_alert_mode, inventory_alert_time, inventory_alert_whatsapp,
       delivery_threshold_1, delivery_threshold_2,
       delivery_time_1, delivery_time_2, delivery_time_3,
+      staff_notify_number, staff_notify_enabled, staff_notify_keepalive_time,
+      notify_sound, notify_sound_enabled,
     } = req.body;
     console.log('[Config PUT] received for tenant', tenantId, JSON.stringify({ shop_name, pickup_mode, agent_personality, manual_orders_enabled, qr_ordering_enabled, estimated_pickup_minutes }));
     // Null-safe boolean conversions: undefined/null → null (not 0) so COALESCE below can preserve existing DB values
-    const manualEnabled      = manual_orders_enabled      != null ? (manual_orders_enabled      ? 1 : 0) : null;
-    const qrEnabled          = qr_ordering_enabled        != null ? (qr_ordering_enabled        ? 1 : 0) : null;
-    const qrName             = qr_collect_name            != null ? (qr_collect_name            ? 1 : 0) : null;
-    const qrTable            = qr_collect_table           != null ? (qr_collect_table           ? 1 : 0) : null;
-    const slug               = qr_slug != null ? String(qr_slug).toLowerCase().trim() || null : null;
-    const fiscalEnabledV     = fiscal_enabled             != null ? (fiscal_enabled             ? 1 : 0) : null;
-    const inventoryEnabledV  = inventory_enabled          != null ? (inventory_enabled          ? 1 : 0) : null;
-    const inventoryAlertWAV  = inventory_alert_whatsapp   != null ? (inventory_alert_whatsapp   ? 1 : 0) : null;
+    const manualEnabled        = manual_orders_enabled      != null ? (manual_orders_enabled      ? 1 : 0) : null;
+    const qrEnabled            = qr_ordering_enabled        != null ? (qr_ordering_enabled        ? 1 : 0) : null;
+    const qrName               = qr_collect_name            != null ? (qr_collect_name            ? 1 : 0) : null;
+    const qrTable              = qr_collect_table           != null ? (qr_collect_table           ? 1 : 0) : null;
+    const slug                 = qr_slug != null ? String(qr_slug).toLowerCase().trim() || null : null;
+    const fiscalEnabledV       = fiscal_enabled             != null ? (fiscal_enabled             ? 1 : 0) : null;
+    const inventoryEnabledV    = inventory_enabled          != null ? (inventory_enabled          ? 1 : 0) : null;
+    const inventoryAlertWAV    = inventory_alert_whatsapp   != null ? (inventory_alert_whatsapp   ? 1 : 0) : null;
+    const staffNotifyEnabledV  = staff_notify_enabled       != null ? (staff_notify_enabled       ? 1 : 0) : null;
+    const notifySoundEnabledV  = notify_sound_enabled       != null ? (notify_sound_enabled       ? 1 : 0) : null;
     const newId = crypto.randomUUID();
     await dbRun(
       `INSERT INTO shop_config
@@ -126,8 +130,10 @@ shopRouter.put('/config', authenticateShopOrTenant, async (req: any, res: Respon
           fiscal_tcr_code,fiscal_busun_code,fiscal_soft_code,fiscal_initial_cash,
           fiscal_default_client,fiscal_environment,fiscal_middleware,
           inventory_enabled,inventory_alert_mode,inventory_alert_time,inventory_alert_whatsapp,
-          delivery_threshold_1,delivery_threshold_2,delivery_time_1,delivery_time_2,delivery_time_3)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+          delivery_threshold_1,delivery_threshold_2,delivery_time_1,delivery_time_2,delivery_time_3,
+          staff_notify_number,staff_notify_enabled,staff_notify_keepalive_time,
+          notify_sound,notify_sound_enabled)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT (tenant_id) DO UPDATE SET
          shop_name=COALESCE(EXCLUDED.shop_name,shop_config.shop_name),
          opening_hours=COALESCE(EXCLUDED.opening_hours,shop_config.opening_hours),
@@ -170,6 +176,11 @@ shopRouter.put('/config', authenticateShopOrTenant, async (req: any, res: Respon
          delivery_time_1=COALESCE(EXCLUDED.delivery_time_1,shop_config.delivery_time_1),
          delivery_time_2=COALESCE(EXCLUDED.delivery_time_2,shop_config.delivery_time_2),
          delivery_time_3=COALESCE(EXCLUDED.delivery_time_3,shop_config.delivery_time_3),
+         staff_notify_number=COALESCE(EXCLUDED.staff_notify_number,shop_config.staff_notify_number),
+         staff_notify_enabled=COALESCE(EXCLUDED.staff_notify_enabled,shop_config.staff_notify_enabled),
+         staff_notify_keepalive_time=COALESCE(EXCLUDED.staff_notify_keepalive_time,shop_config.staff_notify_keepalive_time),
+         notify_sound=COALESCE(EXCLUDED.notify_sound,shop_config.notify_sound),
+         notify_sound_enabled=COALESCE(EXCLUDED.notify_sound_enabled,shop_config.notify_sound_enabled),
          updated_at=CURRENT_TIMESTAMP`,
       newId, tenantId, shop_name, opening_hours, estimated_pickup_minutes, pickup_mode, agent_personality,
       fallback_message, fallback_backup_number, fallback_after_attempts, manualEnabled,
@@ -181,6 +192,8 @@ shopRouter.put('/config', authenticateShopOrTenant, async (req: any, res: Respon
       inventoryEnabledV, inventory_alert_mode, inventory_alert_time, inventoryAlertWAV,
       delivery_threshold_1, delivery_threshold_2,
       delivery_time_1, delivery_time_2, delivery_time_3,
+      staff_notify_number, staffNotifyEnabledV, staff_notify_keepalive_time,
+      notify_sound, notifySoundEnabledV,
     );
     console.log('[Config PUT] upsert complete for tenant', tenantId);
     res.json({ success: true });
@@ -569,6 +582,10 @@ shopRouter.post('/orders/manual', authenticateShopOrTenant, async (req: any, res
       order_number: orderNumber, total,
     });
     console.log(`[Shop] Manual order #${orderNumber} created by staff`);
+    const { sendStaffOrderNotification } = await import('../services/shopNotifications.js');
+    sendStaffOrderNotification(tenantId, orderId).catch((err: any) =>
+      console.error('[Shop notify] Manual order notification failed:', err.message),
+    );
     const deliveryInfo = await getCurrentDeliveryTime(tenantId);
     res.json({ success: true, data: { order_id: orderId, order_number: orderNumber, total, status: 'in_progress', estimated_minutes: deliveryInfo.minutes, delivery_label: deliveryInfo.label } });
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
@@ -1312,6 +1329,10 @@ shopRouter.post('/public/:slug/order', async (req: any, res: Response) => {
     }
 
     console.log(`[Shop QR] Order #${orderNumber} from ${customer_name || 'Walk-in'}${table_name ? ` @ ${table_name}` : ''}`);
+    const { sendStaffOrderNotification } = await import('../services/shopNotifications.js');
+    sendStaffOrderNotification(tenantId, orderId).catch((err: any) =>
+      console.error('[Shop notify] QR order notification failed:', err.message),
+    );
     const deliveryInfo = await getCurrentDeliveryTime(tenantId);
     res.json({ success: true, data: { order_id: orderId, order_number: orderNumber, total, customer_name: customer_name || 'Walk-in', table_name: table_name || null, pickup_mode: cfg.pickup_mode || 'estimated', estimated_minutes: deliveryInfo.minutes, delivery_label: deliveryInfo.label } });
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
