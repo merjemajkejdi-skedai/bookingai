@@ -77,6 +77,71 @@ async function dbGet(sql: string, ...p: unknown[]) {
 }
 
 // ---------------------------------------------------------------------------
+// Shop order reminder — in-memory tracker for incomplete WhatsApp orders
+// ---------------------------------------------------------------------------
+interface ReminderEntry {
+  timer:    ReturnType<typeof setTimeout>;
+  tenantId: string;
+  phone:    string;
+  reminded: boolean;
+}
+
+const orderReminderMap = new Map<string, ReminderEntry>();
+
+async function checkRecentOrder(tenantId: string, phone: string): Promise<boolean> {
+  const sql = isPg
+    ? `SELECT id FROM shop_orders WHERE tenant_id = ? AND guest_phone = ? AND created_at >= NOW() - INTERVAL '5 minutes' LIMIT 1`
+    : `SELECT id FROM shop_orders WHERE tenant_id = ? AND guest_phone = ? AND created_at >= datetime('now', '-5 minutes') LIMIT 1`;
+  const row = await dbGet(sql, tenantId, phone);
+  return row != null;
+}
+
+export function cancelOrderReminder(tenantId: string, phone: string): void {
+  const key = `${tenantId}:${phone}`;
+  const existing = orderReminderMap.get(key);
+  if (existing && !existing.reminded) {
+    clearTimeout(existing.timer);
+    orderReminderMap.delete(key);
+    console.log(`[Shop reminder] Cancelled for ${phone} — customer replied`);
+  }
+}
+
+export function scheduleOrderReminder(
+  tenantId:     string,
+  phone:        string,
+  sendReminder: () => Promise<void>,
+): void {
+  const key = `${tenantId}:${phone}`;
+  const existing = orderReminderMap.get(key);
+
+  if (existing?.reminded) return;
+  if (existing) clearTimeout(existing.timer);
+
+  const timer = setTimeout(async () => {
+    const hasOrder = await checkRecentOrder(tenantId, phone).catch(() => false);
+    if (hasOrder) { orderReminderMap.delete(key); return; }
+
+    const entry = orderReminderMap.get(key);
+    if (entry) entry.reminded = true;
+
+    try {
+      await sendReminder();
+      console.log(`[Shop reminder] ✅ Sent to ${phone}`);
+    } catch (err: any) {
+      console.error(`[Shop reminder] ❌ Failed to send to ${phone}:`, err.message);
+    }
+  }, 2 * 60 * 1000);
+
+  orderReminderMap.set(key, { timer, tenantId, phone, reminded: false });
+}
+
+export const REMINDER_PROMPT =
+  "The customer started ordering but hasn't completed their order in the last 2 minutes " +
+  "and hasn't replied. Send them ONE short, friendly reminder message saying their order " +
+  "isn't confirmed yet and ask them to reply to complete it. Match the language they were " +
+  "using. Keep it to 1-2 sentences maximum. Do not list menu items or prices.";
+
+// ---------------------------------------------------------------------------
 // Timeout + fallback helpers
 // ---------------------------------------------------------------------------
 
@@ -221,14 +286,25 @@ async function handleMetaWebhook(req: Request, res: Response) {
         return;
       }
     } else if (tenantType === 'shop') {
+      cancelOrderReminder(tenant.id, customerPhone);
+      let shopToolsUsed: string[] = [];
       try {
-        reply = await withTimeout(runShopAgent(body, customerPhone, tenant.id), 15_000);
+        const agentResult = await withTimeout(runShopAgent(body, customerPhone, tenant.id), 15_000);
+        reply = agentResult.reply;
+        shopToolsUsed = agentResult.toolsUsed;
       } catch (agentErr: any) {
         console.error('[Meta] ❌ Shop agent error/timeout:', agentErr?.message ?? agentErr);
         const fallback = await getFallbackMessage(tenant);
         await sendWhatsAppMessage(customerPhone, fallback, tenant)
           .catch((e: any) => console.error('[Meta] fallback send failed:', e.message));
         return;
+      }
+      if (reply && shopToolsUsed.length > 0) {
+        scheduleOrderReminder(tenant.id, customerPhone, async () => {
+          const { reply: reminderReply } = await runShopAgent(REMINDER_PROMPT, customerPhone, tenant.id, undefined, true);
+          if (!reminderReply) return;
+          await sendWhatsAppMessage(customerPhone, reminderReply, tenant);
+        });
       }
     } else {
       const history = getSession(customerPhone);
@@ -410,9 +486,13 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
 
     // ── Shop — WhatsApp ordering agent ────────────────────────────────────
     if (tenantType === 'shop') {
-      let shopReply: string;
+      cancelOrderReminder(tenant.id, phone);
+      let shopReply = '';
+      let shopToolsUsed: string[] = [];
       try {
-        shopReply = await withTimeout(runShopAgent(messageText, phone, tenant.id), 15_000);
+        const agentResult = await withTimeout(runShopAgent(messageText, phone, tenant.id), 15_000);
+        shopReply = agentResult.reply;
+        shopToolsUsed = agentResult.toolsUsed;
       } catch (agentErr: any) {
         console.error('❌ Shop agent error/timeout:', agentErr?.message ?? agentErr);
         const fallback = await getFallbackMessage(tenant);
@@ -444,6 +524,13 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
           } catch (emailErr: any) {
             console.error('[Email fallback] Shop failed:', emailErr.message);
           }
+        }
+        if (shopToolsUsed.length > 0) {
+          scheduleOrderReminder(tenant.id, phone, async () => {
+            const { reply: reminderReply } = await runShopAgent(REMINDER_PROMPT, phone, tenant.id, undefined, true);
+            if (!reminderReply) return;
+            await sendWhatsAppMessage(phone, reminderReply, tenant);
+          });
         }
       }
       return;

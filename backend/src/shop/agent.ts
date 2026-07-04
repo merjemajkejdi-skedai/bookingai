@@ -36,10 +36,12 @@ async function callClaudeWithRetry(
 }
 
 export async function runShopAgent(
-  message: string,
-  guestPhone: string,
-  tenantId: string,
-): Promise<string> {
+  message:        string,
+  guestPhone:     string,
+  tenantId:       string,
+  _mediaUrl?:     string,
+  isReminderMode: boolean = false,
+): Promise<{ reply: string; toolsUsed: string[] }> {
   console.log('[Shop] *** runShopAgent called, tenantId:', tenantId, 'phone:', guestPhone);
   console.log(`[Shop] runShopAgent tenantId=${tenantId} phone=${guestPhone}`);
   console.log('[Shop] tools loaded:', shopTools.map(t => t.name));
@@ -56,7 +58,7 @@ export async function runShopAgent(
       const cleanGuest  = guestPhone.replace(/\D/g, '');
       if (cleanNotify && (cleanGuest === cleanNotify || cleanGuest.endsWith(cleanNotify) || cleanNotify.endsWith(cleanGuest))) {
         console.log(`[Shop] Ignoring message from staff notify number: ${guestPhone}`);
-        return '';
+        return { reply: '', toolsUsed: [] };
       }
     }
 
@@ -100,6 +102,24 @@ export async function runShopAgent(
     let finalReply = '';
     let pendingMenuPdf: { url: string; label: string } | null = null;
 
+    // Reminder mode: one quick call with conversation history for language context,
+    // no tools, not saved to history
+    if (isReminderMode) {
+      const resp = await callClaudeWithRetry(anthropic, {
+        model:      process.env.CLAUDE_MODEL || 'claude-sonnet-4-6',
+        max_tokens: 200,
+        system:     systemPrompt,
+        messages,
+      });
+      const reply = resp.content
+        .filter(b => b.type === 'text')
+        .map(b => (b as Anthropic.TextBlock).text)
+        .join('');
+      return { reply, toolsUsed: [] };
+    }
+
+    const toolsUsed: string[] = [];
+
     // Agentic tool-use loop
     while (true) {
       console.log('[Shop] calling Claude with', shopTools.length, 'tools, messages:', messages.length);
@@ -121,6 +141,7 @@ export async function runShopAgent(
           try {
             const result = await executeShopTool(block.name, block.input as any, tenantId, guestPhone);
             toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) });
+            toolsUsed.push(block.name);
 
             // Track a single PDF document to send after the text reply
             if (block.name === 'get_menu_documents' && result.found && Array.isArray(result.documents)) {
@@ -179,7 +200,7 @@ export async function runShopAgent(
       JSON.stringify(updatedHistory), new Date().toISOString(), tenantId, guestPhone,
     );
 
-    return finalReply;
+    return { reply: finalReply, toolsUsed };
 
   } catch (err: any) {
     console.error('[Shop] Agent error:', err.message);
@@ -209,11 +230,11 @@ export async function runShopAgent(
       if (backupNumber && errorCount >= afterAttempts) {
         reply += `\n\nPlease contact us directly on WhatsApp:\n📱 ${backupNumber}`;
       }
-      return reply;
+      return { reply, toolsUsed: [] };
 
     } catch (fallbackErr: any) {
       console.error('[Shop] Fallback config load failed:', fallbackErr.message);
-      return 'We are temporarily unavailable. Please try again shortly.';
+      return { reply: 'We are temporarily unavailable. Please try again shortly.', toolsUsed: [] };
     }
   }
 }

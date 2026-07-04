@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { isPg, prepare, queryOne } from '../db/database.js';
 import { getSession, updateSession } from './sessions.js';
-import { bufferMessage } from './webhook.js';
+import { bufferMessage, cancelOrderReminder, scheduleOrderReminder, REMINDER_PROMPT } from './webhook.js';
 import { sendWhatsAppMessage } from './twilio.js';
 import { downloadMetaMedia } from './meta.js';
 import { uploadToR2 } from '../utils/r2.js';
@@ -181,12 +181,18 @@ metaRouter.post('/meta/webhook', async (req: Request, res: Response) => {
           // ── All other tenant types ────────────────────────────────────────────
           const history = getSession(customerPhone);
           let reply = '';
+          let shopToolsUsed: string[] = [];
+
+          // Cancel any pending reminder — customer sent a new message
+          if (tenantType === 'shop') cancelOrderReminder(tenant.id, customerPhone);
 
           try {
             if (tenantType === 'skedai') {
               reply = await withTimeout(runSkedAIAgent(textToAgent, customerPhone, tenant.id), 15_000);
             } else if (tenantType === 'shop') {
-              reply = await withTimeout(runShopAgent(textToAgent, customerPhone, tenant.id), 15_000);
+              const agentResult = await withTimeout(runShopAgent(textToAgent, customerPhone, tenant.id), 15_000);
+              reply = agentResult.reply;
+              shopToolsUsed = agentResult.toolsUsed;
             } else if (tenantType === 'art_event') {
               reply = await withTimeout(runArtEventAgent(textToAgent, history, customerPhone, tenant.id), 15_000);
             } else if (tenantType === 'art_class') {
@@ -230,6 +236,15 @@ metaRouter.post('/meta/webhook', async (req: Request, res: Response) => {
             } catch (emailErr: any) {
               console.error('[Meta] Email fallback failed:', emailErr.message);
             }
+          }
+
+          // Schedule reminder for active shop ordering conversations
+          if (tenantType === 'shop' && reply && shopToolsUsed.length > 0) {
+            scheduleOrderReminder(tenant.id, customerPhone, async () => {
+              const { reply: reminderReply } = await runShopAgent(REMINDER_PROMPT, customerPhone, tenant.id, undefined, true);
+              if (!reminderReply) return;
+              await sendWhatsAppMessage(customerPhone, reminderReply, tenant);
+            });
           }
         }
       }
