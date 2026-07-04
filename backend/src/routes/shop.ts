@@ -105,6 +105,7 @@ shopRouter.put('/config', authenticateShopOrTenant, async (req: any, res: Respon
       delivery_threshold_1, delivery_threshold_2,
       delivery_time_1, delivery_time_2, delivery_time_3,
     } = req.body;
+    console.log('[Config PUT] received for tenant', tenantId, JSON.stringify({ shop_name, pickup_mode, agent_personality, manual_orders_enabled, estimated_pickup_minutes }));
     const manualEnabled      = manual_orders_enabled ? 1 : 0;
     const qrEnabled          = qr_ordering_enabled  ? 1 : 0;
     const qrName             = qr_collect_name !== undefined ? (qr_collect_name ? 1 : 0) : 1;
@@ -159,6 +160,7 @@ shopRouter.put('/config', authenticateShopOrTenant, async (req: any, res: Respon
       delivery_threshold_1 ?? 5, delivery_threshold_2 ?? 15,
       delivery_time_1 ?? 15, delivery_time_2 ?? 30, delivery_time_3 ?? 45,
     );
+    console.log('[Config PUT] upsert complete for tenant', tenantId);
     res.json({ success: true });
   } catch (err: any) {
     if (err.message?.includes('UNIQUE') || err.code === '23505') {

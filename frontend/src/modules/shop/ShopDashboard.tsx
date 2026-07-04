@@ -1448,7 +1448,7 @@ function ConfigTab() {
   async function saveSection(sectionKey: string, fields: (keyof ShopConfig)[]) {
     setSavingSection(sectionKey);
     const payload: ShopConfig = { ...cfg };
-    console.log('[Config Save] sending:', payload);
+    console.log('[Config Save] sending:', JSON.stringify(payload, null, 2));
     try {
       await shopApi.putConfig(payload);
       setSavedSection(sectionKey);
