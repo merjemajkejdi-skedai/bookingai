@@ -113,58 +113,52 @@ shopRouter.put('/config', authenticateShopOrTenant, async (req: any, res: Respon
     const fiscalEnabledV     = fiscal_enabled ? 1 : 0;
     const inventoryEnabledV  = inventory_enabled ? 1 : 0;
     const inventoryAlertWAV  = inventory_alert_whatsapp ? 1 : 0;
-    const exists = await dbGet(`SELECT id FROM shop_config WHERE tenant_id = ?`, tenantId);
-    if (exists) {
-      await dbRun(
-        `UPDATE shop_config SET
-           shop_name=?,opening_hours=?,estimated_pickup_minutes=?,pickup_mode=?,agent_personality=?,
-           fallback_message=?,fallback_backup_number=?,fallback_after_attempts=?,manual_orders_enabled=?,
-           address=?,instagram_url=?,facebook_url=?,tiktok_url=?,website_url=?,phone=?,
-           qr_ordering_enabled=?,qr_collect_name=?,qr_collect_table=?,qr_slug=?,qr_welcome_message=?,
-           fiscal_enabled=?,fiscal_api_url=?,fiscal_username=?,fiscal_password=?,fiscal_nuis=?,
-           fiscal_tcr_code=?,fiscal_busun_code=?,fiscal_soft_code=?,fiscal_initial_cash=?,
-           fiscal_default_client=?,fiscal_environment=?,fiscal_middleware=?,
-           inventory_enabled=?,inventory_alert_mode=?,inventory_alert_time=?,inventory_alert_whatsapp=?,
-           delivery_threshold_1=?,delivery_threshold_2=?,delivery_time_1=?,delivery_time_2=?,delivery_time_3=?,
-           updated_at=CURRENT_TIMESTAMP
-         WHERE tenant_id=?`,
-        shop_name, opening_hours, estimated_pickup_minutes, pickup_mode, agent_personality,
-        fallback_message, fallback_backup_number, fallback_after_attempts, manualEnabled,
-        address, instagram_url, facebook_url, tiktok_url, website_url, phone,
-        qrEnabled, qrName, qrTable, slug, qr_welcome_message ?? null,
-        fiscalEnabledV, fiscal_api_url ?? null, fiscal_username ?? null, fiscal_password ?? null, fiscal_nuis ?? null,
-        fiscal_tcr_code ?? null, fiscal_busun_code ?? null, fiscal_soft_code ?? null, fiscal_initial_cash ?? null,
-        fiscal_default_client ?? null, fiscal_environment ?? null, fiscal_middleware ?? 'nexia',
-        inventoryEnabledV, inventory_alert_mode ?? 'daily', inventory_alert_time ?? '09:00', inventoryAlertWAV,
-        delivery_threshold_1 ?? 5, delivery_threshold_2 ?? 15,
-        delivery_time_1 ?? 15, delivery_time_2 ?? 30, delivery_time_3 ?? 45,
-        tenantId,
-      );
-    } else {
-      await dbRun(
-        `INSERT INTO shop_config
-           (id,tenant_id,shop_name,opening_hours,estimated_pickup_minutes,pickup_mode,agent_personality,
-            fallback_message,fallback_backup_number,fallback_after_attempts,manual_orders_enabled,
-            address,instagram_url,facebook_url,tiktok_url,website_url,phone,
-            qr_ordering_enabled,qr_collect_name,qr_collect_table,qr_slug,qr_welcome_message,
-            fiscal_enabled,fiscal_api_url,fiscal_username,fiscal_password,fiscal_nuis,
-            fiscal_tcr_code,fiscal_busun_code,fiscal_soft_code,fiscal_initial_cash,
-            fiscal_default_client,fiscal_environment,fiscal_middleware,
-            inventory_enabled,inventory_alert_mode,inventory_alert_time,inventory_alert_whatsapp,
-            delivery_threshold_1,delivery_threshold_2,delivery_time_1,delivery_time_2,delivery_time_3)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        crypto.randomUUID(), tenantId, shop_name, opening_hours, estimated_pickup_minutes, pickup_mode, agent_personality,
-        fallback_message, fallback_backup_number, fallback_after_attempts, manualEnabled,
-        address, instagram_url, facebook_url, tiktok_url, website_url, phone,
-        qrEnabled, qrName, qrTable, slug, qr_welcome_message ?? null,
-        fiscalEnabledV, fiscal_api_url ?? null, fiscal_username ?? null, fiscal_password ?? null, fiscal_nuis ?? null,
-        fiscal_tcr_code ?? null, fiscal_busun_code ?? null, fiscal_soft_code ?? null, fiscal_initial_cash ?? null,
-        fiscal_default_client ?? null, fiscal_environment ?? null, fiscal_middleware ?? 'nexia',
-        inventoryEnabledV, inventory_alert_mode ?? 'daily', inventory_alert_time ?? '09:00', inventoryAlertWAV,
-        delivery_threshold_1 ?? 5, delivery_threshold_2 ?? 15,
-        delivery_time_1 ?? 15, delivery_time_2 ?? 30, delivery_time_3 ?? 45,
-      );
-    }
+    const newId = crypto.randomUUID();
+    await dbRun(
+      `INSERT INTO shop_config
+         (id,tenant_id,shop_name,opening_hours,estimated_pickup_minutes,pickup_mode,agent_personality,
+          fallback_message,fallback_backup_number,fallback_after_attempts,manual_orders_enabled,
+          address,instagram_url,facebook_url,tiktok_url,website_url,phone,
+          qr_ordering_enabled,qr_collect_name,qr_collect_table,qr_slug,qr_welcome_message,
+          fiscal_enabled,fiscal_api_url,fiscal_username,fiscal_password,fiscal_nuis,
+          fiscal_tcr_code,fiscal_busun_code,fiscal_soft_code,fiscal_initial_cash,
+          fiscal_default_client,fiscal_environment,fiscal_middleware,
+          inventory_enabled,inventory_alert_mode,inventory_alert_time,inventory_alert_whatsapp,
+          delivery_threshold_1,delivery_threshold_2,delivery_time_1,delivery_time_2,delivery_time_3)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT (tenant_id) DO UPDATE SET
+         shop_name=EXCLUDED.shop_name,opening_hours=EXCLUDED.opening_hours,
+         estimated_pickup_minutes=EXCLUDED.estimated_pickup_minutes,pickup_mode=EXCLUDED.pickup_mode,
+         agent_personality=EXCLUDED.agent_personality,fallback_message=EXCLUDED.fallback_message,
+         fallback_backup_number=EXCLUDED.fallback_backup_number,fallback_after_attempts=EXCLUDED.fallback_after_attempts,
+         manual_orders_enabled=EXCLUDED.manual_orders_enabled,address=EXCLUDED.address,
+         instagram_url=EXCLUDED.instagram_url,facebook_url=EXCLUDED.facebook_url,
+         tiktok_url=EXCLUDED.tiktok_url,website_url=EXCLUDED.website_url,phone=EXCLUDED.phone,
+         qr_ordering_enabled=EXCLUDED.qr_ordering_enabled,qr_collect_name=EXCLUDED.qr_collect_name,
+         qr_collect_table=EXCLUDED.qr_collect_table,qr_slug=EXCLUDED.qr_slug,
+         qr_welcome_message=EXCLUDED.qr_welcome_message,fiscal_enabled=EXCLUDED.fiscal_enabled,
+         fiscal_api_url=EXCLUDED.fiscal_api_url,fiscal_username=EXCLUDED.fiscal_username,
+         fiscal_password=EXCLUDED.fiscal_password,fiscal_nuis=EXCLUDED.fiscal_nuis,
+         fiscal_tcr_code=EXCLUDED.fiscal_tcr_code,fiscal_busun_code=EXCLUDED.fiscal_busun_code,
+         fiscal_soft_code=EXCLUDED.fiscal_soft_code,fiscal_initial_cash=EXCLUDED.fiscal_initial_cash,
+         fiscal_default_client=EXCLUDED.fiscal_default_client,fiscal_environment=EXCLUDED.fiscal_environment,
+         fiscal_middleware=EXCLUDED.fiscal_middleware,inventory_enabled=EXCLUDED.inventory_enabled,
+         inventory_alert_mode=EXCLUDED.inventory_alert_mode,inventory_alert_time=EXCLUDED.inventory_alert_time,
+         inventory_alert_whatsapp=EXCLUDED.inventory_alert_whatsapp,
+         delivery_threshold_1=EXCLUDED.delivery_threshold_1,delivery_threshold_2=EXCLUDED.delivery_threshold_2,
+         delivery_time_1=EXCLUDED.delivery_time_1,delivery_time_2=EXCLUDED.delivery_time_2,
+         delivery_time_3=EXCLUDED.delivery_time_3,updated_at=CURRENT_TIMESTAMP`,
+      newId, tenantId, shop_name, opening_hours, estimated_pickup_minutes, pickup_mode, agent_personality,
+      fallback_message, fallback_backup_number, fallback_after_attempts, manualEnabled,
+      address, instagram_url, facebook_url, tiktok_url, website_url, phone,
+      qrEnabled, qrName, qrTable, slug, qr_welcome_message ?? null,
+      fiscalEnabledV, fiscal_api_url ?? null, fiscal_username ?? null, fiscal_password ?? null, fiscal_nuis ?? null,
+      fiscal_tcr_code ?? null, fiscal_busun_code ?? null, fiscal_soft_code ?? null, fiscal_initial_cash ?? null,
+      fiscal_default_client ?? null, fiscal_environment ?? null, fiscal_middleware ?? 'nexia',
+      inventoryEnabledV, inventory_alert_mode ?? 'daily', inventory_alert_time ?? '09:00', inventoryAlertWAV,
+      delivery_threshold_1 ?? 5, delivery_threshold_2 ?? 15,
+      delivery_time_1 ?? 15, delivery_time_2 ?? 30, delivery_time_3 ?? 45,
+    );
     res.json({ success: true });
   } catch (err: any) {
     if (err.message?.includes('UNIQUE') || err.code === '23505') {
