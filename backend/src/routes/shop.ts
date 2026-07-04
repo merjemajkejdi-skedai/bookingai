@@ -105,15 +105,16 @@ shopRouter.put('/config', authenticateShopOrTenant, async (req: any, res: Respon
       delivery_threshold_1, delivery_threshold_2,
       delivery_time_1, delivery_time_2, delivery_time_3,
     } = req.body;
-    console.log('[Config PUT] received for tenant', tenantId, JSON.stringify({ shop_name, pickup_mode, agent_personality, manual_orders_enabled, estimated_pickup_minutes }));
-    const manualEnabled      = manual_orders_enabled ? 1 : 0;
-    const qrEnabled          = qr_ordering_enabled  ? 1 : 0;
-    const qrName             = qr_collect_name !== undefined ? (qr_collect_name ? 1 : 0) : 1;
-    const qrTable            = qr_collect_table ? 1 : 0;
-    const slug               = qr_slug ? String(qr_slug).toLowerCase().trim() || null : null;
-    const fiscalEnabledV     = fiscal_enabled ? 1 : 0;
-    const inventoryEnabledV  = inventory_enabled ? 1 : 0;
-    const inventoryAlertWAV  = inventory_alert_whatsapp ? 1 : 0;
+    console.log('[Config PUT] received for tenant', tenantId, JSON.stringify({ shop_name, pickup_mode, agent_personality, manual_orders_enabled, qr_ordering_enabled, estimated_pickup_minutes }));
+    // Null-safe boolean conversions: undefined/null → null (not 0) so COALESCE below can preserve existing DB values
+    const manualEnabled      = manual_orders_enabled      != null ? (manual_orders_enabled      ? 1 : 0) : null;
+    const qrEnabled          = qr_ordering_enabled        != null ? (qr_ordering_enabled        ? 1 : 0) : null;
+    const qrName             = qr_collect_name            != null ? (qr_collect_name            ? 1 : 0) : null;
+    const qrTable            = qr_collect_table           != null ? (qr_collect_table           ? 1 : 0) : null;
+    const slug               = qr_slug != null ? String(qr_slug).toLowerCase().trim() || null : null;
+    const fiscalEnabledV     = fiscal_enabled             != null ? (fiscal_enabled             ? 1 : 0) : null;
+    const inventoryEnabledV  = inventory_enabled          != null ? (inventory_enabled          ? 1 : 0) : null;
+    const inventoryAlertWAV  = inventory_alert_whatsapp   != null ? (inventory_alert_whatsapp   ? 1 : 0) : null;
     const newId = crypto.randomUUID();
     await dbRun(
       `INSERT INTO shop_config
@@ -128,37 +129,58 @@ shopRouter.put('/config', authenticateShopOrTenant, async (req: any, res: Respon
           delivery_threshold_1,delivery_threshold_2,delivery_time_1,delivery_time_2,delivery_time_3)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT (tenant_id) DO UPDATE SET
-         shop_name=EXCLUDED.shop_name,opening_hours=EXCLUDED.opening_hours,
-         estimated_pickup_minutes=EXCLUDED.estimated_pickup_minutes,pickup_mode=EXCLUDED.pickup_mode,
-         agent_personality=EXCLUDED.agent_personality,fallback_message=EXCLUDED.fallback_message,
-         fallback_backup_number=EXCLUDED.fallback_backup_number,fallback_after_attempts=EXCLUDED.fallback_after_attempts,
-         manual_orders_enabled=EXCLUDED.manual_orders_enabled,address=EXCLUDED.address,
-         instagram_url=EXCLUDED.instagram_url,facebook_url=EXCLUDED.facebook_url,
-         tiktok_url=EXCLUDED.tiktok_url,website_url=EXCLUDED.website_url,phone=EXCLUDED.phone,
-         qr_ordering_enabled=EXCLUDED.qr_ordering_enabled,qr_collect_name=EXCLUDED.qr_collect_name,
-         qr_collect_table=EXCLUDED.qr_collect_table,qr_slug=EXCLUDED.qr_slug,
-         qr_welcome_message=EXCLUDED.qr_welcome_message,fiscal_enabled=EXCLUDED.fiscal_enabled,
-         fiscal_api_url=EXCLUDED.fiscal_api_url,fiscal_username=EXCLUDED.fiscal_username,
-         fiscal_password=EXCLUDED.fiscal_password,fiscal_nuis=EXCLUDED.fiscal_nuis,
-         fiscal_tcr_code=EXCLUDED.fiscal_tcr_code,fiscal_busun_code=EXCLUDED.fiscal_busun_code,
-         fiscal_soft_code=EXCLUDED.fiscal_soft_code,fiscal_initial_cash=EXCLUDED.fiscal_initial_cash,
-         fiscal_default_client=EXCLUDED.fiscal_default_client,fiscal_environment=EXCLUDED.fiscal_environment,
-         fiscal_middleware=EXCLUDED.fiscal_middleware,inventory_enabled=EXCLUDED.inventory_enabled,
-         inventory_alert_mode=EXCLUDED.inventory_alert_mode,inventory_alert_time=EXCLUDED.inventory_alert_time,
-         inventory_alert_whatsapp=EXCLUDED.inventory_alert_whatsapp,
-         delivery_threshold_1=EXCLUDED.delivery_threshold_1,delivery_threshold_2=EXCLUDED.delivery_threshold_2,
-         delivery_time_1=EXCLUDED.delivery_time_1,delivery_time_2=EXCLUDED.delivery_time_2,
-         delivery_time_3=EXCLUDED.delivery_time_3,updated_at=CURRENT_TIMESTAMP`,
+         shop_name=COALESCE(EXCLUDED.shop_name,shop_config.shop_name),
+         opening_hours=COALESCE(EXCLUDED.opening_hours,shop_config.opening_hours),
+         estimated_pickup_minutes=COALESCE(EXCLUDED.estimated_pickup_minutes,shop_config.estimated_pickup_minutes),
+         pickup_mode=COALESCE(EXCLUDED.pickup_mode,shop_config.pickup_mode),
+         agent_personality=COALESCE(EXCLUDED.agent_personality,shop_config.agent_personality),
+         fallback_message=COALESCE(EXCLUDED.fallback_message,shop_config.fallback_message),
+         fallback_backup_number=COALESCE(EXCLUDED.fallback_backup_number,shop_config.fallback_backup_number),
+         fallback_after_attempts=COALESCE(EXCLUDED.fallback_after_attempts,shop_config.fallback_after_attempts),
+         manual_orders_enabled=COALESCE(EXCLUDED.manual_orders_enabled,shop_config.manual_orders_enabled),
+         address=COALESCE(EXCLUDED.address,shop_config.address),
+         instagram_url=COALESCE(EXCLUDED.instagram_url,shop_config.instagram_url),
+         facebook_url=COALESCE(EXCLUDED.facebook_url,shop_config.facebook_url),
+         tiktok_url=COALESCE(EXCLUDED.tiktok_url,shop_config.tiktok_url),
+         website_url=COALESCE(EXCLUDED.website_url,shop_config.website_url),
+         phone=COALESCE(EXCLUDED.phone,shop_config.phone),
+         qr_ordering_enabled=COALESCE(EXCLUDED.qr_ordering_enabled,shop_config.qr_ordering_enabled),
+         qr_collect_name=COALESCE(EXCLUDED.qr_collect_name,shop_config.qr_collect_name),
+         qr_collect_table=COALESCE(EXCLUDED.qr_collect_table,shop_config.qr_collect_table),
+         qr_slug=COALESCE(EXCLUDED.qr_slug,shop_config.qr_slug),
+         qr_welcome_message=COALESCE(EXCLUDED.qr_welcome_message,shop_config.qr_welcome_message),
+         fiscal_enabled=COALESCE(EXCLUDED.fiscal_enabled,shop_config.fiscal_enabled),
+         fiscal_api_url=COALESCE(EXCLUDED.fiscal_api_url,shop_config.fiscal_api_url),
+         fiscal_username=COALESCE(EXCLUDED.fiscal_username,shop_config.fiscal_username),
+         fiscal_password=COALESCE(EXCLUDED.fiscal_password,shop_config.fiscal_password),
+         fiscal_nuis=COALESCE(EXCLUDED.fiscal_nuis,shop_config.fiscal_nuis),
+         fiscal_tcr_code=COALESCE(EXCLUDED.fiscal_tcr_code,shop_config.fiscal_tcr_code),
+         fiscal_busun_code=COALESCE(EXCLUDED.fiscal_busun_code,shop_config.fiscal_busun_code),
+         fiscal_soft_code=COALESCE(EXCLUDED.fiscal_soft_code,shop_config.fiscal_soft_code),
+         fiscal_initial_cash=COALESCE(EXCLUDED.fiscal_initial_cash,shop_config.fiscal_initial_cash),
+         fiscal_default_client=COALESCE(EXCLUDED.fiscal_default_client,shop_config.fiscal_default_client),
+         fiscal_environment=COALESCE(EXCLUDED.fiscal_environment,shop_config.fiscal_environment),
+         fiscal_middleware=COALESCE(EXCLUDED.fiscal_middleware,shop_config.fiscal_middleware),
+         inventory_enabled=COALESCE(EXCLUDED.inventory_enabled,shop_config.inventory_enabled),
+         inventory_alert_mode=COALESCE(EXCLUDED.inventory_alert_mode,shop_config.inventory_alert_mode),
+         inventory_alert_time=COALESCE(EXCLUDED.inventory_alert_time,shop_config.inventory_alert_time),
+         inventory_alert_whatsapp=COALESCE(EXCLUDED.inventory_alert_whatsapp,shop_config.inventory_alert_whatsapp),
+         delivery_threshold_1=COALESCE(EXCLUDED.delivery_threshold_1,shop_config.delivery_threshold_1),
+         delivery_threshold_2=COALESCE(EXCLUDED.delivery_threshold_2,shop_config.delivery_threshold_2),
+         delivery_time_1=COALESCE(EXCLUDED.delivery_time_1,shop_config.delivery_time_1),
+         delivery_time_2=COALESCE(EXCLUDED.delivery_time_2,shop_config.delivery_time_2),
+         delivery_time_3=COALESCE(EXCLUDED.delivery_time_3,shop_config.delivery_time_3),
+         updated_at=CURRENT_TIMESTAMP`,
       newId, tenantId, shop_name, opening_hours, estimated_pickup_minutes, pickup_mode, agent_personality,
       fallback_message, fallback_backup_number, fallback_after_attempts, manualEnabled,
       address, instagram_url, facebook_url, tiktok_url, website_url, phone,
-      qrEnabled, qrName, qrTable, slug, qr_welcome_message ?? null,
-      fiscalEnabledV, fiscal_api_url ?? null, fiscal_username ?? null, fiscal_password ?? null, fiscal_nuis ?? null,
-      fiscal_tcr_code ?? null, fiscal_busun_code ?? null, fiscal_soft_code ?? null, fiscal_initial_cash ?? null,
-      fiscal_default_client ?? null, fiscal_environment ?? null, fiscal_middleware ?? 'nexia',
-      inventoryEnabledV, inventory_alert_mode ?? 'daily', inventory_alert_time ?? '09:00', inventoryAlertWAV,
-      delivery_threshold_1 ?? 5, delivery_threshold_2 ?? 15,
-      delivery_time_1 ?? 15, delivery_time_2 ?? 30, delivery_time_3 ?? 45,
+      qrEnabled, qrName, qrTable, slug, qr_welcome_message,
+      fiscalEnabledV, fiscal_api_url, fiscal_username, fiscal_password, fiscal_nuis,
+      fiscal_tcr_code, fiscal_busun_code, fiscal_soft_code, fiscal_initial_cash,
+      fiscal_default_client, fiscal_environment, fiscal_middleware,
+      inventoryEnabledV, inventory_alert_mode, inventory_alert_time, inventoryAlertWAV,
+      delivery_threshold_1, delivery_threshold_2,
+      delivery_time_1, delivery_time_2, delivery_time_3,
     );
     console.log('[Config PUT] upsert complete for tenant', tenantId);
     res.json({ success: true });
