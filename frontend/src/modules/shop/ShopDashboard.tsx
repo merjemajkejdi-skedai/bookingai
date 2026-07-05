@@ -1885,7 +1885,7 @@ function ConfigTab() {
 
           <ConfigSection
             title="QR Ordering"
-            onSave={() => saveSection('qr', ['qr_ordering_enabled', 'qr_slug', 'qr_collect_name', 'qr_collect_table', 'qr_welcome_message', 'shop_logo_url'])}
+            onSave={() => saveSection('qr', ['qr_ordering_enabled', 'qr_slug', 'qr_collect_name', 'qr_collect_table', 'qr_welcome_message', 'qr_name_position', 'shop_logo_url'])}
             saving={savingSection === 'qr'}
             saved={savedSection === 'qr'}
           >
@@ -1915,10 +1915,34 @@ function ConfigTab() {
                 </div>
                 <Toggle label="Ask customer for name" value={cfg.qr_collect_name ?? 1} onChange={v => set('qr_collect_name', v)} />
                 <Toggle label="Enable table QR codes" value={cfg.qr_collect_table} onChange={v => set('qr_collect_table', v)} />
+                {(cfg.qr_collect_name || cfg.qr_collect_table) && (
+                  <div>
+                    <label className="text-xs text-slate-500 font-medium">Name / table collection</label>
+                    <div className="flex gap-2 mt-1">
+                      <button
+                        onClick={() => set('qr_name_position', 'welcome')}
+                        className={`flex-1 py-2 rounded-lg border text-xs font-medium transition-colors ${(!cfg.qr_name_position || cfg.qr_name_position === 'welcome') ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}
+                      >
+                        👋 At welcome
+                      </button>
+                      <button
+                        onClick={() => set('qr_name_position', 'closing')}
+                        className={`flex-1 py-2 rounded-lg border text-xs font-medium transition-colors ${cfg.qr_name_position === 'closing' ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}
+                      >
+                        ✅ At confirmation
+                      </button>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1">
+                      {cfg.qr_name_position === 'closing'
+                        ? 'Customers browse the menu first, then enter their name/table before placing the order.'
+                        : 'Customers enter their name/table on a welcome screen before browsing the menu.'}
+                    </p>
+                  </div>
+                )}
                 <div>
-                  <label className="text-xs text-slate-500 font-medium">Welcome message</label>
+                  <label className="text-xs text-slate-500 font-medium">{cfg.qr_name_position === 'closing' ? 'Closing message' : 'Welcome message'}</label>
                   <textarea rows={2} value={cfg.qr_welcome_message || ''} onChange={e => set('qr_welcome_message', e.target.value)}
-                    placeholder="Welcome! Please enter your name to start ordering."
+                    placeholder={cfg.qr_name_position === 'closing' ? 'Thank you for your order! Please enter your details below.' : 'Welcome! Please enter your name to start ordering.'}
                     className="w-full mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm resize-none" />
                 </div>
                 <div>

@@ -97,7 +97,7 @@ shopRouter.put('/config', authenticateShopOrTenant, async (req: any, res: Respon
       fallback_message, fallback_backup_number, fallback_after_attempts,
       address, instagram_url, facebook_url, tiktok_url, website_url, phone,
       manual_orders_enabled,
-      qr_ordering_enabled, qr_collect_name, qr_collect_table, qr_slug, qr_welcome_message,
+      qr_ordering_enabled, qr_collect_name, qr_collect_table, qr_slug, qr_welcome_message, qr_name_position,
       fiscal_enabled, fiscal_api_url, fiscal_username, fiscal_password, fiscal_nuis,
       fiscal_tcr_code, fiscal_busun_code, fiscal_soft_code, fiscal_initial_cash,
       fiscal_default_client, fiscal_environment, fiscal_middleware,
@@ -125,7 +125,7 @@ shopRouter.put('/config', authenticateShopOrTenant, async (req: any, res: Respon
          (id,tenant_id,shop_name,opening_hours,estimated_pickup_minutes,pickup_mode,agent_personality,
           fallback_message,fallback_backup_number,fallback_after_attempts,manual_orders_enabled,
           address,instagram_url,facebook_url,tiktok_url,website_url,phone,
-          qr_ordering_enabled,qr_collect_name,qr_collect_table,qr_slug,qr_welcome_message,
+          qr_ordering_enabled,qr_collect_name,qr_collect_table,qr_slug,qr_welcome_message,qr_name_position,
           fiscal_enabled,fiscal_api_url,fiscal_username,fiscal_password,fiscal_nuis,
           fiscal_tcr_code,fiscal_busun_code,fiscal_soft_code,fiscal_initial_cash,
           fiscal_default_client,fiscal_environment,fiscal_middleware,
@@ -133,7 +133,7 @@ shopRouter.put('/config', authenticateShopOrTenant, async (req: any, res: Respon
           delivery_threshold_1,delivery_threshold_2,delivery_time_1,delivery_time_2,delivery_time_3,
           staff_notify_number,staff_notify_enabled,staff_notify_keepalive_time,
           notify_sound,notify_sound_enabled)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT (tenant_id) DO UPDATE SET
          shop_name=COALESCE(EXCLUDED.shop_name,shop_config.shop_name),
          opening_hours=COALESCE(EXCLUDED.opening_hours,shop_config.opening_hours),
@@ -155,6 +155,7 @@ shopRouter.put('/config', authenticateShopOrTenant, async (req: any, res: Respon
          qr_collect_table=COALESCE(EXCLUDED.qr_collect_table,shop_config.qr_collect_table),
          qr_slug=COALESCE(EXCLUDED.qr_slug,shop_config.qr_slug),
          qr_welcome_message=COALESCE(EXCLUDED.qr_welcome_message,shop_config.qr_welcome_message),
+         qr_name_position=COALESCE(EXCLUDED.qr_name_position,shop_config.qr_name_position),
          fiscal_enabled=COALESCE(EXCLUDED.fiscal_enabled,shop_config.fiscal_enabled),
          fiscal_api_url=COALESCE(EXCLUDED.fiscal_api_url,shop_config.fiscal_api_url),
          fiscal_username=COALESCE(EXCLUDED.fiscal_username,shop_config.fiscal_username),
@@ -185,7 +186,7 @@ shopRouter.put('/config', authenticateShopOrTenant, async (req: any, res: Respon
       newId, tenantId, shop_name, opening_hours, estimated_pickup_minutes, pickup_mode, agent_personality,
       fallback_message, fallback_backup_number, fallback_after_attempts, manualEnabled,
       address, instagram_url, facebook_url, tiktok_url, website_url, phone,
-      qrEnabled, qrName, qrTable, slug, qr_welcome_message,
+      qrEnabled, qrName, qrTable, slug, qr_welcome_message, qr_name_position,
       fiscalEnabledV, fiscal_api_url, fiscal_username, fiscal_password, fiscal_nuis,
       fiscal_tcr_code, fiscal_busun_code, fiscal_soft_code, fiscal_initial_cash,
       fiscal_default_client, fiscal_environment, fiscal_middleware,
@@ -1226,6 +1227,7 @@ shopRouter.get('/public/:slug', async (req: any, res: Response) => {
         qr_collect_name:     cfg.qr_collect_name,
         qr_collect_table:    cfg.qr_collect_table,
         qr_welcome_message:  cfg.qr_welcome_message,
+        qr_name_position:    cfg.qr_name_position || 'welcome',
         shop_photos_enabled: shopTenant?.shop_photos_enabled ?? 0,
         pickup_mode:         cfg.pickup_mode,
         items,

@@ -511,6 +511,7 @@ const SCHEMA = `
     fiscal_initial_cash REAL DEFAULT 0,
     fiscal_default_client TEXT DEFAULT 'Klient i Pergjithshem',
     fiscal_environment TEXT DEFAULT 'test',
+    qr_name_position TEXT DEFAULT 'welcome',
     staff_notify_number TEXT,
     staff_notify_enabled INTEGER DEFAULT 0,
     staff_notify_keepalive_time TEXT DEFAULT '08:00',
@@ -971,6 +972,8 @@ export async function runMigrations() {
       `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS inventory_alert_mode TEXT DEFAULT 'daily'`,
       `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS inventory_alert_time TEXT DEFAULT '09:00'`,
       `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS inventory_alert_whatsapp INTEGER DEFAULT 0`,
+      // shop_qr_pos_001 — configurable name/table position in QR ordering
+      `ALTER TABLE shop_config ADD COLUMN IF NOT EXISTS qr_name_position TEXT DEFAULT 'welcome'`,
       // shop_notify_001 — staff WhatsApp notifications + browser sound
       `ALTER TABLE shop_config DROP CONSTRAINT IF EXISTS shop_config_notify_sound_check`,
       `ALTER TABLE shop_config ADD CONSTRAINT shop_config_notify_sound_check CHECK (notify_sound IN ('chime', 'bell', 'ping', 'ding', 'alarm', 'none'))`,
@@ -1351,6 +1354,12 @@ export async function runMigrations() {
   // shop_menu_docs_001 — PDF/URL menu documents
   exec(`CREATE TABLE IF NOT EXISTS shop_menu_documents (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, label TEXT NOT NULL, doc_type TEXT NOT NULL CHECK (doc_type IN ('pdf', 'url')), file_url TEXT, external_url TEXT, sort_order INTEGER DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`);
   exec(`CREATE INDEX IF NOT EXISTS idx_shop_menu_docs_tenant ON shop_menu_documents(tenant_id, sort_order)`);
+
+  // shop_qr_pos_001 — configurable name/table position in QR ordering
+  const shopQrPosCols = prepare("SELECT name FROM pragma_table_info('shop_config')")
+    .all().map((r: any) => r.name as string);
+  if (!shopQrPosCols.includes('qr_name_position'))
+    exec("ALTER TABLE shop_config ADD COLUMN qr_name_position TEXT DEFAULT 'welcome'");
 
   // shop_notify_001 — staff WhatsApp notifications + browser sound
   const shopNotifyCols = prepare("SELECT name FROM pragma_table_info('shop_config')")

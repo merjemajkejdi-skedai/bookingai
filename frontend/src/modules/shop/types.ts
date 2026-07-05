@@ -45,6 +45,7 @@ export interface ShopConfig {
   tiktok_url?: string;
   website_url?: string;
   phone?: string;
+  qr_name_position?: string;
   staff_notify_number?: string;
   staff_notify_enabled?: boolean | number;
   staff_notify_keepalive_time?: string;

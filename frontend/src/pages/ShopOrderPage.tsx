@@ -8,6 +8,7 @@ export function ShopOrderPage({ slug, tableId }: { slug: string; tableId?: strin
   const [shopInfo, setShopInfo]     = useState<any>(null);
   const [tableInfo, setTableInfo]   = useState<any>(null);
   const [customerName, setCustomerName] = useState('');
+  const [tableName, setTableName]       = useState('');
   const [cart, setCart]             = useState<{ item: any; qty: number; hours?: number }[]>([]);
   const [placedOrder, setPlacedOrder] = useState<any>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -49,7 +50,9 @@ export function ShopOrderPage({ slug, tableId }: { slug: string; tableId?: strin
           const tr = await shopPublicApi.getTable(slug, tableId);
           if (tr.success) setTableInfo(tr.data);
         }
-        const nextState = shopRes.data.qr_collect_name ? 'name-input' : 'menu';
+        const namePosition = shopRes.data.qr_name_position || 'welcome';
+        const collectsInfo = shopRes.data.qr_collect_name || shopRes.data.qr_collect_table;
+        const nextState = (namePosition === 'closing' || !collectsInfo) ? 'menu' : 'name-input';
         setState(nextState);
         if (nextState === 'menu') setSelectedCategory('all');
       } catch {
@@ -90,7 +93,7 @@ export function ShopOrderPage({ slug, tableId }: { slug: string; tableId?: strin
     try {
       const res = await shopPublicApi.placeOrder(slug, {
         customer_name: customerName || undefined,
-        table_name:    tableInfo?.name || undefined,
+        table_name:    tableName || tableInfo?.name || undefined,
         items:         cart.map(ci => ({
           item_id:      ci.item.id,
           quantity:     ci.qty,
@@ -259,18 +262,29 @@ export function ShopOrderPage({ slug, tableId }: { slug: string; tableId?: strin
         <p className="text-sm text-slate-500 text-center mb-6">
           {shopInfo?.qr_welcome_message || 'Welcome! Please enter your name to start ordering.'}
         </p>
-        <input
-          type="text"
-          placeholder="Your name"
-          value={customerName}
-          onChange={e => setCustomerName(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && customerName.trim() && setState('menu')}
-          autoFocus
-          className="w-full border border-slate-200 rounded-xl px-4 py-3 text-base mb-4 focus:outline-none focus:border-teal-400"
-        />
+        {shopInfo?.qr_collect_name && (
+          <input
+            type="text"
+            placeholder="Your name"
+            value={customerName}
+            onChange={e => setCustomerName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && customerName.trim()) { setState('menu'); setSelectedCategory('all'); } }}
+            autoFocus
+            className="w-full border border-slate-200 rounded-xl px-4 py-3 text-base mb-3 focus:outline-none focus:border-teal-400"
+          />
+        )}
+        {shopInfo?.qr_collect_table && !tableInfo && (
+          <input
+            type="text"
+            placeholder="Table / Sunbed number"
+            value={tableName}
+            onChange={e => setTableName(e.target.value)}
+            className="w-full border border-slate-200 rounded-xl px-4 py-3 text-base mb-4 focus:outline-none focus:border-teal-400"
+          />
+        )}
         <button
           onClick={() => { setState('menu'); setSelectedCategory('all'); }}
-          disabled={!customerName.trim()}
+          disabled={!!(shopInfo?.qr_collect_name && !customerName.trim())}
           className="w-full py-3 bg-teal-500 hover:bg-teal-600 text-white font-semibold rounded-xl disabled:opacity-40 transition-colors"
         >
           View Menu →
@@ -300,9 +314,9 @@ export function ShopOrderPage({ slug, tableId }: { slug: string; tableId?: strin
           )}
           <div className="flex-1 min-w-0">
             <h1 className="text-base font-bold text-slate-800 truncate">{shopInfo?.shop_name}</h1>
-            {(tableInfo || customerName) && (
+            {(tableInfo || tableName || customerName) && (
               <p className="text-xs text-slate-400">
-                {tableInfo?.name}{tableInfo?.name && customerName ? ' · ' : ''}{customerName}
+                {tableInfo?.name || tableName}{(tableInfo?.name || tableName) && customerName ? ' · ' : ''}{customerName}
               </p>
             )}
           </div>
@@ -429,6 +443,35 @@ export function ShopOrderPage({ slug, tableId }: { slug: string; tableId?: strin
             ← Back to menu
           </button>
           <h2 className="text-lg font-bold text-slate-800 mb-4">Your order</h2>
+          {shopInfo?.qr_name_position === 'closing' && (shopInfo?.qr_collect_name || shopInfo?.qr_collect_table) && (
+            <div className="bg-white rounded-2xl p-4 mb-4 space-y-3">
+              {shopInfo?.qr_welcome_message && (
+                <p className="text-sm text-slate-500">{shopInfo.qr_welcome_message}</p>
+              )}
+              {shopInfo?.qr_collect_name && (
+                <div>
+                  <label className="text-xs font-medium text-slate-600">Your name <span className="text-slate-400">(optional)</span></label>
+                  <input
+                    value={customerName}
+                    onChange={e => setCustomerName(e.target.value)}
+                    placeholder="Your name"
+                    className="w-full mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:border-teal-400"
+                  />
+                </div>
+              )}
+              {shopInfo?.qr_collect_table && !tableInfo && (
+                <div>
+                  <label className="text-xs font-medium text-slate-600">Table / Sunbed <span className="text-slate-400">(optional)</span></label>
+                  <input
+                    value={tableName}
+                    onChange={e => setTableName(e.target.value)}
+                    placeholder="e.g. 12"
+                    className="w-full mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:border-teal-400"
+                  />
+                </div>
+              )}
+            </div>
+          )}
           <div className="bg-white rounded-2xl p-4 mb-4 space-y-3">
             {cart.map(ci => (
               <div key={ci.item.id} className="flex items-center gap-3">
