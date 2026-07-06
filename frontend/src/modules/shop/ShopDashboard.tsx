@@ -311,7 +311,7 @@ function OrderCard({
           <div key={i} className="flex justify-between text-xs text-slate-700">
             <span>
               {it.item_name} × {it.quantity}
-              {it.rental_hours ? <span className="text-blue-500 ml-1">({it.rental_hours}h)</span> : null}
+              {it.rental_tier ? <span className="text-blue-500 ml-1">({it.rental_tier === 'day' ? 'full day' : `${it.rental_hours}hr rate`})</span> : null}
             </span>
             <span className="text-slate-500">{fmt(it.subtotal, order.currency)}</span>
           </div>
@@ -1059,6 +1059,10 @@ function ItemModal({
   const [itemCode, setItemCode] = useState(item?.item_code || '');
   const [unit, setUnit] = useState(item?.unit || 'XPP');
   const [pricingType, setPricingType] = useState<'fixed' | 'hourly'>(item?.pricing_type || 'fixed');
+  const [price2h, setPrice2h]   = useState(item?.price_2h  != null ? String(item.price_2h)  : '');
+  const [price3h, setPrice3h]   = useState(item?.price_3h  != null ? String(item.price_3h)  : '');
+  const [price4h, setPrice4h]   = useState(item?.price_4h  != null ? String(item.price_4h)  : '');
+  const [priceDay, setPriceDay] = useState(item?.price_day != null ? String(item.price_day) : '');
   const [isActive, setIsActive] = useState(item ? item.is_active === 1 : true);
   const [photo, setPhoto] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1081,6 +1085,14 @@ function ItemModal({
       form.append('vat_rate', vatRate);
       form.append('unit', unit);
       form.append('pricing_type', pricingType);
+      if (pricingType === 'hourly') {
+        form.append('price_2h',  price2h  || '');
+        form.append('price_3h',  price3h  || '');
+        form.append('price_4h',  price4h  || '');
+        form.append('price_day', priceDay || '');
+      } else {
+        form.append('price_2h', ''); form.append('price_3h', ''); form.append('price_4h', ''); form.append('price_day', '');
+      }
       if (itemCode) form.append('item_code', itemCode);
       if (photo) form.append('photo', photo);
 
@@ -1121,21 +1133,39 @@ function ItemModal({
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-xs text-slate-500 font-medium">
-                {pricingType === 'hourly' ? 'Price per hour *' : 'Price *'}
-              </label>
+              <label className="text-xs text-slate-500 font-medium">{pricingType === 'hourly' ? '1 hour price *' : 'Price *'}</label>
               <input value={price} onChange={e => setPrice(e.target.value)} type="number" min="0" step="0.01"
-                placeholder={pricingType === 'hourly' ? 'e.g. 500' : '0.00'}
+                placeholder="e.g. 500"
                 className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
-              {pricingType === 'hourly' && (
-                <p className="text-xs text-slate-400 mt-0.5">Customer picks hours when ordering. Min 1 hour.</p>
-              )}
             </div>
             <div>
               <label className="text-xs text-slate-500 font-medium">Currency</label>
               <input value={currency} onChange={e => setCurrency(e.target.value)} placeholder="ALL" className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
             </div>
           </div>
+          {pricingType === 'hourly' && (
+            <div className="space-y-2 border border-slate-100 rounded-xl p-3 bg-slate-50">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Additional price tiers</p>
+              {[
+                { label: '2 hours', value: price2h,  setter: setPrice2h  },
+                { label: '3 hours', value: price3h,  setter: setPrice3h  },
+                { label: '4 hours', value: price4h,  setter: setPrice4h  },
+                { label: 'Full day', value: priceDay, setter: setPriceDay },
+              ].map(tier => (
+                <div key={tier.label} className="flex items-center gap-2">
+                  <label className="text-xs text-slate-600 w-16 flex-shrink-0">{tier.label}</label>
+                  <input
+                    type="number" min="0" value={tier.value}
+                    onChange={e => tier.setter(e.target.value)}
+                    placeholder="leave blank to hide"
+                    className="flex-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm bg-white"
+                  />
+                  <span className="text-xs text-slate-400 flex-shrink-0">ALL</span>
+                </div>
+              ))}
+              <p className="text-xs text-slate-400">Only tiers with a price will be shown to customers.</p>
+            </div>
+          )}
           <div>
             <label className="text-xs text-slate-500 font-medium">Category</label>
             <select value={categoryId} onChange={e => setCategoryId(e.target.value)} className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white">
@@ -1318,7 +1348,13 @@ function MenuTab() {
                 {item.description && <p className="text-xs text-slate-400 truncate mt-0.5">{item.description}</p>}
                 <div className="flex items-center gap-2 mt-1 flex-wrap">
                   {item.pricing_type === 'hourly' ? (
-                    <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium">⏱ {item.price} {item.currency}/hr</span>
+                    <>
+                      {item.price     && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">1hr: {item.price} ALL</span>}
+                      {item.price_2h  && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">2hr: {item.price_2h} ALL</span>}
+                      {item.price_3h  && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">3hr: {item.price_3h} ALL</span>}
+                      {item.price_4h  && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">4hr: {item.price_4h} ALL</span>}
+                      {item.price_day && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">Day: {item.price_day} ALL</span>}
+                    </>
                   ) : (
                     <span className="text-sm font-semibold text-slate-700">{fmt(item.price, item.currency)}</span>
                   )}

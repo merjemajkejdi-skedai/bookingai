@@ -549,6 +549,10 @@ const SCHEMA = `
     item_code TEXT,
     unit TEXT DEFAULT 'XPP',
     pricing_type TEXT DEFAULT 'fixed',
+    price_2h REAL DEFAULT NULL,
+    price_3h REAL DEFAULT NULL,
+    price_4h REAL DEFAULT NULL,
+    price_day REAL DEFAULT NULL,
     created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
   );
@@ -604,7 +608,8 @@ const SCHEMA = `
     item_price REAL NOT NULL,
     quantity INTEGER NOT NULL DEFAULT 1,
     subtotal REAL NOT NULL,
-    rental_hours INTEGER
+    rental_hours INTEGER,
+    rental_tier TEXT DEFAULT NULL
   );
   CREATE TABLE IF NOT EXISTS shop_conversations (
     id TEXT PRIMARY KEY,
@@ -964,6 +969,12 @@ export async function runMigrations() {
       // shop_rental_001 — per-item hourly/rental pricing
       `ALTER TABLE shop_menu_items ADD COLUMN IF NOT EXISTS pricing_type TEXT DEFAULT 'fixed'`,
       `ALTER TABLE shop_order_items ADD COLUMN IF NOT EXISTS rental_hours INTEGER`,
+      // shop_rental_002 — multi-tier pricing per rental item
+      `ALTER TABLE shop_menu_items ADD COLUMN IF NOT EXISTS price_2h REAL DEFAULT NULL`,
+      `ALTER TABLE shop_menu_items ADD COLUMN IF NOT EXISTS price_3h REAL DEFAULT NULL`,
+      `ALTER TABLE shop_menu_items ADD COLUMN IF NOT EXISTS price_4h REAL DEFAULT NULL`,
+      `ALTER TABLE shop_menu_items ADD COLUMN IF NOT EXISTS price_day REAL DEFAULT NULL`,
+      `ALTER TABLE shop_order_items ADD COLUMN IF NOT EXISTS rental_tier TEXT DEFAULT NULL`,
       // shop_menu_docs_001 — PDF/URL menu documents for the shop agent
       `CREATE TABLE IF NOT EXISTS shop_menu_documents (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, label TEXT NOT NULL, doc_type TEXT NOT NULL CHECK (doc_type IN ('pdf', 'url')), file_url TEXT, external_url TEXT, sort_order INTEGER DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
       `CREATE INDEX IF NOT EXISTS idx_shop_menu_docs_tenant ON shop_menu_documents(tenant_id, sort_order)`,
@@ -1350,6 +1361,18 @@ export async function runMigrations() {
     .all().map((r: any) => r.name as string);
   if (!shopOrderItemRentalCols.includes('rental_hours'))
     exec('ALTER TABLE shop_order_items ADD COLUMN rental_hours INTEGER');
+
+  // shop_rental_002 — multi-tier pricing
+  const shopMenuItemTierCols = prepare("SELECT name FROM pragma_table_info('shop_menu_items')")
+    .all().map((r: any) => r.name as string);
+  if (!shopMenuItemTierCols.includes('price_2h'))  exec('ALTER TABLE shop_menu_items ADD COLUMN price_2h REAL DEFAULT NULL');
+  if (!shopMenuItemTierCols.includes('price_3h'))  exec('ALTER TABLE shop_menu_items ADD COLUMN price_3h REAL DEFAULT NULL');
+  if (!shopMenuItemTierCols.includes('price_4h'))  exec('ALTER TABLE shop_menu_items ADD COLUMN price_4h REAL DEFAULT NULL');
+  if (!shopMenuItemTierCols.includes('price_day')) exec('ALTER TABLE shop_menu_items ADD COLUMN price_day REAL DEFAULT NULL');
+
+  const shopOrderItemTierCols = prepare("SELECT name FROM pragma_table_info('shop_order_items')")
+    .all().map((r: any) => r.name as string);
+  if (!shopOrderItemTierCols.includes('rental_tier')) exec('ALTER TABLE shop_order_items ADD COLUMN rental_tier TEXT DEFAULT NULL');
 
   // shop_menu_docs_001 — PDF/URL menu documents
   exec(`CREATE TABLE IF NOT EXISTS shop_menu_documents (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, label TEXT NOT NULL, doc_type TEXT NOT NULL CHECK (doc_type IN ('pdf', 'url')), file_url TEXT, external_url TEXT, sort_order INTEGER DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`);

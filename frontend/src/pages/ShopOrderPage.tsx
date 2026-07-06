@@ -9,7 +9,7 @@ export function ShopOrderPage({ slug, tableId }: { slug: string; tableId?: strin
   const [tableInfo, setTableInfo]   = useState<any>(null);
   const [customerName, setCustomerName] = useState('');
   const [tableName, setTableName]       = useState('');
-  const [cart, setCart]             = useState<{ item: any; qty: number; hours?: number }[]>([]);
+  const [cart, setCart]             = useState<{ item: any; qty: number; tier?: { key: string; label: string; price: number; hours: number | null } }[]>([]);
   const [placedOrder, setPlacedOrder] = useState<any>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]           = useState('');
@@ -62,12 +62,12 @@ export function ShopOrderPage({ slug, tableId }: { slug: string; tableId?: strin
     load();
   }, [slug, tableId]);
 
-  function addToCart(item: any, qty = 1, hours?: number) {
+  function addToCart(item: any, qty = 1, tier?: { key: string; label: string; price: number; hours: number | null }) {
     setCart(c => {
-      if (item.pricing_type === 'hourly') {
+      if (item.pricing_type === 'hourly' && tier) {
         const ex = c.find(ci => ci.item.id === item.id);
-        if (ex) return c.map(ci => ci.item.id === item.id ? { ...ci, qty, hours: hours ?? 1 } : ci);
-        return [...c, { item, qty, hours: hours ?? 1 }];
+        if (ex) return c.map(ci => ci.item.id === item.id ? { ...ci, qty, tier } : ci);
+        return [...c, { item, qty, tier }];
       }
       const ex = c.find(ci => ci.item.id === item.id);
       if (ex) return c.map(ci => ci.item.id === item.id ? { ...ci, qty: ci.qty + qty } : ci);
@@ -80,9 +80,9 @@ export function ShopOrderPage({ slug, tableId }: { slug: string; tableId?: strin
     else setCart(c => c.map(ci => ci.item.id === itemId ? { ...ci, qty } : ci));
   }
 
-  function cartLineTotal(ci: { item: any; qty: number; hours?: number }) {
-    const price = parseFloat(ci.item.price);
-    return ci.item.pricing_type === 'hourly' ? price * ci.qty * (ci.hours ?? 1) : price * ci.qty;
+  function cartLineTotal(ci: { item: any; qty: number; tier?: { price: number } }) {
+    const price = ci.item.pricing_type === 'hourly' && ci.tier ? ci.tier.price : parseFloat(ci.item.price);
+    return price * ci.qty;
   }
 
   const total = cart.reduce((sum, ci) => sum + cartLineTotal(ci), 0);
@@ -95,9 +95,9 @@ export function ShopOrderPage({ slug, tableId }: { slug: string; tableId?: strin
         customer_name: customerName || undefined,
         table_name:    tableName || tableInfo?.name || undefined,
         items:         cart.map(ci => ({
-          item_id:      ci.item.id,
-          quantity:     ci.qty,
-          ...(ci.item.pricing_type === 'hourly' ? { rental_hours: ci.hours ?? 1 } : {}),
+          item_id:     ci.item.id,
+          quantity:    ci.qty,
+          ...(ci.item.pricing_type === 'hourly' && ci.tier ? { rental_tier: ci.tier.key } : {}),
         })),
         qr_session:    sessionId.current,
       });
@@ -114,11 +114,24 @@ export function ShopOrderPage({ slug, tableId }: { slug: string; tableId?: strin
 
   // ── Rental item card ─────────────────────────────────────────────────────────
 
+  interface RentalTier { key: string; label: string; price: number; hours: number | null }
+
+  function getRentalTiers(item: any): RentalTier[] {
+    const tiers: RentalTier[] = [];
+    if (item.price)     tiers.push({ key: '1h',  label: '1 hour',   price: Number(item.price),     hours: 1    });
+    if (item.price_2h)  tiers.push({ key: '2h',  label: '2 hours',  price: Number(item.price_2h),  hours: 2    });
+    if (item.price_3h)  tiers.push({ key: '3h',  label: '3 hours',  price: Number(item.price_3h),  hours: 3    });
+    if (item.price_4h)  tiers.push({ key: '4h',  label: '4 hours',  price: Number(item.price_4h),  hours: 4    });
+    if (item.price_day) tiers.push({ key: 'day', label: 'Full day', price: Number(item.price_day), hours: null });
+    return tiers;
+  }
+
   function RentalItemCard({ item }: { item: any }) {
+    const tiers = getRentalTiers(item);
     const inCart = cart.find(ci => ci.item.id === item.id);
-    const [qty, setQty]     = useState(inCart?.qty ?? 1);
-    const [hours, setHours] = useState(inCart?.hours ?? 1);
-    const lineTotal = parseFloat(item.price) * qty * hours;
+    const [selectedTier, setSelectedTier] = useState<RentalTier>(inCart?.tier ?? tiers[0]);
+    const [qty, setQty] = useState(inCart?.qty ?? 1);
+    const lineTotal = selectedTier.price * qty;
     return (
       <div className="col-span-2 sm:col-span-3 md:col-span-4 bg-white rounded-xl border-2 border-slate-200 p-4 space-y-3">
         <div className="flex gap-3">
@@ -128,44 +141,37 @@ export function ShopOrderPage({ slug, tableId }: { slug: string; tableId?: strin
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-slate-800 text-sm">{item.name}</p>
             {item.description && <p className="text-xs text-slate-400 mt-0.5">{item.description}</p>}
-            <div className="flex items-center gap-1.5 mt-1">
-              <span className="text-sm font-bold text-teal-600">{parseFloat(item.price).toLocaleString()} {item.currency}</span>
-              <span className="text-xs text-slate-400">/ orë</span>
-              <span className="ml-auto text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">⏱ Qira</span>
-            </div>
+            <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full mt-1 inline-block">⏱ Qira</span>
           </div>
         </div>
-        <div className="flex gap-4">
-          <div className="flex-1 space-y-1">
-            <p className="text-xs font-medium text-slate-600">Sa orë? (min. 1)</p>
-            <div className="flex items-center gap-2">
-              <button onClick={() => setHours(h => Math.max(1, h - 1))}
-                className="w-8 h-8 rounded-full border border-slate-200 text-slate-600 text-lg flex items-center justify-center">−</button>
-              <span className="w-6 text-center font-bold text-slate-800 text-sm">{hours}</span>
-              <button onClick={() => setHours(h => h + 1)}
-                className="w-8 h-8 rounded-full border border-slate-200 text-slate-600 text-lg flex items-center justify-center">+</button>
-              <span className="text-xs text-slate-400 ml-1">orë</span>
-            </div>
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-slate-600">Zgjidhni kohëzgjatjen</p>
+          <div className="grid grid-cols-2 gap-2">
+            {tiers.map(tier => (
+              <button key={tier.key} onClick={() => setSelectedTier(tier)}
+                className={`p-2.5 rounded-xl border text-left transition-colors ${selectedTier.key === tier.key ? 'border-teal-500 bg-teal-50' : 'border-slate-200 bg-white'}`}>
+                <p className="text-sm font-medium text-slate-700">{tier.label}</p>
+                <p className="text-sm font-semibold text-teal-600">{tier.price.toLocaleString()} ALL</p>
+              </button>
+            ))}
           </div>
-          <div className="flex-1 space-y-1">
-            <p className="text-xs font-medium text-slate-600">Sasi</p>
-            <div className="flex items-center gap-2">
-              <button onClick={() => setQty(q => Math.max(1, q - 1))}
-                className="w-8 h-8 rounded-full border border-slate-200 text-slate-600 text-lg flex items-center justify-center">−</button>
-              <span className="w-6 text-center font-bold text-slate-800 text-sm">{qty}</span>
-              <button onClick={() => setQty(q => q + 1)}
-                className="w-8 h-8 rounded-full border border-slate-200 text-slate-600 text-lg flex items-center justify-center">+</button>
-            </div>
+        </div>
+        <div className="flex-1 space-y-1">
+          <p className="text-xs font-medium text-slate-600">Sasi</p>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setQty(q => Math.max(1, q - 1))}
+              className="w-8 h-8 rounded-full border border-slate-200 text-slate-600 text-lg flex items-center justify-center">−</button>
+            <span className="w-6 text-center font-bold text-slate-800 text-sm">{qty}</span>
+            <button onClick={() => setQty(q => q + 1)}
+              className="w-8 h-8 rounded-full border border-slate-200 text-slate-600 text-lg flex items-center justify-center">+</button>
           </div>
         </div>
         <div className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2">
-          <span className="text-xs text-slate-500">{qty} × {hours} orë × {parseFloat(item.price).toLocaleString()} {item.currency}</span>
+          <span className="text-xs text-slate-500">{qty} × {selectedTier.label} × {selectedTier.price.toLocaleString()} ALL</span>
           <span className="text-sm font-bold text-slate-800">{lineTotal.toLocaleString()} {item.currency}</span>
         </div>
-        <button onClick={() => { addToCart(item, qty, hours); resetTimer(); }}
-          className={`w-full py-2.5 text-sm font-semibold rounded-xl transition-colors ${
-            inCart ? 'bg-teal-600 text-white' : 'bg-teal-500 text-white hover:bg-teal-600'
-          }`}>
+        <button onClick={() => { addToCart(item, qty, selectedTier); resetTimer(); }}
+          className="w-full py-2.5 text-sm font-semibold rounded-xl bg-teal-500 text-white hover:bg-teal-600 transition-colors">
           {inCart ? '✓ Përditëso porosinë' : 'Shto në porosi'}
         </button>
       </div>
@@ -236,7 +242,7 @@ export function ShopOrderPage({ slug, tableId }: { slug: string; tableId?: strin
             <div key={ci.item.id} className="flex justify-between text-sm">
               <span className="text-slate-600">
                 {ci.item.name} × {ci.qty}
-                {ci.item.pricing_type === 'hourly' && <span className="text-blue-500 ml-1">× {ci.hours ?? 1}h</span>}
+                {ci.item.pricing_type === 'hourly' && ci.tier && <span className="text-blue-500 ml-1">({ci.tier.label} rate)</span>}
               </span>
               <span className="text-slate-700 font-medium">{cartLineTotal(ci).toLocaleString()} ALL</span>
             </div>
@@ -477,8 +483,8 @@ export function ShopOrderPage({ slug, tableId }: { slug: string; tableId?: strin
               <div key={ci.item.id} className="flex items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-slate-700 truncate">{ci.item.name}</p>
-                  {ci.item.pricing_type === 'hourly' ? (
-                    <p className="text-xs text-blue-500">{ci.hours ?? 1} orë × {parseFloat(ci.item.price).toLocaleString()} ALL/orë</p>
+                  {ci.item.pricing_type === 'hourly' && ci.tier ? (
+                    <p className="text-xs text-blue-500">{ci.tier.label} rate — {ci.tier.price.toLocaleString()} ALL</p>
                   ) : (
                     <p className="text-xs text-slate-400">{parseFloat(ci.item.price).toLocaleString()} ALL each</p>
                   )}

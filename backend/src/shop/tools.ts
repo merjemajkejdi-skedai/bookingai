@@ -56,9 +56,9 @@ export const shopTools: Anthropic.Tool[] = [
           items: {
             type: 'object',
             properties: {
-              item_id:      { type: 'string' },
-              quantity:     { type: 'number', minimum: 1 },
-              rental_hours: { type: 'number', minimum: 1, description: 'Required for hourly/rental items. Number of hours to rent.' },
+              item_id:     { type: 'string' },
+              quantity:    { type: 'number', minimum: 1 },
+              rental_tier: { type: 'string', enum: ['1h', '2h', '3h', '4h', 'day'], description: 'Required for rental items. Which duration tier the customer selected.' },
             },
             required: ['item_id', 'quantity'],
           },
@@ -186,6 +186,13 @@ export async function executeShopTool(
             price_label: item.pricing_type === 'hourly'
               ? `${item.price} ALL/orë`
               : `${item.price} ALL`,
+            price_tiers: item.pricing_type === 'hourly' ? {
+              '1h':  item.price     || null,
+              '2h':  item.price_2h  || null,
+              '3h':  item.price_3h  || null,
+              '4h':  item.price_4h  || null,
+              'day': item.price_day || null,
+            } : null,
             stock_status: stockStatus(item),
             available: isAvailable(item),
           })),
@@ -218,7 +225,7 @@ export async function executeShopTool(
       console.log('[Shop create_order] tenantId:', tenantId);
       console.log('[Shop create_order] item IDs to find:', input.items?.map((i: any) => i.item_id));
 
-      const { items, pickup_name, notes } = input as { items: Array<{ item_id: string; quantity: number; rental_hours?: number }>; pickup_name: string; notes?: string };
+      const { items, pickup_name, notes } = input as { items: Array<{ item_id: string; quantity: number; rental_tier?: string }>; pickup_name: string; notes?: string };
       if (!items?.length) return { success: false, message: 'No items provided' };
 
       const ids = items.map((i) => i.item_id);
@@ -228,18 +235,29 @@ export async function executeShopTool(
       console.log('[Shop create_order] items found in DB:', menuItems.length, 'of', items.length);
       console.log('[Shop create_order] found IDs:', menuItems.map((i: any) => i.id));
 
-      const lineItems: Array<{ item: any; qty: number; rentalHours: number | null }> = [];
+      const lineItems: Array<{ item: any; qty: number; tierPrice: number; rentalHours: number | null; rentalTier: string | null }> = [];
       const outOfStock: string[] = [];
       for (const req of items) {
         const item = menuItems.find((m: any) => m.id === req.item_id);
         if (!item) return { success: false, message: `Item not found or unavailable` };
         if (!isAvailable(item, req.quantity)) { outOfStock.push(item.name); continue; }
         const isHourly = (item.pricing_type || 'fixed') === 'hourly';
-        if (isHourly && !req.rental_hours) {
-          return { success: false, error: `rental_hours is required for hourly item "${item.name}" — ask the customer how many hours they need` };
+        if (isHourly && !req.rental_tier) {
+          return { success: false, error: `rental_tier is required for rental item "${item.name}" — ask the customer which duration they prefer (1h, 2h, 3h, 4h, or day)` };
         }
-        const rentalHours = isHourly ? Math.max(1, Math.round(req.rental_hours!)) : null;
-        lineItems.push({ item, qty: req.quantity, rentalHours });
+        let tierPrice = parseFloat(item.price);
+        let rentalHours: number | null = 1;
+        const tier = req.rental_tier || '1h';
+        if (isHourly) {
+          if (tier === '2h' && item.price_2h)  { tierPrice = parseFloat(item.price_2h);  rentalHours = 2; }
+          else if (tier === '3h' && item.price_3h)  { tierPrice = parseFloat(item.price_3h);  rentalHours = 3; }
+          else if (tier === '4h' && item.price_4h)  { tierPrice = parseFloat(item.price_4h);  rentalHours = 4; }
+          else if (tier === 'day' && item.price_day) { tierPrice = parseFloat(item.price_day); rentalHours = null; }
+          else { rentalHours = 1; }
+        } else {
+          rentalHours = null;
+        }
+        lineItems.push({ item, qty: req.quantity, tierPrice, rentalHours, rentalTier: isHourly ? tier : null });
       }
 
       console.log('[Shop create_order] out of stock items:', outOfStock);
@@ -251,12 +269,7 @@ export async function executeShopTool(
         tenantId, today,
       );
       const orderNumber = Number(nextNumRow?.next_num ?? 1);
-      const totalPrice = lineItems.reduce((s, li) => {
-        const lineTotal = li.rentalHours
-          ? parseFloat(li.item.price) * li.qty * li.rentalHours
-          : parseFloat(li.item.price) * li.qty;
-        return s + lineTotal;
-      }, 0);
+      const totalPrice = lineItems.reduce((s, li) => s + li.tierPrice * li.qty, 0);
       const currency = lineItems[0]?.item?.currency || 'ALL';
       const orderId = crypto.randomUUID();
 
@@ -268,12 +281,10 @@ export async function executeShopTool(
       );
 
       for (const li of lineItems) {
-        const lineTotal = li.rentalHours
-          ? parseFloat(li.item.price) * li.qty * li.rentalHours
-          : parseFloat(li.item.price) * li.qty;
+        const lineTotal = li.tierPrice * li.qty;
         await dbRun(
-          `INSERT INTO shop_order_items (id, order_id, tenant_id, item_id, item_name, item_price, quantity, subtotal, rental_hours) VALUES (?,?,?,?,?,?,?,?,?)`,
-          crypto.randomUUID(), orderId, tenantId, li.item.id, li.item.name, li.item.price, li.qty, lineTotal, li.rentalHours,
+          `INSERT INTO shop_order_items (id, order_id, tenant_id, item_id, item_name, item_price, quantity, subtotal, rental_hours, rental_tier) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+          crypto.randomUUID(), orderId, tenantId, li.item.id, li.item.name, li.tierPrice, li.qty, lineTotal, li.rentalHours, li.rentalTier,
         );
         if (li.item.stock_type !== 'unlimited') {
           await dbRun(`UPDATE shop_menu_items SET stock_used = stock_used + ? WHERE id = ?`, li.qty, li.item.id);
@@ -296,12 +307,9 @@ export async function executeShopTool(
         currency,
         estimated_pickup_minutes: deliveryInfo.minutes,
         eta: deliveryInfo.label,
-        items: lineItems.map((li) => {
-          const lineTotal = li.rentalHours
-            ? parseFloat(li.item.price) * li.qty * li.rentalHours
-            : parseFloat(li.item.price) * li.qty;
-          return { name: li.item.name, quantity: li.qty, rental_hours: li.rentalHours, subtotal: lineTotal };
-        }),
+        items: lineItems.map((li) => ({
+          name: li.item.name, quantity: li.qty, rental_tier: li.rentalTier, rental_hours: li.rentalHours, subtotal: li.tierPrice * li.qty,
+        })),
       };
       } catch (err: any) {
         console.error('[Shop create_order] ❌ FAILED:', err.message, err.stack);
