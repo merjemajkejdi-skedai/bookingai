@@ -2,46 +2,52 @@
  * Meta Cloud API utilities — send messages and download media.
  * Used when tenant.provider === 'meta'.
  */
+import { alertError } from '../utils/errorMonitor.js';
 
 export async function sendViaMeta(
   to:     string,
   body:   string,
   tenant: any,
 ): Promise<void> {
-  const phoneNumberId = tenant.meta_phone_number_id;
-  const accessToken   = tenant.meta_access_token;
+  try {
+    const phoneNumberId = tenant.meta_phone_number_id;
+    const accessToken   = tenant.meta_access_token;
 
-  if (!phoneNumberId || !accessToken) {
-    throw new Error('Meta credentials not configured for tenant');
-  }
+    if (!phoneNumberId || !accessToken) {
+      throw new Error('Meta credentials not configured for tenant');
+    }
 
-  const cleanTo = to.replace(/[^0-9]/g, '');
+    const cleanTo = to.replace(/[^0-9]/g, '');
 
-  const response = await fetch(
-    `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`,
-    {
-      method:  'POST',
-      headers: {
-        Authorization:  `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
+    const response = await fetch(
+      `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`,
+      {
+        method:  'POST',
+        headers: {
+          Authorization:  `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          recipient_type:    'individual',
+          to:                cleanTo,
+          type:              'text',
+          text:              { body },
+        }),
       },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        recipient_type:    'individual',
-        to:                cleanTo,
-        type:              'text',
-        text:              { body },
-      }),
-    },
-  );
+    );
 
-  if (!response.ok) {
-    const error = await response.json() as any;
-    throw new Error(`Meta send failed: ${error.error?.message || response.status}`);
+    if (!response.ok) {
+      const error = await response.json() as any;
+      throw new Error(`Meta send failed: ${error.error?.message || response.status}`);
+    }
+
+    const result = await response.json() as any;
+    console.log(`[Meta] ✅ Sent to ${cleanTo}: ${result.messages?.[0]?.id}`);
+  } catch (err: any) {
+    alertError(err, 'sendViaMeta', { to });
+    throw err;
   }
-
-  const result = await response.json() as any;
-  console.log(`[Meta] ✅ Sent to ${cleanTo}: ${result.messages?.[0]?.id}`);
 }
 
 export async function sendMetaTemplate(

@@ -1,5 +1,6 @@
 import twilio from 'twilio';
 import { logMessage } from './messageLog.js';
+import { alertError } from '../utils/errorMonitor.js';
 
 // ── Download Twilio media and upload to Cloudflare R2 ─────────────────────────
 // Twilio media URLs require HTTP Basic Auth — external services cannot access
@@ -200,6 +201,7 @@ export async function sendWhatsAppMessage(
       if (tenant?.id) logMessage(tenant.id, 'outbound', 'twilio');
     }
   } catch (err) {
+    alertError(err, 'sendWhatsAppMessage');
     console.error('[sendWhatsAppMessage error]', err);
     throw err;
   }

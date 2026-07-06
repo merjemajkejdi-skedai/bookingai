@@ -4,6 +4,7 @@ import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { buildShopSystemPrompt } from './prompts.js';
 import { shopTools, executeShopTool } from './tools.js';
 import { sendWhatsAppMedia } from '../whatsapp/twilio.js';
+import { alertError } from '../utils/errorMonitor.js';
 
 const anthropic = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
 
@@ -203,6 +204,7 @@ export async function runShopAgent(
     return { reply: finalReply, toolsUsed };
 
   } catch (err: any) {
+    alertError(err, 'runShopAgent', { tenantId, guestPhone });
     console.error('[Shop] Agent error:', err.message);
 
     try {

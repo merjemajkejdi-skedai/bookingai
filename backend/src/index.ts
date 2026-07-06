@@ -18,6 +18,7 @@ import { skedaiRouter } from './skedai/routes.js';
 import { startDigestCron } from './reviews/digestCron.js';
 import { startShopCron } from './shop/cron.js';
 import { adminAnalyticsRouter } from './routes/adminAnalytics.js';
+import { alertError, cleanupCooldowns } from './utils/errorMonitor.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -56,6 +57,26 @@ app.use('/whatsapp', whatsappRouter);
 app.use('/', metaRouter);
 app.use('/', emailWebhookRouter);
 
+app.get('/test-alert', (_req, res) => {
+  alertError(new Error('Test alert from /test-alert endpoint'), 'test');
+  res.json({ ok: true, message: 'Alert triggered (check email in ~5s)' });
+});
+
+app.use((err: any, _req: any, res: any, _next: any) => {
+  alertError(err, 'expressGlobalError');
+  res.status(500).json({ error: 'Internal server error' });
+});
+
+process.on('unhandledRejection', (reason) => {
+  alertError(reason instanceof Error ? reason : new Error(String(reason)), 'unhandledRejection');
+});
+
+process.on('uncaughtException', (err) => {
+  alertError(err, 'uncaughtException');
+});
+
+setInterval(cleanupCooldowns, 3_600_000);
+
 async function start() {
   await runMigrations();
   startDigestCron();
@@ -70,7 +91,8 @@ async function start() {
     console.log(`\n   Twilio: ${!!process.env.TWILIO_ACCOUNT_SID ? '✅' : '❌ missing TWILIO_ACCOUNT_SID'}`);
     console.log(`   Claude: ${!!process.env.CLAUDE_API_KEY ? '✅' : '❌ missing CLAUDE_API_KEY'}`);
     const r2Ok = !!(process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_ENDPOINT && process.env.R2_BUCKET_NAME && process.env.R2_PUBLIC_URL);
-    console.log(`   R2:     ${r2Ok ? '✅' : '❌ missing R2_* env vars — file uploads will fail'}\n`);
+    console.log(`   R2:     ${r2Ok ? '✅' : '❌ missing R2_* env vars — file uploads will fail'}`);
+    console.log(`   Alerts: ${process.env.RESEND_API_KEY ? '✅ → Merjemajkejdi@gmail.com' : '❌ missing RESEND_API_KEY'}\n`);
   });
 }
 

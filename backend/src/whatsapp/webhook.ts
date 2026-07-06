@@ -11,6 +11,7 @@ import { runShopAgent } from '../shop/agent.js';
 import { isPg, prepare, query, queryOne } from '../db/database.js';
 import { sendWhatsAppMessage } from './twilio.js';
 import { logMessage } from './messageLog.js';
+import { alertError } from '../utils/errorMonitor.js';
 
 export const whatsappRouter = Router();
 
@@ -598,6 +599,7 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
     }
 
   } catch (err: any) {
+    alertError(err, 'twilioWebhook');
     console.error('❌ Webhook error:', err?.message ?? err);
   }
 });

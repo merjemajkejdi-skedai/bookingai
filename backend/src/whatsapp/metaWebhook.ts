@@ -14,6 +14,7 @@ import { runArtEventAgent } from '../modules/art_event/agent.js';
 import { runArtClassAgent } from '../modules/art_class/agent.js';
 import { runRestaurantAgent } from '../modules/restaurant/agent.js';
 import { sendEmailFallback } from '../utils/emailFallback.js';
+import { alertError } from '../utils/errorMonitor.js';
 
 const metaRouter = Router();
 
@@ -250,6 +251,7 @@ metaRouter.post('/meta/webhook', async (req: Request, res: Response) => {
       }
     }
   } catch (err: any) {
+    alertError(err, 'metaWebhook');
     console.error('[Meta webhook] Unhandled error:', err.message);
   }
 });

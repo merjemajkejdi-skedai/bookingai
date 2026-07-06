@@ -1,4 +1,5 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { alertError } from './errorMonitor.js';
 
 let _client: S3Client | null = null;
 
@@ -21,15 +22,20 @@ export async function uploadToR2(
   body: Buffer,
   contentType: string,
 ): Promise<string> {
-  const bucket = process.env.R2_BUCKET_NAME!;
-  await getClient().send(new PutObjectCommand({
-    Bucket: bucket,
-    Key: key,
-    Body: body,
-    ContentType: contentType,
-  }));
-  const base = (process.env.R2_PUBLIC_URL ?? '').replace(/\/$/, '');
-  return `${base}/${key}`;
+  try {
+    const bucket = process.env.R2_BUCKET_NAME!;
+    await getClient().send(new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+    }));
+    const base = (process.env.R2_PUBLIC_URL ?? '').replace(/\/$/, '');
+    return `${base}/${key}`;
+  } catch (err: any) {
+    alertError(err, 'uploadToR2', { key });
+    throw err;
+  }
 }
 
 export async function deleteFromR2(urlOrKey: string): Promise<void> {

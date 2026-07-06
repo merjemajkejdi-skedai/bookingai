@@ -3,6 +3,7 @@ import { hotelTools, executeHotelTool } from './tools.js';
 import { buildHotelSystemPrompt } from './prompts.js';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { getHotelHistory, saveHotelConversation, saveGuestMessage } from './session.js';
+import { alertError } from '../utils/errorMonitor.js';
 
 async function dbGet(sql: string, ...p: unknown[]) {
   return isPg ? queryOne(sql, p) : prepare(sql).get(...p);
@@ -340,6 +341,7 @@ export async function runHotelAgent(
     : hotelTools.filter(t => t.name !== 'create_request');
 
   // ── Claude tool-use loop ──────────────────────────────────────────────────
+  try {
   while (true) {
     const response = await client.messages.create({
       model: SONNET_MODEL,
@@ -426,5 +428,9 @@ export async function runHotelAgent(
     await saveHotelConversation(tenantId, customerPhone, safeMessage, reply, roomNumber);
 
     return reply;
+  }
+  } catch (err: any) {
+    alertError(err, 'runHotelAgent', { tenantId, customerPhone });
+    throw err;
   }
 }
