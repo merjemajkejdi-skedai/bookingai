@@ -81,6 +81,10 @@ export interface ShopItem {
   item_code?: string;
   unit?: string;
   pricing_type?: 'fixed' | 'hourly';
+  price_2h?: number | null;
+  price_3h?: number | null;
+  price_4h?: number | null;
+  price_day?: number | null;
   is_active: number;
   sort_order: number;
   created_at: string;
@@ -96,6 +100,7 @@ export interface ShopOrderItem {
   quantity: number;
   subtotal: number;
   rental_hours?: number;
+  rental_tier?: string;
 }
 
 export interface ShopOrder {
