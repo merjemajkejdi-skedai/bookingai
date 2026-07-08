@@ -19,10 +19,16 @@ import { startDigestCron } from './reviews/digestCron.js';
 import { startShopCron } from './shop/cron.js';
 import { adminAnalyticsRouter } from './routes/adminAnalytics.js';
 import { alertError, cleanupCooldowns } from './utils/errorMonitor.js';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// 1. Helmet — security headers (before everything)
+app.use(helmet({ contentSecurityPolicy: false }));
+
+// 2. CORS — before rate limiting so OPTIONS preflight works
 app.use(cors({
   origin: [
     'https://app.skedai.net',
@@ -32,8 +38,52 @@ app.use(cors({
   ],
   credentials: true,
 }));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: false, limit: '10mb' }));
+
+// 3. Body parsing
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+
+// 4. Rate limiters
+// Auth: 5 failed attempts per hour per IP (brute-force protection)
+const authLimiter = rateLimit({
+  windowMs:               60 * 60 * 1000,
+  max:                    5,
+  skipSuccessfulRequests: true,
+  standardHeaders:        true,
+  legacyHeaders:          false,
+  message:                { error: 'Too many login attempts. Try again in 1 hour.' },
+});
+app.use('/auth/', authLimiter);
+app.use('/api/auth/', authLimiter);
+
+// Public QR ordering: 300 per 15 min per IP
+// (50 guests sharing one WiFi router × ~4 requests each = ~200; 300 gives headroom)
+const publicShopLimiter = rateLimit({
+  windowMs:        15 * 60 * 1000,
+  max:             300,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message:         { error: 'Too many requests. Please try again shortly.' },
+  skip:            (_req, _res) => _req.method === 'OPTIONS',
+});
+app.use('/shop/public/', publicShopLimiter);
+
+// General API (dashboard routes): 200 per 15 min per IP
+// (8-second polling = ~112 requests per 15 min; 200 gives comfortable headroom)
+const generalApiLimiter = rateLimit({
+  windowMs:        15 * 60 * 1000,
+  max:             200,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message:         { error: 'Too many requests. Please try again shortly.' },
+  skip:            (_req, _res) => _req.method === 'OPTIONS',
+});
+app.use('/shop/', generalApiLimiter);
+app.use('/hotel/', generalApiLimiter);
+app.use('/admin/', generalApiLimiter);
+app.use('/api/', generalApiLimiter);
+// NOTE: /whatsapp/ and /meta/ routes are intentionally NOT rate limited —
+// Meta/Twilio send bursts that could trip a limiter; they use signature validation.
 
 app.get('/health', (_, res) => res.json({
   status: 'ok', ts: new Date().toISOString(),
