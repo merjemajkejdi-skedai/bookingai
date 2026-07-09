@@ -586,7 +586,8 @@ const SCHEMA = `
     in_progress_at TEXT,
     done_at TEXT,
     picked_up_at TEXT,
-    cancelled_at TEXT
+    cancelled_at TEXT,
+    cancel_reason TEXT DEFAULT NULL
   );
   CREATE TABLE IF NOT EXISTS shop_tables (
     id TEXT PRIMARY KEY,
@@ -1008,6 +1009,8 @@ export async function runMigrations() {
       `CREATE INDEX IF NOT EXISTS idx_inv_delivery_lines ON inventory_delivery_lines(delivery_id)`,
       `CREATE INDEX IF NOT EXISTS idx_inv_waste_tenant ON inventory_waste(tenant_id, recorded_at)`,
       `CREATE INDEX IF NOT EXISTS idx_inv_consumption_tenant ON inventory_consumption(tenant_id, consumed_at)`,
+      // shop_cancel_reason_001 — staff cancel reason on orders
+      `ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS cancel_reason TEXT`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -1397,6 +1400,12 @@ export async function runMigrations() {
     exec("ALTER TABLE shop_config ADD COLUMN notify_sound TEXT DEFAULT 'chime'");
   if (!shopNotifyCols.includes('notify_sound_enabled'))
     exec('ALTER TABLE shop_config ADD COLUMN notify_sound_enabled INTEGER DEFAULT 1');
+
+  // shop_cancel_reason_001 — staff cancel reason
+  const shopOrderCancelCols = prepare("SELECT name FROM pragma_table_info('shop_orders')")
+    .all().map((r: any) => r.name as string);
+  if (!shopOrderCancelCols.includes('cancel_reason'))
+    exec('ALTER TABLE shop_orders ADD COLUMN cancel_reason TEXT');
 
   console.log('✅ SQLite migrations complete');
 }

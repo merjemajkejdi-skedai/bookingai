@@ -96,14 +96,22 @@ export const shopTools: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'get_my_recent_order',
+    description: 'Look up the most recent order placed by this customer (based on their phone number). Call this when the customer asks about their order status without providing an order number.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {},
+    },
+  },
+  {
     name: 'get_order_status',
-    description: 'Get the current status and details of an order by its ID.',
+    description: 'Get the current status and details of an order. Provide either order_id (UUID from create_order) or order_number (the numeric order number the customer gives you).',
     input_schema: {
       type: 'object' as const,
       properties: {
-        order_id: { type: 'string' },
+        order_id:     { type: 'string', description: 'UUID of the order (from create_order result)' },
+        order_number: { type: 'number', description: 'Numeric order number provided by the customer' },
       },
-      required: ['order_id'],
     },
   },
   {
@@ -379,11 +387,31 @@ export async function executeShopTool(
       return { success: true, message: 'Order cancelled successfully' };
     }
 
+    case 'get_my_recent_order': {
+      const order = await dbGet(
+        `SELECT * FROM shop_orders WHERE tenant_id = ? AND guest_phone = ? ORDER BY created_at DESC LIMIT 1`,
+        tenantId, guestPhone,
+      );
+      if (!order) return { found: false };
+      const items = await dbAll(`SELECT item_name, quantity, item_price, subtotal FROM shop_order_items WHERE order_id = ?`, order.id);
+      return { found: true, order: { ...order, items } };
+    }
+
     case 'get_order_status': {
-      const { order_id } = input;
-      const order = await dbGet(`SELECT * FROM shop_orders WHERE id = ? AND tenant_id = ?`, order_id, tenantId);
+      const { order_id, order_number } = input;
+      let order: any;
+      if (order_id) {
+        order = await dbGet(`SELECT * FROM shop_orders WHERE id = ? AND tenant_id = ?`, order_id, tenantId);
+      } else if (order_number != null) {
+        order = await dbGet(
+          `SELECT * FROM shop_orders WHERE tenant_id = ? AND order_number = ? ORDER BY created_at DESC LIMIT 1`,
+          tenantId, Number(order_number),
+        );
+      } else {
+        return { found: false, message: 'Provide order_id or order_number' };
+      }
       if (!order) return { found: false, message: 'Order not found' };
-      const items = await dbAll(`SELECT item_name, quantity, item_price, subtotal FROM shop_order_items WHERE order_id = ?`, order_id);
+      const items = await dbAll(`SELECT item_name, quantity, item_price, subtotal FROM shop_order_items WHERE order_id = ?`, order.id);
       return { found: true, order: { ...order, items } };
     }
 

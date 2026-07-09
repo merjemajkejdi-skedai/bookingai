@@ -226,6 +226,37 @@ function DeliveryTimeBadge() {
   );
 }
 
+function CancelledOrderCard({ order }: { order: ShopOrder }) {
+  const fmt = (n: number, c: string) => `${n.toFixed(2)} ${c}`;
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-red-100 p-3 flex flex-col gap-2 opacity-75">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-slate-700">#{order.order_number}</span>
+        <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-600">Cancelled</span>
+      </div>
+      {order.pickup_name && (
+        <div className="text-xs text-slate-600 font-medium">{order.pickup_name}</div>
+      )}
+      <div className="flex flex-col gap-0.5">
+        {order.items?.map((item, i) => (
+          <div key={i} className="text-xs text-slate-500">
+            {item.quantity}× {item.item_name}
+          </div>
+        ))}
+      </div>
+      <div className="text-xs font-semibold text-slate-700">{fmt(order.total_price, order.currency)}</div>
+      {order.cancelled_at && (
+        <div className="text-xs text-slate-400">
+          {new Date(order.cancelled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </div>
+      )}
+      {order.cancel_reason && (
+        <div className="text-xs text-red-500 font-medium">Reason: {order.cancel_reason}</div>
+      )}
+    </div>
+  );
+}
+
 function OrderCard({
   order,
   onStatusChange,
@@ -802,6 +833,7 @@ function OrdersTab() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [showManualOrderModal, setShowManualOrderModal] = useState(false);
+  const [showCancelled, setShowCancelled] = useState(false);
   const [deliveryInfo, setDeliveryInfo] = useState<any>(null);
   const [newOrderBanner, setNewOrderBanner] = useState(false);
   const [soundMuted, setSoundMuted]         = useState(false);
@@ -957,8 +989,12 @@ function OrdersTab() {
     await load();
   }
 
-  const cols = ['new', 'in_progress', 'done', 'picked_up'] as const;
+  const activeCols = ['new', 'in_progress', 'done', 'picked_up'] as const;
+  const allCols = showCancelled ? [...activeCols, 'cancelled' as const] : activeCols;
   const byStatus = (s: string) => orders.filter((o) => o.status === s);
+  const gridCols = showCancelled
+    ? 'grid-cols-1 md:grid-cols-2 xl:grid-cols-5'
+    : 'grid-cols-1 md:grid-cols-2 xl:grid-cols-4';
 
   return (
     <div className="flex flex-col gap-4 h-full">
@@ -975,7 +1011,7 @@ function OrdersTab() {
           <button onClick={load} className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors"><RefreshCw size={15} className={loading ? 'animate-spin text-slate-400' : 'text-slate-500'} /></button>
           <span className="text-xs text-slate-400">{orders.filter(o => o.status !== 'cancelled').length} orders</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <DeliveryTimeBadge />
           <button
             onClick={() => setSoundMuted(m => !m)}
@@ -984,6 +1020,15 @@ function OrdersTab() {
           >
             {soundMuted ? '🔇' : '🔔'}
           </button>
+          <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={showCancelled}
+              onChange={e => setShowCancelled(e.target.checked)}
+              className="rounded"
+            />
+            Show cancelled orders
+          </label>
           {shopConfig?.manual_orders_enabled && (
             <button
               onClick={() => setShowManualOrderModal(true)}
@@ -1002,8 +1047,8 @@ function OrdersTab() {
       {loading ? (
         <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">Loading…</div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 flex-1 overflow-auto">
-          {cols.map((col) => (
+        <div className={`grid ${gridCols} gap-4 flex-1 overflow-auto`}>
+          {allCols.map((col) => (
             <div key={col} className="flex flex-col gap-2">
               <div className="flex items-center gap-2 sticky top-0 bg-slate-50 pb-1">
                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[col]}`}>{STATUS_LABELS[col]}</span>
@@ -1012,7 +1057,9 @@ function OrdersTab() {
               <div className="flex flex-col gap-2 overflow-y-auto">
                 {byStatus(col).length === 0
                   ? <div className="text-xs text-slate-300 text-center py-4">Empty</div>
-                  : byStatus(col).map((o) => <OrderCard key={o.id} order={o} onStatusChange={handleStatusChange} onPaidChange={handlePaidChange} onRefresh={load} shopConfig={shopConfig} deliveryInfo={deliveryInfo} />)
+                  : col === 'cancelled'
+                    ? byStatus(col).map((o) => <CancelledOrderCard key={o.id} order={o} />)
+                    : byStatus(col).map((o) => <OrderCard key={o.id} order={o} onStatusChange={handleStatusChange} onPaidChange={handlePaidChange} onRefresh={load} shopConfig={shopConfig} deliveryInfo={deliveryInfo} />)
                 }
               </div>
             </div>

@@ -53,12 +53,20 @@ export async function runShopAgent(
       dbGet(`SELECT * FROM tenants WHERE id = ?`, tenantId),
     ]);
 
-    // Silently ignore keepalive replies from the configured staff notify number
+    // Handle messages from the configured staff notify number
     if (config?.staff_notify_enabled && config?.staff_notify_number) {
       const cleanNotify = String(config.staff_notify_number).replace(/\D/g, '');
       const cleanGuest  = guestPhone.replace(/\D/g, '');
       if (cleanNotify && (cleanGuest === cleanNotify || cleanGuest.endsWith(cleanNotify) || cleanNotify.endsWith(cleanGuest))) {
-        console.log(`[Shop] Ignoring message from staff notify number: ${guestPhone}`);
+        // Try to parse as a staff command first
+        const { handleStaffCommand } = await import('./staffCommands.js');
+        const cmdResult = await handleStaffCommand(message, tenantId, tenant);
+        if (cmdResult.handled) {
+          console.log(`[Shop] Staff command handled: "${message}" → "${cmdResult.reply}"`);
+          return { reply: cmdResult.reply, toolsUsed: [] };
+        }
+        // Not a recognised command (keepalive, etc.) — silently ignore
+        console.log(`[Shop] Ignoring non-command message from staff notify number: ${guestPhone}`);
         return { reply: '', toolsUsed: [] };
       }
     }

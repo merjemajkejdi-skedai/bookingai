@@ -132,6 +132,7 @@ export interface ShopOrder {
   done_at?: string;
   picked_up_at?: string;
   cancelled_at?: string;
+  cancel_reason?: string;
   items: ShopOrderItem[];
 }
 
