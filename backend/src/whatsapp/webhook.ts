@@ -300,7 +300,7 @@ async function handleMetaWebhook(req: Request, res: Response) {
           .catch((e: any) => console.error('[Meta] fallback send failed:', e.message));
         return;
       }
-      if (reply && shopToolsUsed.length > 0) {
+      if (reply) {
         scheduleOrderReminder(tenant.id, customerPhone, async () => {
           const { reply: reminderReply } = await runShopAgent(REMINDER_PROMPT, customerPhone, tenant.id, undefined, true);
           if (!reminderReply) return;
@@ -526,13 +526,11 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
             console.error('[Email fallback] Shop failed:', emailErr.message);
           }
         }
-        if (shopToolsUsed.length > 0) {
-          scheduleOrderReminder(tenant.id, phone, async () => {
-            const { reply: reminderReply } = await runShopAgent(REMINDER_PROMPT, phone, tenant.id, undefined, true);
-            if (!reminderReply) return;
-            await sendWhatsAppMessage(phone, reminderReply, tenant);
-          });
-        }
+        scheduleOrderReminder(tenant.id, phone, async () => {
+          const { reply: reminderReply } = await runShopAgent(REMINDER_PROMPT, phone, tenant.id, undefined, true);
+          if (!reminderReply) return;
+          await sendWhatsAppMessage(phone, reminderReply, tenant);
+        });
       }
       return;
     }

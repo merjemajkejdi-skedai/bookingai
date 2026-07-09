@@ -240,7 +240,7 @@ metaRouter.post('/meta/webhook', async (req: Request, res: Response) => {
           }
 
           // Schedule reminder for active shop ordering conversations
-          if (tenantType === 'shop' && reply && shopToolsUsed.length > 0) {
+          if (tenantType === 'shop' && reply) {
             scheduleOrderReminder(tenant.id, customerPhone, async () => {
               const { reply: reminderReply } = await runShopAgent(REMINDER_PROMPT, customerPhone, tenant.id, undefined, true);
               if (!reminderReply) return;
