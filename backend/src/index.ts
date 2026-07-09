@@ -23,6 +23,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
 
 // 1. Helmet — security headers (before everything)
