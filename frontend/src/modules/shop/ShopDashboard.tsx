@@ -245,10 +245,11 @@ function CancelledOrderCard({ order }: { order: ShopOrder }) {
         ))}
       </div>
       <div className="text-xs font-semibold text-slate-700">{fmt(order.total_price, order.currency)}</div>
-      {order.cancelled_at && (
-        <div className="text-xs text-slate-400">
-          {new Date(order.cancelled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-        </div>
+      {order.guest_phone && (
+        <div className="text-xs text-slate-500">{order.guest_phone} · {timeAgo(order.cancelled_at ?? order.created_at)}</div>
+      )}
+      {!order.guest_phone && order.cancelled_at && (
+        <div className="text-xs text-slate-400">{timeAgo(order.cancelled_at)}</div>
       )}
       {order.cancel_reason && (
         <div className="text-xs text-red-500 font-medium">Reason: {order.cancel_reason}</div>
