@@ -131,13 +131,13 @@ export function scheduleOrderReminder(
     } catch (err: any) {
       console.error(`[Shop reminder] ❌ Failed to send to ${phone}:`, err.message);
     }
-  }, 2 * 60 * 1000);
+  }, 5 * 60 * 1000);
 
   orderReminderMap.set(key, { timer, tenantId, phone, reminded: false });
 }
 
 export const REMINDER_PROMPT =
-  "The customer started ordering but hasn't completed their order in the last 2 minutes " +
+  "The customer started ordering but hasn't completed their order in the last 5 minutes " +
   "and hasn't replied. Send them ONE short, friendly reminder message saying their order " +
   "isn't confirmed yet and ask them to reply to complete it. Match the language they were " +
   "using. Keep it to 1-2 sentences maximum. Do not list menu items or prices.";
