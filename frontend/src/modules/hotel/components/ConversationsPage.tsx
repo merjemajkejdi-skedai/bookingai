@@ -281,7 +281,9 @@ function ThreadPanel({
     survey_sent:  conv.survey_sent,
     survey_score: conv.survey_score,
   });
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const bottomRef           = useRef<HTMLDivElement>(null);
+  const prevMessageCountRef = useRef<number>(0);
+  const isInitialLoadRef    = useRef<boolean>(true);
 
   function loadThread() {
     return api.getConversation(conv.guest_phone)
@@ -298,7 +300,13 @@ function ThreadPanel({
       .catch(() => {});
   }
 
-  // Load full thread on mount
+  // Reset scroll tracking when conversation changes
+  useEffect(() => {
+    isInitialLoadRef.current = true;
+    prevMessageCountRef.current = 0;
+  }, [conv.guest_phone]);
+
+  // Load full thread on mount / conversation change
   useEffect(() => {
     setLoading(true);
     loadThread().finally(() => setLoading(false));
@@ -310,9 +318,32 @@ function ThreadPanel({
     return () => clearInterval(id);
   }, [conv.guest_phone]);
 
-  // Scroll to bottom whenever messages change
+  // Controlled scroll — only on initial open or new customer message on idle conversation
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messages.length === 0) return;
+
+    if (isInitialLoadRef.current) {
+      // First load of this conversation — scroll to bottom once
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      isInitialLoadRef.current = false;
+      prevMessageCountRef.current = messages.length;
+      return;
+    }
+
+    const hasNewMessage = messages.length > prevMessageCountRef.current;
+    if (hasNewMessage) {
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage.role === 'user') {
+        // Only scroll if conversation was idle (5+ min since second-to-last message)
+        const secondToLast = messages[messages.length - 2];
+        const wasIdle = !secondToLast ||
+          Date.now() - new Date(secondToLast.ts).getTime() > 5 * 60 * 1000;
+        if (wasIdle) {
+          bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
+      }
+      prevMessageCountRef.current = messages.length;
+    }
   }, [messages]);
 
   async function handleCheckout() {
