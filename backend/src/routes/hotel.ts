@@ -758,11 +758,12 @@ hotelRouter.post('/departments', requireAuth, async (req: Request, res: Response
   const tenantId = resolveTenantId(req);
   const {
     name, whatsapp, request_types, response_time_minutes, language,
-    scheduling_enabled = 0, after_hours_message = null,
+    scheduling_enabled = 0, after_hours_message = null, confirmation_mode = 'with_estimate',
   } = req.body as {
     name: string; whatsapp: string; request_types: string[];
     response_time_minutes?: number; language?: string;
     scheduling_enabled?: number; after_hours_message?: string | null;
+    confirmation_mode?: string;
   };
   if (!name || !whatsapp || !Array.isArray(request_types) || !request_types.length) {
     return err(res, 'name, whatsapp, and request_types are required');
@@ -774,11 +775,12 @@ hotelRouter.post('/departments', requireAuth, async (req: Request, res: Response
     const id = crypto.randomUUID();
     await dbRun(
       `INSERT INTO hotel_departments
-         (id, tenant_id, name, whatsapp, request_types, response_time_minutes, language, scheduling_enabled, after_hours_message)
-       VALUES (?,?,?,?,?,?,?,?,?)`,
+         (id, tenant_id, name, whatsapp, request_types, response_time_minutes, language, scheduling_enabled, after_hours_message, confirmation_mode)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
       id, tenantId, name, whatsapp, JSON.stringify(request_types),
       Number(response_time_minutes) || 30, language || 'en',
       scheduling_enabled ? 1 : 0, after_hours_message || null,
+      confirmation_mode === 'notify_only' ? 'notify_only' : 'with_estimate',
     );
     const row = await dbGet('SELECT * FROM hotel_departments WHERE id = ?', id) as any;
     ok(res, { ...row, request_types: JSON.parse(row.request_types || '[]') });
@@ -790,11 +792,12 @@ hotelRouter.put('/departments/:id', requireAuth, async (req: Request, res: Respo
   const tenantId = resolveTenantId(req);
   const {
     name, whatsapp, request_types, is_active, response_time_minutes, language,
-    scheduling_enabled = 0, after_hours_message = null,
+    scheduling_enabled = 0, after_hours_message = null, confirmation_mode = 'with_estimate',
   } = req.body as {
     name: string; whatsapp: string; request_types: string[];
     is_active?: boolean; response_time_minutes?: number; language?: string;
     scheduling_enabled?: number; after_hours_message?: string | null;
+    confirmation_mode?: string;
   };
   if (!name || !whatsapp || !Array.isArray(request_types) || !request_types.length) {
     return err(res, 'name, whatsapp, and request_types are required');
@@ -804,12 +807,13 @@ hotelRouter.put('/departments/:id', requireAuth, async (req: Request, res: Respo
       `UPDATE hotel_departments
        SET name = ?, whatsapp = ?, request_types = ?, is_active = ?,
            response_time_minutes = ?, language = ?,
-           scheduling_enabled = ?, after_hours_message = ?
+           scheduling_enabled = ?, after_hours_message = ?, confirmation_mode = ?
        WHERE id = ? AND tenant_id = ?`,
       name, whatsapp, JSON.stringify(request_types),
       is_active === false ? 0 : 1,
       Number(response_time_minutes) || 30, language || 'en',
       scheduling_enabled ? 1 : 0, after_hours_message || null,
+      confirmation_mode === 'notify_only' ? 'notify_only' : 'with_estimate',
       req.params.id, tenantId,
     );
     ok(res, { updated: true });

@@ -57,6 +57,7 @@ export interface Department {
   language: string;
   scheduling_enabled: number; // 0 | 1
   after_hours_message: string | null;
+  confirmation_mode: 'with_estimate' | 'notify_only';
   created_at: string;
 }
 

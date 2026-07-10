@@ -39,6 +39,7 @@ type FormData = {
   language: string;
   scheduling_enabled: number;
   after_hours_message: string;
+  confirmation_mode: 'with_estimate' | 'notify_only';
 };
 
 type ScheduleRow = {
@@ -57,6 +58,7 @@ const EMPTY_FORM: FormData = {
   language: 'en',
   scheduling_enabled: 0,
   after_hours_message: '',
+  confirmation_mode: 'with_estimate',
 };
 
 const EMPTY_SCHEDULE: ScheduleRow = {
@@ -334,6 +336,32 @@ function DeptForm({
         )}
       </div>
 
+      {/* Confirmation mode */}
+      <div className="space-y-1">
+        <label className="text-xs font-medium text-slate-600">Confirmation Mode</label>
+        <div className="flex flex-col gap-2">
+          {([
+            { value: 'with_estimate', label: 'With ETA', desc: 'Confirm with expected response time (e.g. "in ~30 min")' },
+            { value: 'notify_only',   label: 'Notify only', desc: 'Just confirm staff were notified — no ETA mentioned' },
+          ] as const).map(opt => (
+            <label key={opt.value} className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="confirmation_mode"
+                value={opt.value}
+                checked={form.confirmation_mode === opt.value}
+                onChange={() => setForm(f => ({ ...f, confirmation_mode: opt.value }))}
+                className="mt-0.5"
+              />
+              <span className="flex flex-col">
+                <span className="text-xs font-medium text-slate-700">{opt.label}</span>
+                <span className="text-xs text-slate-400">{opt.desc}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </div>
+
       <div className="flex gap-2 pt-2">
         <Button type="submit" disabled={saving || !form.request_types.length} className="flex-1">
           {saving ? 'Saving…' : 'Save Department'}
@@ -417,6 +445,7 @@ export function DepartmentsPage() {
         language: form.language,
         scheduling_enabled: form.scheduling_enabled,
         after_hours_message: form.after_hours_message || null,
+        confirmation_mode: form.confirmation_mode,
       });
       // Save schedules using the new dept's id
       if (schedules.length > 0) {
@@ -440,6 +469,7 @@ export function DepartmentsPage() {
         language: form.language,
         scheduling_enabled: form.scheduling_enabled,
         after_hours_message: form.after_hours_message || null,
+        confirmation_mode: form.confirmation_mode,
       });
       // Always save schedules (empty array = delete all)
       await api.saveDeptSchedules(editing.id, schedules);
@@ -464,6 +494,7 @@ export function DepartmentsPage() {
       language: dept.language || 'en',
       scheduling_enabled: dept.scheduling_enabled ?? 0,
       after_hours_message: dept.after_hours_message ?? null,
+      confirmation_mode: dept.confirmation_mode ?? 'with_estimate',
     });
     load();
   }
@@ -591,6 +622,7 @@ export function DepartmentsPage() {
               language: editing.language || 'en',
               scheduling_enabled: editing.scheduling_enabled ?? 0,
               after_hours_message: editing.after_hours_message ?? '',
+              confirmation_mode: editing.confirmation_mode ?? 'with_estimate',
             }}
             initialSchedules={editSchedules.map(s => ({
               id: s.id,

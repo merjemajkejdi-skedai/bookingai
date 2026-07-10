@@ -879,6 +879,7 @@ export async function runMigrations() {
       `CREATE INDEX IF NOT EXISTS idx_dept_schedules_dept ON hotel_department_schedules(department_id)`,
       `ALTER TABLE hotel_departments ADD COLUMN IF NOT EXISTS scheduling_enabled INTEGER NOT NULL DEFAULT 0`,
       `ALTER TABLE hotel_departments ADD COLUMN IF NOT EXISTS after_hours_message TEXT`,
+      `ALTER TABLE hotel_departments ADD COLUMN IF NOT EXISTS confirmation_mode TEXT NOT NULL DEFAULT 'with_estimate'`,
       // staff_takeover_001 — AI pause / staff takeover per conversation
       `ALTER TABLE hotel_conversations ADD COLUMN IF NOT EXISTS ai_paused_until TEXT`,
       `ALTER TABLE hotel_conversations ADD COLUMN IF NOT EXISTS ai_paused_by TEXT`,
@@ -1198,6 +1199,8 @@ export async function runMigrations() {
     exec('ALTER TABLE hotel_departments ADD COLUMN scheduling_enabled INTEGER NOT NULL DEFAULT 0');
   if (!deptCols.includes('after_hours_message'))
     exec('ALTER TABLE hotel_departments ADD COLUMN after_hours_message TEXT');
+  if (!deptCols.includes('confirmation_mode'))
+    exec("ALTER TABLE hotel_departments ADD COLUMN confirmation_mode TEXT NOT NULL DEFAULT 'with_estimate'");
 
   const hotelReviewCols = prepare("SELECT name FROM pragma_table_info('hotel_reviews')")
     .all().map((r: any) => r.name as string);
