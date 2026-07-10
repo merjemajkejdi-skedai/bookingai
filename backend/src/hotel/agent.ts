@@ -332,7 +332,14 @@ export async function runHotelAgent(
     { role: 'user', content: userMessageContent },
   ];
 
-  const systemPrompt = buildHotelSystemPrompt(tenantRow, hotelConfig);
+  // Fresh-start detection: if last message was 5+ hours ago, treat as new conversation
+  const lastMsg = hotelHistory.at(-1);
+  const gapMinutes = lastMsg?.ts
+    ? (Date.now() - new Date(lastMsg.ts).getTime()) / 60_000
+    : 0;
+  const isFreshStart = gapMinutes >= 300;
+
+  const systemPrompt = buildHotelSystemPrompt(tenantRow, hotelConfig, isFreshStart);
 
   // When message_forward is OFF, the agent only reads FAQ/config — never creates requests
   const messageForward = (hotelConfig as any)?.message_forward !== 0;

@@ -5,7 +5,7 @@ function waLink(phone: string | null | undefined): string | null {
   return digits ? `https://wa.me/${digits}` : null;
 }
 
-export function buildHotelSystemPrompt(tenant: any, config?: any): string {
+export function buildHotelSystemPrompt(tenant: any, config?: any, isFreshStart: boolean = false): string {
   const hotelName           = config?.hotel_name || tenant?.name || 'the hotel';
   const forward             = config?.message_forward !== 0;       // default ON
   const askIdentity         = config?.ask_guest_identity !== 0;    // default ON
@@ -85,12 +85,37 @@ When a guest asks about food, drinks, room service, laundry, bar, breakfast, or 
 6. NEVER include file URLs, image links, or http links in your text reply — files are delivered automatically
 
 ═══════════════════════════════════════════════
+NON-REQUEST MESSAGE HANDLING
+═══════════════════════════════════════════════
+- Social message ("Ok", "Thanks", "👍", "Good morning", etc.):
+  Acknowledge warmly and ask if there is anything you can help with.
+  1-2 sentences maximum.
+
+- Guest shares information ("The match is on Klan TV", etc.):
+  Acknowledge warmly. Call get_faq_answer to check if you have relevant info
+  on this topic. If yes → share it. If no → acknowledge and offer to help
+  with anything else.
+
+- Guest asks about something you don't have info on:
+  Always check get_faq_answer and get_hotel_info first.
+  If nothing found, say: "I'm sorry, I don't have that information at the
+  moment. ${contactLine}"
+  ⛔ Never say "contact reception" without providing the contact number.
+
+- Never bring up previous topics the guest has not mentioned themselves.
+
+═══════════════════════════════════════════════
 RESPONSE STYLE
 ═══════════════════════════════════════════════
 - Short and clear — guests are on mobile
 - No markdown, no bullet points — natural sentences
 - Warm and apologetic when redirecting
-- Respond in the same language the guest writes in`;
+- Respond in the same language the guest writes in${isFreshStart ? `
+
+IMPORTANT: The guest is returning after several hours away. Treat this as a
+fresh conversation. Greet them warmly and respond only to their current message.
+Do not reference or continue any previous topics from earlier in the conversation
+unless the guest explicitly brings them up.` : ''}`;
   }
 
   // ── MODE B: Message Forwarding ON (default) ─────────────────────────────────
@@ -361,6 +386,17 @@ This history is for REFERENCE ONLY — use it only if the guest
 explicitly references a past issue. Never volunteer information
 about past requests unless asked.
 
+4. NON-REQUEST MESSAGES — handle gracefully, never ignore:
+   - Social message ("Ok", "Thanks", "👍", "Good evening", etc.):
+     Acknowledge warmly and ask how you can help. 1-2 sentences maximum.
+     Do NOT reference previous requests or topics.
+   - Guest shares information ("The match is on Klan TV", etc.):
+     Acknowledge warmly. Call get_faq_answer to check if you have relevant
+     info on this topic. If yes → share it. If no → acknowledge and offer
+     to help with anything else. Do NOT create a service request for an
+     informational message from the guest.
+   - Never bring up previous topics the guest has not mentioned themselves.
+
 ═══════════════════════════════════════════════
 MULTIPLE QUESTIONS
 ═══════════════════════════════════════════════
@@ -388,5 +424,12 @@ RESPONSE STYLE
 - Short and clear — guests are on mobile
 - No markdown, no bullet points — natural sentences
 - Warm but efficient — one sentence of empathy is enough, then take action
-- Respond in the same language the guest writes in`;
+- Respond in the same language the guest writes in
+- If you ever tell a guest to contact reception directly, always include
+  the reception phone number. Never say "contact reception" without a number.${isFreshStart ? `
+
+IMPORTANT: The guest is returning after several hours away. Treat this as a
+fresh conversation. Greet them warmly and respond only to their current message.
+Do not reference or continue any previous topics from earlier in the conversation
+unless the guest explicitly brings them up.` : ''}`;
 }
