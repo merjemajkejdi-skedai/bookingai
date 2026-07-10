@@ -8,7 +8,7 @@ import { runRestaurantAgent } from '../modules/restaurant/agent.js';
 import { runHotelAgent } from '../hotel/agent.js';
 import { runSkedAIAgent } from '../skedai/agent.js';
 import { runShopAgent } from '../shop/agent.js';
-import { isPg, prepare, query, queryOne } from '../db/database.js';
+import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { sendWhatsAppMessage } from './twilio.js';
 import { logMessage } from './messageLog.js';
 import { alertError } from '../utils/errorMonitor.js';
@@ -75,6 +75,10 @@ export async function bufferMessage(
 
 async function dbGet(sql: string, ...p: unknown[]) {
   return isPg ? queryOne(sql, p) : prepare(sql).get(...p);
+}
+async function dbRun(sql: string, ...p: unknown[]) {
+  if (isPg) return queryRun(sql, p);
+  prepare(sql).run(...p);
 }
 
 // ---------------------------------------------------------------------------
@@ -305,6 +309,10 @@ async function handleMetaWebhook(req: Request, res: Response) {
           const { reply: reminderReply } = await runShopAgent(REMINDER_PROMPT, customerPhone, tenant.id, undefined, true);
           if (!reminderReply) return;
           await sendWhatsAppMessage(customerPhone, reminderReply, tenant);
+          const conv = await dbGet('SELECT messages FROM shop_conversations WHERE tenant_id = ? AND guest_phone = ?', tenant.id, customerPhone) as any;
+          const msgs: any[] = (() => { try { return JSON.parse(conv?.messages || '[]'); } catch { return []; } })();
+          await dbRun('UPDATE shop_conversations SET messages = ?, updated_at = ? WHERE tenant_id = ? AND guest_phone = ?',
+            JSON.stringify([...msgs, { role: 'assistant', content: reminderReply }].slice(-40)), new Date().toISOString(), tenant.id, customerPhone);
         });
       }
     } else {
@@ -530,6 +538,10 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
           const { reply: reminderReply } = await runShopAgent(REMINDER_PROMPT, phone, tenant.id, undefined, true);
           if (!reminderReply) return;
           await sendWhatsAppMessage(phone, reminderReply, tenant);
+          const conv = await dbGet('SELECT messages FROM shop_conversations WHERE tenant_id = ? AND guest_phone = ?', tenant.id, phone) as any;
+          const msgs: any[] = (() => { try { return JSON.parse(conv?.messages || '[]'); } catch { return []; } })();
+          await dbRun('UPDATE shop_conversations SET messages = ?, updated_at = ? WHERE tenant_id = ? AND guest_phone = ?',
+            JSON.stringify([...msgs, { role: 'assistant', content: reminderReply }].slice(-40)), new Date().toISOString(), tenant.id, phone);
         });
       }
       return;
