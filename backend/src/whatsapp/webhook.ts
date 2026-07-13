@@ -95,10 +95,30 @@ const orderReminderMap = new Map<string, ReminderEntry>();
 
 async function checkRecentOrder(tenantId: string, phone: string): Promise<boolean> {
   const sql = isPg
-    ? `SELECT id FROM shop_orders WHERE tenant_id = ? AND guest_phone = ? AND created_at >= NOW() - INTERVAL '5 minutes' LIMIT 1`
-    : `SELECT id FROM shop_orders WHERE tenant_id = ? AND guest_phone = ? AND created_at >= datetime('now', '-5 minutes') LIMIT 1`;
+    ? `SELECT id FROM shop_orders WHERE tenant_id = ? AND guest_phone = ? AND created_at >= NOW() - INTERVAL '30 minutes' LIMIT 1`
+    : `SELECT id FROM shop_orders WHERE tenant_id = ? AND guest_phone = ? AND created_at >= datetime('now', '-30 minutes') LIMIT 1`;
   const row = await dbGet(sql, tenantId, phone);
   return row != null;
+}
+
+async function checkAtNameConfirmStep(tenantId: string, phone: string): Promise<boolean> {
+  const conv = await dbGet(
+    'SELECT messages FROM shop_conversations WHERE tenant_id = ? AND guest_phone = ?',
+    tenantId, phone,
+  ) as any;
+  if (!conv) return false;
+  let msgs: any[];
+  try { msgs = JSON.parse(conv.messages || '[]'); } catch { return false; }
+  if (!msgs.length) return false;
+
+  const last = msgs[msgs.length - 1];
+  // Guest must not have replied after the agent's name-request message
+  if (last?.role !== 'assistant') return false;
+
+  const text = (last.content as string || '').toLowerCase();
+  // Match common ways the agent asks for a name across supported languages
+  const keywords = ['name', 'confirm', 'nome', 'nombre', 'nom', 'emrin', 'emër'];
+  return keywords.some(kw => text.includes(kw));
 }
 
 export function cancelOrderReminder(tenantId: string, phone: string): void {
@@ -125,6 +145,13 @@ export function scheduleOrderReminder(
   const timer = setTimeout(async () => {
     const hasOrder = await checkRecentOrder(tenantId, phone).catch(() => false);
     if (hasOrder) { orderReminderMap.delete(key); return; }
+
+    const atStep = await checkAtNameConfirmStep(tenantId, phone).catch(() => false);
+    if (!atStep) {
+      orderReminderMap.delete(key);
+      console.log(`[Shop reminder] Skipped for ${phone} — not at name confirmation step`);
+      return;
+    }
 
     const entry = orderReminderMap.get(key);
     if (entry) entry.reminded = true;
