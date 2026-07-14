@@ -29,7 +29,7 @@ function formatTime(iso: string) {
 }
 
 function displayPhone(phone: string) {
-  return phone.replace('whatsapp:', '');
+  return phone.replace('whatsapp:', '').replace('instagram:', 'IG:');
 }
 
 // ── fireNotification ──────────────────────────────────────────────────────────
@@ -736,6 +736,11 @@ export function ConversationsPage({ surveyEnabled = false }: { surveyEnabled?: b
                           )}>
                             {c.guest_name ?? displayPhone(c.guest_phone)}
                           </span>
+                          {c.channel === 'instagram' && (
+                            <span className="text-[10px] font-semibold bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded flex-shrink-0">
+                              📷 IG
+                            </span>
+                          )}
                           {c.room_number && (
                             <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded flex-shrink-0">
                               Rm {c.room_number}

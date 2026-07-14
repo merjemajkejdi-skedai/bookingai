@@ -19,6 +19,7 @@ import { startDigestCron } from './reviews/digestCron.js';
 import { startShopCron } from './shop/cron.js';
 import { adminAnalyticsRouter } from './routes/adminAnalytics.js';
 import { alertError, cleanupCooldowns } from './utils/errorMonitor.js';
+import instagramRouter from './routes/instagramWebhook.js';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 
@@ -106,6 +107,7 @@ app.use('/shop', shopRouter);
 app.use('/api', skedaiRouter);
 app.use('/whatsapp', whatsappRouter);
 app.use('/', metaRouter);
+app.use('/', instagramRouter);
 app.use('/', emailWebhookRouter);
 
 app.get('/test-alert', (_req, res) => {

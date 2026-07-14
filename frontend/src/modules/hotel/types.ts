@@ -102,6 +102,15 @@ export interface Conversation {
   // Staff takeover / AI pause
   ai_paused_until: string | null;
   ai_paused_by: string | null;
+  // Channel routing
+  channel?: string;
+  channel_user_id?: string | null;
+}
+
+export interface ChannelSetting {
+  channel: string;
+  ai_enabled: number | boolean;
+  connected: number | boolean;
 }
 
 export interface BlockedNumber {

@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { sendWhatsAppMessage } from '../whatsapp/twilio.js';
+import { sendInstagramMessage } from '../whatsapp/instagram.js';
 import * as XLSX from 'xlsx';
 import { requireAuth, resolveTenantId } from '../middleware/auth.js';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
@@ -1069,20 +1070,27 @@ hotelRouter.post('/conversations/:phone/reply', requireAuth, async (req: Request
   if (!message?.trim()) return err(res, 'message is required');
 
   try {
-    // Get full tenant row so per-tenant Twilio credentials are available
-    const tenantRow = await dbGet(
-      'SELECT * FROM tenants WHERE id = ?',
-      tenantId,
+    const conv = await dbGet(
+      'SELECT channel, channel_user_id FROM hotel_conversations WHERE tenant_id = ? AND guest_phone = ?',
+      tenantId, phone,
     ) as any;
-    if (!tenantRow) return err(res, 'Tenant not found', 404);
 
-    // Pass full tenant object — sendWhatsAppMessage uses tenant.twilio_account_sid /
-    // twilio_auth_token when set, falls back to global env vars if not
-    await sendWhatsAppMessage(phone, message.trim(), tenantRow);
+    if (conv?.channel === 'instagram') {
+      const cs = await dbGet(
+        'SELECT access_token FROM hotel_channel_settings WHERE tenant_id = ? AND channel = ?',
+        tenantId, 'instagram',
+      ) as any;
+      const accessToken = cs?.access_token || process.env.INSTAGRAM_ACCESS_TOKEN;
+      if (!accessToken) return err(res, 'No Instagram access token configured');
+      await sendInstagramMessage(conv.channel_user_id, message.trim(), accessToken);
+    } else {
+      // WhatsApp (Twilio) — get full tenant row for per-tenant credentials
+      const tenantRow = await dbGet('SELECT * FROM tenants WHERE id = ?', tenantId) as any;
+      if (!tenantRow) return err(res, 'Tenant not found', 404);
+      await sendWhatsAppMessage(phone, message.trim(), tenantRow);
+    }
 
-    // Append to conversation in memory + DB
     await appendStaffMessage(tenantId, phone, message.trim());
-
     ok(res, { sent: true });
   } catch (e: any) { err(res, e.message, 500); }
 });
@@ -1150,6 +1158,42 @@ hotelRouter.get('/conversations/:phone/pause-status', requireAuth, async (req: R
       minutes_remaining: minutesRemaining,
       paused_by:         row?.ai_paused_by ?? null,
     });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// ─────────────────────────────────────────
+// CHANNEL SETTINGS
+// ─────────────────────────────────────────
+
+// GET /hotel/channels — list channel settings for this tenant
+hotelRouter.get('/channels', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    const rows = await dbAll(
+      'SELECT channel, ai_enabled, connected FROM hotel_channel_settings WHERE tenant_id = ? ORDER BY channel',
+      tenantId,
+    );
+    ok(res, rows);
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// PUT /hotel/channels/:channel/ai-toggle — enable / disable AI for a channel
+hotelRouter.put('/channels/:channel/ai-toggle', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const { channel } = req.params;
+  const { ai_enabled } = req.body as { ai_enabled: boolean };
+
+  const valid = ['whatsapp', 'instagram', 'facebook', 'email'];
+  if (!valid.includes(channel)) return err(res, 'Invalid channel');
+
+  try {
+    await dbRun(
+      `UPDATE hotel_channel_settings
+       SET ai_enabled = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE tenant_id = ? AND channel = ?`,
+      ai_enabled ? 1 : 0, tenantId, channel,
+    );
+    ok(res, { channel, ai_enabled });
   } catch (e: any) { err(res, e.message, 500); }
 });
 

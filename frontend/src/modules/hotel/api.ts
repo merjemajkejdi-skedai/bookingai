@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import type { GuestStay, HotelRequest, FaqEntry, HotelConfig, Department, DepartmentSchedule, Conversation, BlockedNumber, HotelReview, ReviewStats, ReviewConfig } from './types';
+import type { GuestStay, HotelRequest, FaqEntry, HotelConfig, Department, DepartmentSchedule, Conversation, BlockedNumber, HotelReview, ReviewStats, ReviewConfig, ChannelSetting } from './types';
 
 const BASE = `${import.meta.env.VITE_API_URL || ''}`;
 
@@ -170,6 +170,14 @@ export const api = {
   getReviewConfig: () => req<ReviewConfig>('/hotel/reviews/config'),
   updateReviewConfig: (data: { slug: string; owner_phone: string; notification_frequency?: string }) =>
     req<ReviewConfig>('/hotel/reviews/config', { method: 'PUT', body: JSON.stringify(data) }),
+
+  // Channels
+  getChannelSettings: () => req<ChannelSetting[]>('/hotel/channels'),
+  toggleChannelAI: (channel: string, ai_enabled: boolean) =>
+    req(`/hotel/channels/${channel}/ai-toggle`, {
+      method: 'PUT',
+      body: JSON.stringify({ ai_enabled }),
+    }),
 
   // Menus
   getMenus: () => req<any[]>('/hotel/menus'),

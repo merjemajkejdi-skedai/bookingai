@@ -1012,6 +1012,23 @@ export async function runMigrations() {
       `CREATE INDEX IF NOT EXISTS idx_inv_consumption_tenant ON inventory_consumption(tenant_id, consumed_at)`,
       // shop_cancel_reason_001 — staff cancel reason on orders
       `ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS cancel_reason TEXT`,
+      // instagram_001 — channel tracking on hotel_conversations
+      `ALTER TABLE hotel_conversations ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'whatsapp'`,
+      `ALTER TABLE hotel_conversations ADD COLUMN IF NOT EXISTS channel_user_id TEXT DEFAULT NULL`,
+      // instagram_002 — Instagram account ID on tenants
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS instagram_account_id TEXT`,
+      // instagram_003 — per-channel AI + connection settings
+      `CREATE TABLE IF NOT EXISTS hotel_channel_settings (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        channel TEXT NOT NULL,
+        ai_enabled BOOLEAN NOT NULL DEFAULT true,
+        connected BOOLEAN NOT NULL DEFAULT false,
+        access_token TEXT DEFAULT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(tenant_id, channel)
+      )`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -1037,6 +1054,31 @@ export async function runMigrations() {
       if (r.rowCount && r.rowCount > 0)
         console.log(`✅ WeArt price fix: updated ${r.rowCount} event(s) to 2000 ALL`);
     }).catch((e: any) => console.warn('WeArt price fix skipped:', e.message));
+    // instagram_004 — seed protected production tenants into hotel_channel_settings
+    const igToken = process.env.INSTAGRAM_ACCESS_TOKEN ?? null;
+    // La Favorita: whatsapp + instagram channels
+    await pool.query(
+      `INSERT INTO hotel_channel_settings (id, tenant_id, channel, ai_enabled, connected, access_token)
+       VALUES (gen_random_uuid(), '41b10744-891e-439a-a976-3aff28c51afe', 'whatsapp', true, true, NULL)
+       ON CONFLICT (tenant_id, channel) DO NOTHING`,
+    ).catch((e: any) => console.warn('PG seed skip (La Favorita WA):', e.message));
+    await pool.query(
+      `INSERT INTO hotel_channel_settings (id, tenant_id, channel, ai_enabled, connected, access_token)
+       VALUES (gen_random_uuid(), '41b10744-891e-439a-a976-3aff28c51afe', 'instagram', false, true, $1)
+       ON CONFLICT (tenant_id, channel) DO UPDATE SET connected = true, access_token = EXCLUDED.access_token`,
+      [igToken],
+    ).catch((e: any) => console.warn('PG seed skip (La Favorita IG):', e.message));
+    await pool.query(
+      `UPDATE tenants SET instagram_account_id = '17841458604442481'
+       WHERE id = '41b10744-891e-439a-a976-3aff28c51afe' AND instagram_account_id IS NULL`,
+    ).catch((e: any) => console.warn('PG seed skip (La Favorita IG account):', e.message));
+    // Bloom Matcha / Bar-1: whatsapp channel only
+    await pool.query(
+      `INSERT INTO hotel_channel_settings (id, tenant_id, channel, ai_enabled, connected, access_token)
+       VALUES (gen_random_uuid(), '1a7ef18c-394b-441e-8376-fc57238b7dcc', 'whatsapp', true, true, NULL)
+       ON CONFLICT (tenant_id, channel) DO NOTHING`,
+    ).catch((e: any) => console.warn('PG seed skip (Bloom WA):', e.message));
+
     console.log('✅ PostgreSQL migrations complete');
     return;
   }
@@ -1166,6 +1208,11 @@ export async function runMigrations() {
     exec('ALTER TABLE hotel_conversations ADD COLUMN ai_paused_until TEXT');
   if (!convCols.includes('ai_paused_by'))
     exec('ALTER TABLE hotel_conversations ADD COLUMN ai_paused_by TEXT');
+  // instagram_001 — channel tracking
+  if (!convCols.includes('channel'))
+    exec("ALTER TABLE hotel_conversations ADD COLUMN channel TEXT NOT NULL DEFAULT 'whatsapp'");
+  if (!convCols.includes('channel_user_id'))
+    exec('ALTER TABLE hotel_conversations ADD COLUMN channel_user_id TEXT');
 
   const reqCols = prepare("SELECT name FROM pragma_table_info('hotel_requests')")
     .all().map((r: any) => r.name as string);
@@ -1409,6 +1456,23 @@ export async function runMigrations() {
     .all().map((r: any) => r.name as string);
   if (!shopOrderCancelCols.includes('cancel_reason'))
     exec('ALTER TABLE shop_orders ADD COLUMN cancel_reason TEXT');
+
+  // instagram_002 — Instagram account ID on tenants
+  if (!cols.includes('instagram_account_id'))
+    exec('ALTER TABLE tenants ADD COLUMN instagram_account_id TEXT');
+
+  // instagram_003 — per-channel AI + connection settings (SQLite-compatible)
+  exec(`CREATE TABLE IF NOT EXISTS hotel_channel_settings (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    ai_enabled INTEGER NOT NULL DEFAULT 1,
+    connected INTEGER NOT NULL DEFAULT 0,
+    access_token TEXT,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    UNIQUE(tenant_id, channel)
+  )`);
 
   console.log('✅ SQLite migrations complete');
 }

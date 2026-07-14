@@ -1,7 +1,93 @@
 import { useState, useEffect } from 'react';
-import { Save, Wifi, Coffee, Waves, UtensilsCrossed, Clock, Phone, MapPin, BookOpen, UserCheck, Star, MessageSquare, SmilePlus, AlertTriangle } from 'lucide-react';
+import { Save, Wifi, Coffee, Waves, UtensilsCrossed, Clock, Phone, MapPin, BookOpen, UserCheck, Star, MessageSquare, SmilePlus, AlertTriangle, Radio } from 'lucide-react';
 import { api } from '../api';
 import { Button, Input, Spinner } from '../ui';
+import type { ChannelSetting } from '../types';
+
+// ── Channel Settings section ──────────────────────────────────────────────────
+
+const CHANNEL_LABELS: Record<string, string> = {
+  whatsapp:  'WhatsApp',
+  instagram: 'Instagram',
+  facebook:  'Facebook Messenger',
+  email:     'Email',
+};
+
+const CHANNEL_ICONS: Record<string, string> = {
+  whatsapp:  '💬',
+  instagram: '📷',
+  facebook:  '💙',
+  email:     '✉️',
+};
+
+function ChannelSettings() {
+  const [channels, setChannels] = useState<ChannelSetting[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [toggling, setToggling] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.getChannelSettings()
+      .then(setChannels)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function handleToggle(channel: string, current: boolean) {
+    setToggling(channel);
+    try {
+      await api.toggleChannelAI(channel, !current);
+      setChannels(prev => prev.map(c =>
+        c.channel === channel ? { ...c, ai_enabled: !current } : c,
+      ));
+    } catch {}
+    finally { setToggling(null); }
+  }
+
+  if (loading) return <Spinner />;
+  if (channels.length === 0) return null;
+
+  return (
+    <section className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+      <div className="flex items-center gap-2">
+        <Radio size={15} className="text-slate-400" />
+        <h3 className="text-sm font-semibold text-slate-700">Channels</h3>
+      </div>
+      <div className="space-y-3">
+        {channels.map(c => {
+          const connected  = c.connected === 1 || c.connected === true;
+          const aiEnabled  = c.ai_enabled === 1 || c.ai_enabled === true;
+          const label      = CHANNEL_LABELS[c.channel] ?? c.channel;
+          const icon       = CHANNEL_ICONS[c.channel] ?? '🔌';
+          const isToggling = toggling === c.channel;
+          return (
+            <div key={c.channel} className="flex items-center justify-between gap-4 py-2 border-b border-slate-100 last:border-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-base">{icon}</span>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-800">{label}</p>
+                  <p className="text-[11px] text-slate-400">
+                    {connected ? 'Connected' : 'Not connected'}
+                  </p>
+                </div>
+              </div>
+              {connected && (
+                <button
+                  disabled={isToggling}
+                  onClick={() => handleToggle(c.channel, aiEnabled)}
+                  className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${aiEnabled ? 'bg-brand-500' : 'bg-slate-200'} disabled:opacity-50`}
+                  title={aiEnabled ? 'AI on — click to disable' : 'AI off — click to enable'}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ${aiEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <p className="text-[11px] text-slate-400">Toggle AI auto-reply per channel. WhatsApp can also be paused per-conversation.</p>
+    </section>
+  );
+}
 
 // ── Review Management section ─────────────────────────────────────────────────
 
@@ -540,6 +626,11 @@ export function ConfigPage() {
             {saving ? 'Saving…' : saved ? '✓ Saved!' : 'Save Configuration'}
           </Button>
         </form>
+
+        {/* Channels — own state, outside main form */}
+        <div className="mt-5">
+          <ChannelSettings />
+        </div>
 
         {/* Review Management — own form/state, outside main form */}
         <div className="mt-5">
