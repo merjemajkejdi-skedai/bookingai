@@ -47,6 +47,20 @@ metaRouter.get('/meta/webhook', (req: Request, res: Response) => {
   res.sendStatus(403);
 });
 
+// GET /instagram/webhook — Meta Developer Portal verification for Instagram
+metaRouter.get('/instagram/webhook', (req: Request, res: Response) => {
+  const mode      = req.query['hub.mode'] as string;
+  const token     = req.query['hub.verify_token'] as string;
+  const challenge = req.query['hub.challenge'] as string;
+
+  if (mode === 'subscribe' && token === process.env.INSTAGRAM_VERIFY_TOKEN) {
+    console.log('[Instagram] ✅ Webhook verified');
+    return res.status(200).send(challenge);
+  }
+  console.warn('[Instagram] ❌ Webhook verification failed — check INSTAGRAM_VERIFY_TOKEN');
+  res.sendStatus(403);
+});
+
 // POST /meta/webhook — Incoming WhatsApp messages from Meta Cloud API
 metaRouter.post('/meta/webhook', async (req: Request, res: Response) => {
   res.sendStatus(200); // respond immediately to Meta
