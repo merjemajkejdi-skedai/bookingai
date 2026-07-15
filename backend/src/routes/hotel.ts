@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { sendWhatsAppMessage } from '../whatsapp/twilio.js';
-import { sendInstagramMessage } from '../whatsapp/instagram.js';
+import { sendInstagramMessage } from '../channels/instagram.js';
 import * as XLSX from 'xlsx';
 import { requireAuth, resolveTenantId } from '../middleware/auth.js';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';

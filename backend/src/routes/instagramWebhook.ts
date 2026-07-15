@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { isPg, prepare, queryOne, queryRun } from '../db/database.js';
 import { runHotelAgent } from '../hotel/agent.js';
-import { sendInstagramMessage, getInstagramSenderProfile } from '../whatsapp/instagram.js';
+import { sendInstagramMessage, getInstagramSenderProfile } from '../channels/instagram.js';
 import { alertError } from '../utils/errorMonitor.js';
 
 const router = Router();
