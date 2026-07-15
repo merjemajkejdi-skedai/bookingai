@@ -62,6 +62,9 @@ router.post('/instagram/webhook', async (req, res) => {
           tenantId, guestPhone,
         ) as any;
 
+        // convId is used for the message-save WHERE clause below
+        const convId: string = existing?.id ?? crypto.randomUUID();
+
         if (!existing) {
           // New conversation — fetch sender profile before inserting
           const profile = await getInstagramSenderProfile(psid, accessToken);
@@ -71,7 +74,7 @@ router.post('/instagram/webhook', async (req, res) => {
                (id, tenant_id, guest_phone, messages, channel, channel_user_id,
                 guest_name, guest_username, last_message, updated_at, last_guest_message_at)
              VALUES (?,?,?,'[]','instagram',?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`,
-            crypto.randomUUID(), tenantId, guestPhone, psid, profile.name, profile.username,
+            convId, tenantId, guestPhone, psid, profile.name, profile.username,
           );
         } else {
           // Existing conversation — update timestamps; backfill name if still null
@@ -109,21 +112,21 @@ router.post('/instagram/webhook', async (req, res) => {
           if (isPg) {
             await dbRun(
               `UPDATE hotel_conversations
-               SET messages = messages || ?, updated_at = CURRENT_TIMESTAMP
-               WHERE tenant_id = ? AND guest_phone = ?`,
-              JSON.stringify([guestMsg]), tenantId, guestPhone,
+               SET messages = messages || ?::jsonb, updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?`,
+              JSON.stringify([guestMsg]), convId,
             );
           } else {
             const convRow = await dbGet(
-              'SELECT messages FROM hotel_conversations WHERE tenant_id = ? AND guest_phone = ?',
-              tenantId, guestPhone,
+              'SELECT messages FROM hotel_conversations WHERE id = ?',
+              convId,
             ) as any;
             const prev: any[] = (() => { try { return JSON.parse(convRow?.messages ?? '[]'); } catch { return []; } })();
             await dbRun(
               `UPDATE hotel_conversations
                SET messages = ?, updated_at = CURRENT_TIMESTAMP
-               WHERE tenant_id = ? AND guest_phone = ?`,
-              JSON.stringify([...prev, guestMsg].slice(-30)), tenantId, guestPhone,
+               WHERE id = ?`,
+              JSON.stringify([...prev, guestMsg].slice(-30)), convId,
             );
           }
           console.log(`[Instagram] AI off for ${tenantId} — saved message from ${psid}`);
