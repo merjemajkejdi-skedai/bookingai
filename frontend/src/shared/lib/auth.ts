@@ -153,4 +153,11 @@ export const adminApi = {
       method: 'PUT',
       body: JSON.stringify({ ai_enabled }),
     }),
+  connectInstagram: (tenantId: string, data: { access_token: string; instagram_account_id: string }) =>
+    authFetch(`/admin/tenants/${tenantId}/channels/instagram/connect`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  disconnectInstagram: (tenantId: string) =>
+    authFetch(`/admin/tenants/${tenantId}/channels/instagram/disconnect`, { method: 'DELETE' }),
 };

@@ -328,6 +328,15 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
   const [emailFallbackEnabled, setEmailFallbackEnabled] = useState(!!tenant.email_fallback_enabled);
   const [channels, setChannels]               = useState<Record<string, { connected: boolean; ai_enabled: boolean }>>({});
   const [togglingChannel, setTogglingChannel] = useState<string | null>(null);
+  // Instagram connect form
+  const [igFormOpen, setIgFormOpen]           = useState(false);
+  const [igToken, setIgToken]                 = useState('');
+  const [igAccountId, setIgAccountId]         = useState('');
+  const [igConnecting, setIgConnecting]       = useState(false);
+  const [igConnectError, setIgConnectError]   = useState('');
+  // Instagram disconnect confirm
+  const [igDisconnectOpen, setIgDisconnectOpen]   = useState(false);
+  const [igDisconnecting, setIgDisconnecting]     = useState(false);
   const [saving, setSaving]                   = useState(false);
   const [error, setError]                     = useState('');
 
@@ -344,6 +353,33 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
       setChannels(prev => ({ ...prev, [channel]: { ...prev[channel], ai_enabled } }));
     } catch (e: any) { setError(e.message); }
     finally { setTogglingChannel(null); }
+  }
+
+  async function handleInstagramConnect() {
+    if (!igToken.trim() || !igAccountId.trim()) {
+      setIgConnectError('Both fields are required');
+      return;
+    }
+    setIgConnecting(true); setIgConnectError('');
+    try {
+      await adminApi.connectInstagram(tenant.id, {
+        access_token: igToken.trim(),
+        instagram_account_id: igAccountId.trim(),
+      });
+      setChannels(prev => ({ ...prev, instagram: { connected: true, ai_enabled: false } }));
+      setIgFormOpen(false); setIgToken(''); setIgAccountId('');
+    } catch (e: any) { setIgConnectError(e.message); }
+    finally { setIgConnecting(false); }
+  }
+
+  async function handleInstagramDisconnect() {
+    setIgDisconnecting(true);
+    try {
+      await adminApi.disconnectInstagram(tenant.id);
+      setChannels(prev => ({ ...prev, instagram: { connected: false, ai_enabled: false } }));
+      setIgDisconnectOpen(false);
+    } catch (e: any) { setError(e.message); }
+    finally { setIgDisconnecting(false); }
   }
 
   async function save() {
@@ -518,13 +554,111 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
         </div>
 
         {/* Channels */}
-        <div className="border border-slate-200 rounded-lg p-4 space-y-2">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Channels</p>
+        <div className="border border-slate-200 rounded-lg p-4 space-y-1">
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Channels</p>
           {CHANNELS.map(({ key, label, icon }) => {
-            const ch = channels[key];
+            const ch         = channels[key];
             const connected  = ch?.connected  ?? false;
             const aiEnabled  = ch?.ai_enabled ?? false;
             const isToggling = togglingChannel === key;
+
+            // ── Instagram: special connect / disconnect UI ────────────────────
+            if (key === 'instagram') {
+              return (
+                <div key={key} className="border-b border-slate-100 last:border-0 pb-2">
+                  {/* Row */}
+                  <div className="flex items-center justify-between py-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] font-bold ${connected ? 'text-green-500' : 'text-slate-300'}`}>●</span>
+                      <span className="text-sm text-slate-700">{icon} {label}</span>
+                      <span className="text-xs text-slate-400">{connected ? 'Connected' : 'Not connected'}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {connected ? (
+                        <>
+                          <span className="text-xs text-slate-500">AI</span>
+                          <button
+                            type="button"
+                            disabled={isToggling}
+                            onClick={() => handleChannelToggle(key, !aiEnabled)}
+                            className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors ${aiEnabled ? 'bg-green-500' : 'bg-slate-200'} disabled:opacity-50`}
+                          >
+                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ${aiEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
+                          </button>
+                          <span className="text-xs">{aiEnabled ? '✅' : '❌'}</span>
+                          <button
+                            type="button"
+                            onClick={() => setIgDisconnectOpen(true)}
+                            className="ml-2 text-xs text-red-500 hover:text-red-700 underline"
+                          >
+                            Disconnect
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => { setIgFormOpen(v => !v); setIgConnectError(''); }}
+                          className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                        >
+                          {igFormOpen ? 'Cancel ▲' : 'Connect ▼'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Inline connect form */}
+                  {!connected && igFormOpen && (
+                    <div className="mt-1 p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
+                      <Input
+                        label="Access Token"
+                        value={igToken}
+                        onChange={(e: any) => setIgToken(e.target.value)}
+                        placeholder="EAAxxxxxxxxx…"
+                      />
+                      <Input
+                        label="Instagram Account ID"
+                        value={igAccountId}
+                        onChange={(e: any) => setIgAccountId(e.target.value)}
+                        placeholder="17841458604442481"
+                      />
+                      {igConnectError && <p className="text-xs text-red-500">{igConnectError}</p>}
+                      <div className="flex justify-end gap-2 pt-1">
+                        <Button variant="ghost" size="sm" onClick={() => { setIgFormOpen(false); setIgConnectError(''); }}>
+                          Cancel
+                        </Button>
+                        <Button size="sm" onClick={handleInstagramConnect} disabled={igConnecting}>
+                          {igConnecting ? 'Saving…' : 'Save & Connect'}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Disconnect confirmation */}
+                  {connected && igDisconnectOpen && (
+                    <div className="mt-1 p-3 bg-red-50 rounded-lg border border-red-200 space-y-2">
+                      <p className="text-xs text-red-700 font-medium">
+                        Are you sure? This will stop receiving Instagram DMs immediately.
+                      </p>
+                      <div className="flex justify-end gap-2">
+                        <Button variant="ghost" size="sm" onClick={() => setIgDisconnectOpen(false)}>
+                          Cancel
+                        </Button>
+                        <button
+                          type="button"
+                          onClick={handleInstagramDisconnect}
+                          disabled={igDisconnecting}
+                          className="px-3 py-1 text-xs bg-red-500 text-white rounded-md hover:bg-red-600 disabled:opacity-50 transition-colors"
+                        >
+                          {igDisconnecting ? 'Disconnecting…' : 'Disconnect'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            // ── Default row (WhatsApp, Facebook, Email) ───────────────────────
             return (
               <div key={key} className="flex items-center justify-between py-1.5 border-b border-slate-100 last:border-0">
                 <div className="flex items-center gap-2">

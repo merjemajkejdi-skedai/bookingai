@@ -250,6 +250,81 @@ adminRouter.get('/tenants/:id', async (req: Request, res: Response) => {
   ok(res, { ...tenant, channels });
 });
 
+// POST /admin/tenants/:tenantId/channels/instagram/connect
+adminRouter.post('/tenants/:tenantId/channels/instagram/connect', async (req: Request, res: Response) => {
+  const { tenantId } = req.params;
+  const { access_token, instagram_account_id } = req.body as {
+    access_token: string; instagram_account_id: string;
+  };
+
+  if (!access_token?.trim() || !instagram_account_id?.trim())
+    return err(res, 'Access token and Instagram account ID are required');
+  if (!/^\d+$/.test(instagram_account_id.trim()))
+    return err(res, 'Instagram account ID must be a numeric string');
+
+  // Check if another tenant already uses this account ID
+  const conflict = await dbGet(
+    'SELECT id, name FROM tenants WHERE instagram_account_id = ? AND id != ?',
+    instagram_account_id.trim(), tenantId,
+  ) as any;
+  if (conflict)
+    return err(res, `This Instagram account is already connected to ${conflict.name}`);
+
+  if (isPg) {
+    await dbRun(
+      `INSERT INTO hotel_channel_settings (id, tenant_id, channel, ai_enabled, connected, access_token)
+       VALUES (gen_random_uuid(), ?, 'instagram', false, true, ?)
+       ON CONFLICT (tenant_id, channel) DO UPDATE SET
+         connected    = true,
+         access_token = excluded.access_token,
+         updated_at   = NOW()`,
+      tenantId, access_token.trim(),
+    );
+  } else {
+    await dbRun(
+      `INSERT INTO hotel_channel_settings (id, tenant_id, channel, ai_enabled, connected, access_token)
+       VALUES (?, ?, 'instagram', 0, 1, ?)
+       ON CONFLICT (tenant_id, channel) DO UPDATE SET
+         connected    = 1,
+         access_token = excluded.access_token,
+         updated_at   = CURRENT_TIMESTAMP`,
+      crypto.randomUUID(), tenantId, access_token.trim(),
+    );
+  }
+  await dbRun(
+    'UPDATE tenants SET instagram_account_id = ? WHERE id = ?',
+    instagram_account_id.trim(), tenantId,
+  );
+
+  console.log(`[Admin] Instagram connected to ${tenantId} (account ${instagram_account_id.trim()})`);
+  ok(res, { connected: true });
+});
+
+// DELETE /admin/tenants/:tenantId/channels/instagram/disconnect
+adminRouter.delete('/tenants/:tenantId/channels/instagram/disconnect', async (req: Request, res: Response) => {
+  const { tenantId } = req.params;
+
+  if (isPg) {
+    await dbRun(
+      `UPDATE hotel_channel_settings
+       SET connected = false, access_token = NULL, ai_enabled = false, updated_at = NOW()
+       WHERE tenant_id = ? AND channel = 'instagram'`,
+      tenantId,
+    );
+  } else {
+    await dbRun(
+      `UPDATE hotel_channel_settings
+       SET connected = 0, access_token = NULL, ai_enabled = 0, updated_at = CURRENT_TIMESTAMP
+       WHERE tenant_id = ? AND channel = 'instagram'`,
+      tenantId,
+    );
+  }
+  await dbRun('UPDATE tenants SET instagram_account_id = NULL WHERE id = ?', tenantId);
+
+  console.log(`[Admin] Instagram disconnected from ${tenantId}`);
+  ok(res, { connected: false });
+});
+
 // PUT /admin/tenants/:tenantId/channels/:channel/ai-toggle
 adminRouter.put('/tenants/:tenantId/channels/:channel/ai-toggle', async (req: Request, res: Response) => {
   const { tenantId, channel } = req.params;

@@ -1054,24 +1054,13 @@ export async function runMigrations() {
       if (r.rowCount && r.rowCount > 0)
         console.log(`✅ WeArt price fix: updated ${r.rowCount} event(s) to 2000 ALL`);
     }).catch((e: any) => console.warn('WeArt price fix skipped:', e.message));
-    // instagram_004 — seed protected production tenants into hotel_channel_settings
-    const igToken = process.env.INSTAGRAM_ACCESS_TOKEN ?? null;
-    // La Favorita: whatsapp + instagram channels
+    // instagram_004 — seed WhatsApp channel rows for protected production tenants
+    // (La Favorita Instagram is managed via admin UI, not seeded here)
     await pool.query(
       `INSERT INTO hotel_channel_settings (id, tenant_id, channel, ai_enabled, connected, access_token)
        VALUES (gen_random_uuid(), '41b10744-891e-439a-a976-3aff28c51afe', 'whatsapp', true, true, NULL)
        ON CONFLICT (tenant_id, channel) DO NOTHING`,
     ).catch((e: any) => console.warn('PG seed skip (La Favorita WA):', e.message));
-    await pool.query(
-      `INSERT INTO hotel_channel_settings (id, tenant_id, channel, ai_enabled, connected, access_token)
-       VALUES (gen_random_uuid(), '41b10744-891e-439a-a976-3aff28c51afe', 'instagram', false, true, $1)
-       ON CONFLICT (tenant_id, channel) DO UPDATE SET connected = true, access_token = EXCLUDED.access_token`,
-      [igToken],
-    ).catch((e: any) => console.warn('PG seed skip (La Favorita IG):', e.message));
-    await pool.query(
-      `UPDATE tenants SET instagram_account_id = '17841458604442481'
-       WHERE id = '41b10744-891e-439a-a976-3aff28c51afe' AND instagram_account_id IS NULL`,
-    ).catch((e: any) => console.warn('PG seed skip (La Favorita IG account):', e.message));
     // Bloom Matcha / Bar-1: whatsapp channel only
     await pool.query(
       `INSERT INTO hotel_channel_settings (id, tenant_id, channel, ai_enabled, connected, access_token)
