@@ -975,6 +975,8 @@ hotelRouter.get('/conversations', requireAuth, async (req: Request, res: Respons
          c.last_guest_message_at,
          c.ai_paused_until,
          c.ai_paused_by,
+         c.channel,
+         c.channel_user_id,
          g.id           AS stay_id,
          g.guest_name,
          g.check_in,

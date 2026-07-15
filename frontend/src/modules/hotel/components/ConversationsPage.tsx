@@ -391,7 +391,7 @@ function ThreadPanel({
           </div>
           <div className="min-w-0">
             <p className="text-sm font-semibold text-slate-800 truncate">
-              {conv.guest_name ?? displayPhone(conv.guest_phone)}
+              {conv.channel === 'instagram' ? (conv.guest_name ?? 'Instagram User') : (conv.guest_name ?? displayPhone(conv.guest_phone))}
             </p>
             <p className="text-xs text-slate-400 truncate">
               {displayPhone(conv.guest_phone)}
@@ -532,7 +532,7 @@ function ThreadPanel({
           </Button>
         </div>
         <p className="text-[10px] text-slate-400 mt-1 ml-1">
-          Message sent via WhatsApp as <span className="font-medium">Front Office</span>
+          Message sent via {conv.channel === 'instagram' ? 'Instagram' : 'WhatsApp'} as <span className="font-medium">Front Office</span>
         </p>
       </div>
     </div>
@@ -734,7 +734,7 @@ export function ConversationsPage({ surveyEnabled = false }: { surveyEnabled?: b
                             'text-sm truncate',
                             isUnread ? 'font-bold text-slate-900' : 'font-semibold text-slate-800',
                           )}>
-                            {c.guest_name ?? displayPhone(c.guest_phone)}
+                            {c.channel === 'instagram' ? (c.guest_name ?? 'Instagram User') : (c.guest_name ?? displayPhone(c.guest_phone))}
                           </span>
                           {c.channel === 'instagram' && (
                             <span className="text-[10px] font-semibold bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded flex-shrink-0">
