@@ -333,6 +333,7 @@ adminRouter.put('/tenants/:tenantId/channels/:channel/ai-toggle', async (req: Re
   const valid = ['whatsapp', 'instagram', 'facebook', 'email'];
   if (!valid.includes(channel)) return err(res, 'Invalid channel');
 
+  console.log('[Admin] AI toggle - only updating ai_enabled, nothing else');
   await dbRun(
     `UPDATE hotel_channel_settings
      SET ai_enabled = ?, updated_at = CURRENT_TIMESTAMP
