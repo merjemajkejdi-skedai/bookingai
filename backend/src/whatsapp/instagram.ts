@@ -26,7 +26,7 @@ export async function sendInstagramMessage(
 ): Promise<void> {
   try {
     console.log('[Instagram] Using token preview:', accessToken.substring(0, 20));
-    const response = await fetch('https://graph.facebook.com/v19.0/me/messages', {
+    const response = await fetch('https://graph.instagram.com/v25.0/me/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
