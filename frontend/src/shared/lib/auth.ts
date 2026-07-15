@@ -134,6 +134,7 @@ export const analyticsApi = {
 
 export const adminApi = {
   getTenants: () => authFetch<any[]>('/admin/tenants'),
+  getTenant:  (id: string) => authFetch<any>(`/admin/tenants/${id}`),
   getStats:   () => authFetch<any>('/admin/stats'),
   createTenant: (data: {
     name: string; type: string; timezone: string;
@@ -146,5 +147,10 @@ export const adminApi = {
     authFetch(`/admin/tenants/${tenantId}/reset-password`, {
       method: 'POST',
       body: JSON.stringify({ newPassword }),
+    }),
+  toggleChannelAI: (tenantId: string, channel: string, ai_enabled: boolean) =>
+    authFetch(`/admin/tenants/${tenantId}/channels/${channel}/ai-toggle`, {
+      method: 'PUT',
+      body: JSON.stringify({ ai_enabled }),
     }),
 };

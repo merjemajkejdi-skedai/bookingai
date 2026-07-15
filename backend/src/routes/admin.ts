@@ -196,6 +196,78 @@ adminRouter.post('/tenants/:id/migrate-demo-data', async (req: Request, res: Res
   } catch (e: any) { err(res, e.message, 500); }
 });
 
+// GET /admin/tenants/:id  — single tenant with channel settings
+adminRouter.get('/tenants/:id', async (req: Request, res: Response) => {
+  const tenant = await dbGet('SELECT * FROM tenants WHERE id = ?', req.params.id) as any;
+  if (!tenant) return err(res, 'Tenant not found', 404);
+
+  const whatsappConnected = !!(
+    (tenant.twilio_account_sid && tenant.twilio_auth_token) ||
+    (tenant.meta_phone_number_id && tenant.meta_access_token)
+  );
+
+  const channelRows = await dbAll(
+    'SELECT channel, ai_enabled, connected FROM hotel_channel_settings WHERE tenant_id = ?',
+    req.params.id,
+  );
+
+  // Lazily seed WhatsApp row if credentials exist but no row yet
+  if (whatsappConnected && !channelRows.find((r: any) => r.channel === 'whatsapp')) {
+    if (isPg) {
+      await dbRun(
+        `INSERT INTO hotel_channel_settings (id, tenant_id, channel, ai_enabled, connected)
+         VALUES (gen_random_uuid(), ?, 'whatsapp', true, true)
+         ON CONFLICT (tenant_id, channel) DO NOTHING`,
+        req.params.id,
+      );
+    } else {
+      await dbRun(
+        `INSERT INTO hotel_channel_settings (id, tenant_id, channel, ai_enabled, connected)
+         VALUES (?, ?, 'whatsapp', 1, 1)
+         ON CONFLICT (tenant_id, channel) DO NOTHING`,
+        crypto.randomUUID(), req.params.id,
+      );
+    }
+    channelRows.push({ channel: 'whatsapp', ai_enabled: true, connected: true });
+  }
+
+  const find = (ch: string) => channelRows.find((r: any) => r.channel === ch) as any;
+  const isTrue = (v: any) => v === true || v === 1;
+
+  const channels = {
+    whatsapp:  {
+      connected:  whatsappConnected,
+      ai_enabled: whatsappConnected ? (find('whatsapp') ? isTrue(find('whatsapp').ai_enabled) : true) : false,
+    },
+    instagram: {
+      connected:  isTrue(find('instagram')?.connected),
+      ai_enabled: isTrue(find('instagram')?.ai_enabled),
+    },
+    facebook:  { connected: false, ai_enabled: false },
+    email:     { connected: false, ai_enabled: false },
+  };
+
+  ok(res, { ...tenant, channels });
+});
+
+// PUT /admin/tenants/:tenantId/channels/:channel/ai-toggle
+adminRouter.put('/tenants/:tenantId/channels/:channel/ai-toggle', async (req: Request, res: Response) => {
+  const { tenantId, channel } = req.params;
+  const { ai_enabled } = req.body as { ai_enabled: boolean };
+
+  const valid = ['whatsapp', 'instagram', 'facebook', 'email'];
+  if (!valid.includes(channel)) return err(res, 'Invalid channel');
+
+  await dbRun(
+    `UPDATE hotel_channel_settings
+     SET ai_enabled = ?, updated_at = CURRENT_TIMESTAMP
+     WHERE tenant_id = ? AND channel = ?`,
+    ai_enabled, tenantId, channel,
+  );
+  console.log(`[Admin] ${channel} AI → ${ai_enabled} for tenant ${tenantId}`);
+  ok(res, { channel, ai_enabled });
+});
+
 // GET /admin/stats
 adminRouter.get('/stats', async (_req: Request, res: Response) => {
   const [t, b, bt, u] = await Promise.all([

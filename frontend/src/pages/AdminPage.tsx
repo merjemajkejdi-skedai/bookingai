@@ -299,6 +299,13 @@ function CreateTenantModal({ onClose, onSaved }: { onClose: () => void; onSaved:
   );
 }
 
+const CHANNELS = [
+  { key: 'whatsapp',  label: 'WhatsApp',           icon: '💬' },
+  { key: 'instagram', label: 'Instagram',           icon: '📷' },
+  { key: 'facebook',  label: 'Facebook Messenger',  icon: '💙' },
+  { key: 'email',     label: 'Email',               icon: '✉️' },
+] as const;
+
 // --- Edit tenant modal -------------------------------------------------------
 function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: () => void; onSaved: () => void }) {
   const [name, setName]                       = useState(tenant.name);
@@ -319,8 +326,25 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
   const [shopPhotosEnabled, setShopPhotosEnabled] = useState(!!tenant.shop_photos_enabled);
   const [notificationEmail, setNotificationEmail] = useState(tenant.notification_email || '');
   const [emailFallbackEnabled, setEmailFallbackEnabled] = useState(!!tenant.email_fallback_enabled);
+  const [channels, setChannels]               = useState<Record<string, { connected: boolean; ai_enabled: boolean }>>({});
+  const [togglingChannel, setTogglingChannel] = useState<string | null>(null);
   const [saving, setSaving]                   = useState(false);
   const [error, setError]                     = useState('');
+
+  useEffect(() => {
+    adminApi.getTenant(tenant.id)
+      .then(d => { if (d.channels) setChannels(d.channels); })
+      .catch(() => {});
+  }, [tenant.id]);
+
+  async function handleChannelToggle(channel: string, ai_enabled: boolean) {
+    setTogglingChannel(channel);
+    try {
+      await adminApi.toggleChannelAI(tenant.id, channel, ai_enabled);
+      setChannels(prev => ({ ...prev, [channel]: { ...prev[channel], ai_enabled } }));
+    } catch (e: any) { setError(e.message); }
+    finally { setTogglingChannel(null); }
+  }
 
   async function save() {
     setSaving(true); setError('');
@@ -491,6 +515,40 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
           {emailFallbackEnabled && notificationEmail && (
             <p className="text-xs text-teal-700 font-medium">✓ Active — undelivered messages will be forwarded to <strong>{notificationEmail}</strong>.</p>
           )}
+        </div>
+
+        {/* Channels */}
+        <div className="border border-slate-200 rounded-lg p-4 space-y-2">
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Channels</p>
+          {CHANNELS.map(({ key, label, icon }) => {
+            const ch = channels[key];
+            const connected  = ch?.connected  ?? false;
+            const aiEnabled  = ch?.ai_enabled ?? false;
+            const isToggling = togglingChannel === key;
+            return (
+              <div key={key} className="flex items-center justify-between py-1.5 border-b border-slate-100 last:border-0">
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] font-bold ${connected ? 'text-green-500' : 'text-slate-300'}`}>●</span>
+                  <span className="text-sm text-slate-700">{icon} {label}</span>
+                  <span className="text-xs text-slate-400">{connected ? 'Connected' : 'Not connected'}</span>
+                </div>
+                {connected && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500">AI</span>
+                    <button
+                      type="button"
+                      disabled={isToggling}
+                      onClick={() => handleChannelToggle(key, !aiEnabled)}
+                      className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors ${aiEnabled ? 'bg-green-500' : 'bg-slate-200'} disabled:opacity-50`}
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ${aiEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
+                    </button>
+                    <span className="text-xs">{aiEnabled ? '✅' : '❌'}</span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
 
         {error && <p className="text-sm text-red-500">{error}</p>}
