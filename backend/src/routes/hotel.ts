@@ -1073,9 +1073,11 @@ hotelRouter.post('/conversations/:id/reply', requireAuth, async (req: Request, r
   if (!message?.trim()) return err(res, 'message is required');
 
   try {
+    // Accept both the UUID id and the legacy guest_phone as identifier
+    // (some existing rows have id = guest_phone instead of a real UUID)
     const conv = await dbGet(
-      'SELECT channel, channel_user_id, guest_phone FROM hotel_conversations WHERE id = ? AND tenant_id = ?',
-      convId, tenantId,
+      'SELECT channel, channel_user_id, guest_phone FROM hotel_conversations WHERE tenant_id = ? AND (id = ? OR guest_phone = ?) LIMIT 1',
+      tenantId, convId, convId,
     ) as any;
 
     if (!conv) return err(res, 'Conversation not found', 404);
