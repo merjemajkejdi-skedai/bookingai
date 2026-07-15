@@ -1020,6 +1020,10 @@ export async function runMigrations() {
       // instagram_004 — sender profile on hotel_conversations
       `ALTER TABLE hotel_conversations ADD COLUMN IF NOT EXISTS guest_name VARCHAR(255) DEFAULT NULL`,
       `ALTER TABLE hotel_conversations ADD COLUMN IF NOT EXISTS guest_username VARCHAR(255) DEFAULT NULL`,
+      // messages_jsonb_001 — fix any null/empty/non-array messages before column conversion
+      `UPDATE hotel_conversations SET messages = '[]' WHERE messages IS NULL OR messages::text = '' OR messages::text NOT LIKE '[%'`,
+      // messages_jsonb_002 — convert messages from text to jsonb so || does array merge, not string concat
+      `ALTER TABLE hotel_conversations ALTER COLUMN messages TYPE jsonb USING messages::jsonb`,
       // instagram_003 — per-channel AI + connection settings
       `CREATE TABLE IF NOT EXISTS hotel_channel_settings (
         id TEXT PRIMARY KEY,
