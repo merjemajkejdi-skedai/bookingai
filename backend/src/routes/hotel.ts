@@ -1066,6 +1066,7 @@ hotelRouter.get('/conversations/:phone', requireAuth, async (req: Request, res: 
 
 // POST /hotel/conversations/:id/reply  — staff sends manual message (WhatsApp or Instagram)
 hotelRouter.post('/conversations/:id/reply', requireAuth, async (req: Request, res: Response) => {
+  console.log('[Hotel Reply] Request received for conversation:', req.params.id);
   const tenantId = resolveTenantId(req);
   const convId   = req.params.id;
   const { message } = req.body as { message: string };
@@ -1099,7 +1100,10 @@ hotelRouter.post('/conversations/:id/reply', requireAuth, async (req: Request, r
 
     await appendStaffMessage(tenantId, conv.guest_phone, message.trim());
     ok(res, { sent: true });
-  } catch (e: any) { err(res, e.message, 500); }
+  } catch (e: any) {
+    console.error('[Hotel Reply] Error:', e.message, e.stack);
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 // POST /hotel/conversations/:phone/pause  — pause AI for 15 min (or custom)
