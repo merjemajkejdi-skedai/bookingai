@@ -374,7 +374,7 @@ function ThreadPanel({
     if (!text || sending) return;
     setSending(true);
     try {
-      await api.replyToGuest(conv.guest_phone, text);
+      await api.replyToGuest(conv.id, text);
       const staffMsg: HotelMessage = { role: 'staff', content: text, ts: new Date().toISOString() };
       setMessages(m => [...m, staffMsg]);
       setReply('');

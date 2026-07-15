@@ -1064,21 +1064,23 @@ hotelRouter.get('/conversations/:phone', requireAuth, async (req: Request, res: 
   } catch (e: any) { err(res, e.message, 500); }
 });
 
-// POST /hotel/conversations/:phone/reply  — staff sends manual WhatsApp message
-hotelRouter.post('/conversations/:phone/reply', requireAuth, async (req: Request, res: Response) => {
+// POST /hotel/conversations/:id/reply  — staff sends manual message (WhatsApp or Instagram)
+hotelRouter.post('/conversations/:id/reply', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
-  const phone = decodeURIComponent(req.params.phone);
+  const convId   = req.params.id;
   const { message } = req.body as { message: string };
 
   if (!message?.trim()) return err(res, 'message is required');
 
   try {
     const conv = await dbGet(
-      'SELECT channel, channel_user_id FROM hotel_conversations WHERE tenant_id = ? AND guest_phone = ?',
-      tenantId, phone,
+      'SELECT channel, channel_user_id, guest_phone FROM hotel_conversations WHERE id = ? AND tenant_id = ?',
+      convId, tenantId,
     ) as any;
 
-    if (conv?.channel === 'instagram') {
+    if (!conv) return err(res, 'Conversation not found', 404);
+
+    if (conv.channel === 'instagram') {
       const cs = await dbGet(
         'SELECT access_token FROM hotel_channel_settings WHERE tenant_id = ? AND channel = ?',
         tenantId, 'instagram',
@@ -1087,13 +1089,13 @@ hotelRouter.post('/conversations/:phone/reply', requireAuth, async (req: Request
       if (!accessToken) return err(res, 'No Instagram access token configured');
       await sendInstagramMessage(conv.channel_user_id, message.trim(), accessToken);
     } else {
-      // WhatsApp (Twilio) — get full tenant row for per-tenant credentials
+      // WhatsApp — get full tenant row for per-tenant credentials
       const tenantRow = await dbGet('SELECT * FROM tenants WHERE id = ?', tenantId) as any;
       if (!tenantRow) return err(res, 'Tenant not found', 404);
-      await sendWhatsAppMessage(phone, message.trim(), tenantRow);
+      await sendWhatsAppMessage(conv.guest_phone, message.trim(), tenantRow);
     }
 
-    await appendStaffMessage(tenantId, phone, message.trim());
+    await appendStaffMessage(tenantId, conv.guest_phone, message.trim());
     ok(res, { sent: true });
   } catch (e: any) { err(res, e.message, 500); }
 });

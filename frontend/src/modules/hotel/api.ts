@@ -118,8 +118,8 @@ export const api = {
   getConversations: () => req<Conversation[]>('/hotel/conversations'),
   getConversation: (phone: string) =>
     req<Conversation>(`/hotel/conversations/${encodeURIComponent(phone)}`),
-  replyToGuest: (phone: string, message: string) =>
-    req(`/hotel/conversations/${encodeURIComponent(phone)}/reply`, {
+  replyToGuest: (id: string, message: string) =>
+    req(`/hotel/conversations/${id}/reply`, {
       method: 'POST', body: JSON.stringify({ message }),
     }),
   pauseAI: (phone: string, minutes = 15) =>
