@@ -29,6 +29,7 @@ router.post('/instagram/webhook', async (req, res) => {
         const psid:        string = event.sender.id;
         const recipientId: string = event.recipient.id;
         const text:        string = event.message.text ?? '';
+        const timestamp:   number = event.timestamp ?? Math.floor(Date.now() / 1000);
 
         if (!text) continue;
 
@@ -99,22 +100,33 @@ router.post('/instagram/webhook', async (req, res) => {
         }
 
         if (!aiEnabled) {
-          // Append message so it appears in the dashboard for staff
-          const convRow = await dbGet(
-            'SELECT messages FROM hotel_conversations WHERE tenant_id = ? AND guest_phone = ?',
-            tenantId, guestPhone,
-          ) as any;
-          const prev: any[] = (() => { try { return JSON.parse(convRow?.messages ?? '[]'); } catch { return []; } })();
-          const updated = [
-            ...prev,
-            { role: 'user', content: text, ts: new Date().toISOString() },
-          ].slice(-30);
-          await dbRun(
-            `UPDATE hotel_conversations
-             SET messages = ?, updated_at = CURRENT_TIMESTAMP
-             WHERE tenant_id = ? AND guest_phone = ?`,
-            JSON.stringify(updated), tenantId, guestPhone,
-          );
+          // Append incoming guest message to conversation
+          const guestMsg = {
+            role: 'user',
+            content: text,
+            timestamp: new Date(timestamp * 1000).toISOString(),
+            channel: 'instagram',
+          };
+          if (isPg) {
+            await dbRun(
+              `UPDATE hotel_conversations
+               SET messages = messages || ?::jsonb, updated_at = CURRENT_TIMESTAMP
+               WHERE tenant_id = ? AND guest_phone = ?`,
+              JSON.stringify([guestMsg]), tenantId, guestPhone,
+            );
+          } else {
+            const convRow = await dbGet(
+              'SELECT messages FROM hotel_conversations WHERE tenant_id = ? AND guest_phone = ?',
+              tenantId, guestPhone,
+            ) as any;
+            const prev: any[] = (() => { try { return JSON.parse(convRow?.messages ?? '[]'); } catch { return []; } })();
+            await dbRun(
+              `UPDATE hotel_conversations
+               SET messages = ?, updated_at = CURRENT_TIMESTAMP
+               WHERE tenant_id = ? AND guest_phone = ?`,
+              JSON.stringify([...prev, guestMsg].slice(-30)), tenantId, guestPhone,
+            );
+          }
           console.log(`[Instagram] AI off for ${tenantId} — saved message from ${psid}`);
           continue;
         }
