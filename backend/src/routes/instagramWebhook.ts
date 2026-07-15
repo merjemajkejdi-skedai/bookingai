@@ -109,9 +109,9 @@ router.post('/instagram/webhook', async (req, res) => {
           if (isPg) {
             await dbRun(
               `UPDATE hotel_conversations
-               SET messages = messages || jsonb_build_array(?::jsonb), updated_at = CURRENT_TIMESTAMP
+               SET messages = messages || ?, updated_at = CURRENT_TIMESTAMP
                WHERE tenant_id = ? AND guest_phone = ?`,
-              JSON.stringify(guestMsg), tenantId, guestPhone,
+              JSON.stringify([guestMsg]), tenantId, guestPhone,
             );
           } else {
             const convRow = await dbGet(
