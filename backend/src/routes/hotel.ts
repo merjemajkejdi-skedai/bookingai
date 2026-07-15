@@ -1091,14 +1091,41 @@ hotelRouter.post('/conversations/:id/reply', requireAuth, async (req: Request, r
       const accessToken = cs?.access_token;
       if (!accessToken) return err(res, 'No Instagram access token configured');
       await sendInstagramMessage(conv.channel_user_id, message.trim(), accessToken);
+
+      // Append staff message to DB without relying on in-memory session
+      // (Instagram conversations have no warm session — in-memory would be empty and overwrite history)
+      const staffMsg = { role: 'staff', content: message.trim(), ts: new Date().toISOString() };
+      if (isPg) {
+        await dbRun(
+          `UPDATE hotel_conversations
+           SET messages     = messages || ?::jsonb,
+               last_message = CURRENT_TIMESTAMP,
+               updated_at   = CURRENT_TIMESTAMP
+           WHERE tenant_id = ? AND guest_phone = ?`,
+          JSON.stringify([staffMsg]), tenantId, conv.guest_phone,
+        );
+      } else {
+        const convRow = await dbGet(
+          'SELECT messages FROM hotel_conversations WHERE tenant_id = ? AND guest_phone = ?',
+          tenantId, conv.guest_phone,
+        ) as any;
+        const prev: any[] = (() => { try { return JSON.parse(convRow?.messages ?? '[]'); } catch { return []; } })();
+        await dbRun(
+          `UPDATE hotel_conversations
+           SET messages     = ?,
+               last_message = CURRENT_TIMESTAMP,
+               updated_at   = CURRENT_TIMESTAMP
+           WHERE tenant_id = ? AND guest_phone = ?`,
+          JSON.stringify([...prev, staffMsg].slice(-30)), tenantId, conv.guest_phone,
+        );
+      }
     } else {
       // WhatsApp — get full tenant row for per-tenant credentials
       const tenantRow = await dbGet('SELECT * FROM tenants WHERE id = ?', tenantId) as any;
       if (!tenantRow) return err(res, 'Tenant not found', 404);
       await sendWhatsAppMessage(conv.guest_phone, message.trim(), tenantRow);
+      await appendStaffMessage(tenantId, conv.guest_phone, message.trim());
     }
-
-    await appendStaffMessage(tenantId, conv.guest_phone, message.trim());
     ok(res, { sent: true });
   } catch (e: any) {
     console.error('[Hotel Reply] Error:', e.message, e.stack);
