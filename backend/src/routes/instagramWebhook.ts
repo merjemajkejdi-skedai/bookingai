@@ -86,12 +86,7 @@ router.post('/instagram/webhook', async (req, res) => {
                 profile.name, profile.username, psid, tenantId, guestPhone,
               );
             } else {
-              await dbRun(
-                `UPDATE hotel_conversations
-                 SET channel_user_id = ?, last_guest_message_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-                 WHERE tenant_id = ? AND guest_phone = ?`,
-                psid, tenantId, guestPhone,
-              );
+              console.log(`[Instagram] Profile null — skipping backfill update`);
             }
           } else {
             await dbRun(
