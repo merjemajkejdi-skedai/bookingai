@@ -52,7 +52,7 @@ router.post('/instagram/webhook', async (req, res) => {
 
         const tenantId    = row.id as string;
         const aiEnabled   = row.ai_enabled === 1 || row.ai_enabled === true;
-        const accessToken = (row.ig_access_token || process.env.INSTAGRAM_ACCESS_TOKEN || '') as string;
+        const accessToken = (row.ig_access_token || '') as string;
         const guestPhone  = `instagram:${psid}`;
 
         // Check if this is a new or existing conversation

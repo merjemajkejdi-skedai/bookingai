@@ -1083,7 +1083,7 @@ hotelRouter.post('/conversations/:phone/reply', requireAuth, async (req: Request
         'SELECT access_token FROM hotel_channel_settings WHERE tenant_id = ? AND channel = ?',
         tenantId, 'instagram',
       ) as any;
-      const accessToken = cs?.access_token || process.env.INSTAGRAM_ACCESS_TOKEN;
+      const accessToken = cs?.access_token;
       if (!accessToken) return err(res, 'No Instagram access token configured');
       await sendInstagramMessage(conv.channel_user_id, message.trim(), accessToken);
     } else {
