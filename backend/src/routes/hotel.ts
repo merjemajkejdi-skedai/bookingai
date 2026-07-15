@@ -1005,9 +1005,14 @@ hotelRouter.get('/conversations', requireAuth, async (req: Request, res: Respons
       tenantId,
     ) as any[];
 
-    // Parse messages JSON, extract last message for preview
+    // Parse messages — PG returns JSONB as JS array already; SQLite returns a string
+    const parseMessages = (raw: any): any[] => {
+      if (Array.isArray(raw)) return raw;
+      try { return JSON.parse(raw || '[]'); } catch { return []; }
+    };
+
     const result = rows.map((r: any) => {
-      const msgs: any[] = JSON.parse(r.messages || '[]');
+      const msgs = parseMessages(r.messages);
       const lastMsg = msgs[msgs.length - 1] ?? null;
       return {
         ...r,
@@ -1018,6 +1023,7 @@ hotelRouter.get('/conversations', requireAuth, async (req: Request, res: Respons
       };
     });
 
+    console.log(`[Hotel Conversations] Found ${result.length} conversations for tenant ${tenantId} (includes all channels)`);
     ok(res, result);
   } catch (e: any) { err(res, e.message, 500); }
 });
@@ -1056,9 +1062,13 @@ hotelRouter.get('/conversations/:phone', requireAuth, async (req: Request, res: 
     ) as any;
 
     if (!row) return ok(res, null);
+    const parseMessages = (raw: any): any[] => {
+      if (Array.isArray(raw)) return raw;
+      try { return JSON.parse(raw || '[]'); } catch { return []; }
+    };
     ok(res, {
       ...row,
-      messages: JSON.parse(row.messages || '[]'),
+      messages: parseMessages(row.messages),
       survey_sent: !!row.survey_sent,
     });
   } catch (e: any) { err(res, e.message, 500); }
