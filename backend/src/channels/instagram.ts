@@ -5,10 +5,11 @@ export async function getInstagramSenderProfile(
   accessToken: string,
 ): Promise<{ name: string | null; username: string | null }> {
   try {
-    const url = `https://graph.facebook.com/v19.0/${senderId}?fields=name,username&access_token=${accessToken}`;
+    const url = `https://graph.instagram.com/v25.0/${senderId}?fields=name,username&access_token=${accessToken}`;
     const response = await fetch(url);
     if (!response.ok) {
-      console.error(`[Instagram] Failed to fetch profile for ${senderId}: ${response.status}`);
+      const errorText = await response.text();
+      console.error(`[Instagram] Profile fetch failed ${response.status}:`, errorText);
       return { name: null, username: null };
     }
     const data = await response.json() as any;
