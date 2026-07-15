@@ -32,6 +32,14 @@ function displayPhone(phone: string) {
   return phone.replace('whatsapp:', '').replace('instagram:', 'IG:');
 }
 
+function igDisplayName(c: { guest_name?: string | null; guest_username?: string | null; channel_user_id?: string | null }) {
+  const { guest_name: name, guest_username: username, channel_user_id: psid } = c;
+  if (name && username) return `${name} (@${username})`;
+  if (name) return name;
+  if (username) return `@${username}`;
+  return `Instagram User ${psid ?? ''}`.trim();
+}
+
 // ── fireNotification ──────────────────────────────────────────────────────────
 
 function fireNotification(
@@ -391,7 +399,9 @@ function ThreadPanel({
           </div>
           <div className="min-w-0">
             <p className="text-sm font-semibold text-slate-800 truncate">
-              {conv.channel === 'instagram' ? (conv.guest_name ?? 'Instagram User') : (conv.guest_name ?? displayPhone(conv.guest_phone))}
+              {conv.channel === 'instagram'
+                ? igDisplayName(conv)
+                : (conv.guest_name ?? displayPhone(conv.guest_phone))}
             </p>
             <p className="text-xs text-slate-400 truncate">
               {displayPhone(conv.guest_phone)}
@@ -734,7 +744,9 @@ export function ConversationsPage({ surveyEnabled = false }: { surveyEnabled?: b
                             'text-sm truncate',
                             isUnread ? 'font-bold text-slate-900' : 'font-semibold text-slate-800',
                           )}>
-                            {c.channel === 'instagram' ? (c.guest_name ?? 'Instagram User') : (c.guest_name ?? displayPhone(c.guest_phone))}
+                            {c.channel === 'instagram'
+                            ? igDisplayName(c)
+                            : (c.guest_name ?? displayPhone(c.guest_phone))}
                           </span>
                           {c.channel === 'instagram' && (
                             <span className="text-[10px] font-semibold bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded flex-shrink-0">

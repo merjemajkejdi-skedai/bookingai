@@ -105,6 +105,7 @@ export interface Conversation {
   // Channel routing
   channel?: string;
   channel_user_id?: string | null;
+  guest_username?: string | null;
 }
 
 export interface ChannelSetting {

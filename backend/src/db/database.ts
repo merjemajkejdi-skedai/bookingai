@@ -1017,6 +1017,9 @@ export async function runMigrations() {
       `ALTER TABLE hotel_conversations ADD COLUMN IF NOT EXISTS channel_user_id TEXT DEFAULT NULL`,
       // instagram_002 — Instagram account ID on tenants
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS instagram_account_id TEXT`,
+      // instagram_004 — sender profile on hotel_conversations
+      `ALTER TABLE hotel_conversations ADD COLUMN IF NOT EXISTS guest_name VARCHAR(255) DEFAULT NULL`,
+      `ALTER TABLE hotel_conversations ADD COLUMN IF NOT EXISTS guest_username VARCHAR(255) DEFAULT NULL`,
       // instagram_003 — per-channel AI + connection settings
       `CREATE TABLE IF NOT EXISTS hotel_channel_settings (
         id TEXT PRIMARY KEY,
@@ -1202,6 +1205,11 @@ export async function runMigrations() {
     exec("ALTER TABLE hotel_conversations ADD COLUMN channel TEXT NOT NULL DEFAULT 'whatsapp'");
   if (!convCols.includes('channel_user_id'))
     exec('ALTER TABLE hotel_conversations ADD COLUMN channel_user_id TEXT');
+  // instagram_004 — sender profile
+  if (!convCols.includes('guest_name'))
+    exec('ALTER TABLE hotel_conversations ADD COLUMN guest_name TEXT');
+  if (!convCols.includes('guest_username'))
+    exec('ALTER TABLE hotel_conversations ADD COLUMN guest_username TEXT');
 
   const reqCols = prepare("SELECT name FROM pragma_table_info('hotel_requests')")
     .all().map((r: any) => r.name as string);

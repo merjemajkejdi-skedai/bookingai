@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { isPg, prepare, queryOne, queryRun } from '../db/database.js';
 import { runHotelAgent } from '../hotel/agent.js';
-import { sendInstagramMessage } from '../whatsapp/instagram.js';
+import { sendInstagramMessage, getInstagramSenderProfile } from '../whatsapp/instagram.js';
 import { alertError } from '../utils/errorMonitor.js';
 
 const router = Router();
@@ -55,26 +55,61 @@ router.post('/instagram/webhook', async (req, res) => {
         const accessToken = (row.ig_access_token || process.env.INSTAGRAM_ACCESS_TOKEN || '') as string;
         const guestPhone  = `instagram:${psid}`;
 
-        // Upsert conversation row — ensures channel = 'instagram' is persisted
-        await dbRun(
-          `INSERT INTO hotel_conversations
-             (id, tenant_id, guest_phone, messages, channel, channel_user_id,
-              last_message, updated_at, last_guest_message_at)
-           VALUES (?,?,?,'[]','instagram',?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
-           ON CONFLICT (tenant_id, guest_phone) DO UPDATE SET
-             channel_user_id       = excluded.channel_user_id,
-             last_guest_message_at = CURRENT_TIMESTAMP,
-             updated_at            = CURRENT_TIMESTAMP`,
-          crypto.randomUUID(), tenantId, guestPhone, psid,
-        );
+        // Check if this is a new or existing conversation
+        const existing = await dbGet(
+          'SELECT id, guest_name, guest_username FROM hotel_conversations WHERE tenant_id = ? AND guest_phone = ?',
+          tenantId, guestPhone,
+        ) as any;
+
+        if (!existing) {
+          // New conversation — fetch sender profile before inserting
+          const profile = await getInstagramSenderProfile(psid, accessToken);
+          console.log(`[Instagram] Sender profile: name=${profile.name} username=${profile.username}`);
+          await dbRun(
+            `INSERT INTO hotel_conversations
+               (id, tenant_id, guest_phone, messages, channel, channel_user_id,
+                guest_name, guest_username, last_message, updated_at, last_guest_message_at)
+             VALUES (?,?,?,'[]','instagram',?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`,
+            crypto.randomUUID(), tenantId, guestPhone, psid, profile.name, profile.username,
+          );
+        } else {
+          // Existing conversation — update timestamps; backfill name if still null
+          if (!existing.guest_name && !existing.guest_username) {
+            const profile = await getInstagramSenderProfile(psid, accessToken);
+            console.log(`[Instagram] Backfill profile: name=${profile.name} username=${profile.username}`);
+            if (profile.name || profile.username) {
+              await dbRun(
+                `UPDATE hotel_conversations
+                 SET guest_name = ?, guest_username = ?, channel_user_id = ?,
+                     last_guest_message_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                 WHERE tenant_id = ? AND guest_phone = ?`,
+                profile.name, profile.username, psid, tenantId, guestPhone,
+              );
+            } else {
+              await dbRun(
+                `UPDATE hotel_conversations
+                 SET channel_user_id = ?, last_guest_message_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                 WHERE tenant_id = ? AND guest_phone = ?`,
+                psid, tenantId, guestPhone,
+              );
+            }
+          } else {
+            await dbRun(
+              `UPDATE hotel_conversations
+               SET channel_user_id = ?, last_guest_message_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+               WHERE tenant_id = ? AND guest_phone = ?`,
+              psid, tenantId, guestPhone,
+            );
+          }
+        }
 
         if (!aiEnabled) {
           // Append message so it appears in the dashboard for staff
-          const existing = await dbGet(
+          const convRow = await dbGet(
             'SELECT messages FROM hotel_conversations WHERE tenant_id = ? AND guest_phone = ?',
             tenantId, guestPhone,
           ) as any;
-          const prev: any[] = (() => { try { return JSON.parse(existing?.messages ?? '[]'); } catch { return []; } })();
+          const prev: any[] = (() => { try { return JSON.parse(convRow?.messages ?? '[]'); } catch { return []; } })();
           const updated = [
             ...prev,
             { role: 'user', content: text, ts: new Date().toISOString() },

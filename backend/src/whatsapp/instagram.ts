@@ -1,5 +1,24 @@
 import { alertError } from '../utils/errorMonitor.js';
 
+export async function getInstagramSenderProfile(
+  senderId: string,
+  accessToken: string,
+): Promise<{ name: string | null; username: string | null }> {
+  try {
+    const url = `https://graph.facebook.com/v19.0/${senderId}?fields=name,username&access_token=${accessToken}`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      console.error(`[Instagram] Failed to fetch profile for ${senderId}: ${response.status}`);
+      return { name: null, username: null };
+    }
+    const data = await response.json() as any;
+    return { name: data.name || null, username: data.username || null };
+  } catch (err: any) {
+    console.error(`[Instagram] Profile fetch error:`, err.message);
+    return { name: null, username: null };
+  }
+}
+
 export async function sendInstagramMessage(
   recipientId: string,
   message: string,
