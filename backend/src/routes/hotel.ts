@@ -508,7 +508,9 @@ hotelRouter.post('/guests/:id/checkout-survey', requireAuth, async (req: Request
     ) as any;
 
     if (convRow) {
-      const msgs = JSON.parse(convRow.messages || '[]');
+      const msgs: any[] = Array.isArray(convRow.messages)
+        ? convRow.messages
+        : (() => { try { return JSON.parse(convRow.messages || '[]'); } catch { return []; } })();
       msgs.push({ role: 'assistant', content: surveyMessage, ts: now });
       await dbRun(
         'UPDATE hotel_conversations SET messages = ?, updated_at = ? WHERE tenant_id = ? AND guest_phone = ?',

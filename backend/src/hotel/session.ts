@@ -20,6 +20,11 @@ const sessions = new Map<string, HotelSession>();
 const MAX_MESSAGES = 30;
 const SESSION_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
 
+function parseMessages(raw: any): HotelMessage[] {
+  if (Array.isArray(raw)) return raw as HotelMessage[];
+  try { return JSON.parse(raw || '[]') as HotelMessage[]; } catch { return []; }
+}
+
 // ---------------------------------------------------------------------------
 // DB helpers (local — avoids circular import)
 // ---------------------------------------------------------------------------
@@ -56,7 +61,14 @@ export async function getHotelHistory(
       tenantId, phone,
     ) as any;
     if (row?.messages) {
-      const msgs: HotelMessage[] = JSON.parse(row.messages);
+      const allMsgs = parseMessages(row.messages);
+      // Strip any trailing user message — the agent appends the current user message
+      // explicitly; including it here would cause duplication in the Claude context.
+      // (saveGuestMessage writes the user msg to DB before this fallback runs.)
+      const lastIdx = allMsgs.length - 1;
+      const msgs = (lastIdx >= 0 && allMsgs[lastIdx].role === 'user')
+        ? allMsgs.slice(0, lastIdx)
+        : allMsgs;
       sessions.set(key, { messages: msgs.slice(-MAX_MESSAGES), lastActivity: new Date() });
       return msgs.slice(-MAX_MESSAGES);
     }
@@ -97,7 +109,7 @@ export async function saveGuestMessage(
       tenantId, phone,
     ) as any;
 
-    const prev: HotelMessage[] = existing?.messages ? JSON.parse(existing.messages) : [];
+    const prev: HotelMessage[] = parseMessages(existing?.messages);
 
     // Idempotency: don't duplicate if the last stored message is identical
     const last = prev[prev.length - 1];
