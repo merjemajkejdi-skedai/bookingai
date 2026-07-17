@@ -101,7 +101,7 @@ app.use('/api', bookingRouter);
 app.use('/api', artEventRouter);
 app.use('/api', artClassRouter);
 app.use('/api', restaurantRouter);
-app.use('/restaurant', happyRestaurantRouter);
+app.use(happyRestaurantRouter); // sub-routes already carry the '/restaurant/...' prefix themselves
 app.use('/auth', authRouter);
 app.use('/admin', adminRouter);
 app.use('/admin/analytics', adminAnalyticsRouter);
