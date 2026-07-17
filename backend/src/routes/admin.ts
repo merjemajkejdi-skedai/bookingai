@@ -76,6 +76,24 @@ async function provisionHappySettings(tenantId: string, venueType: string, venue
   return code;
 }
 
+// Bootstrap: happy_staff admin creation normally requires an admin token,
+// which doesn't exist yet for a brand-new tenant. The super_admin-authenticated
+// tenant-creation flow is the one trusted place allowed to seed the first
+// admin account (bcrypt-hashed PIN, same as every other happy_staff row).
+function randomPin(): string {
+  return String(Math.floor(1000 + Math.random() * 9000));
+}
+
+async function provisionInitialHappyAdmin(tenantId: string) {
+  const pin = randomPin();
+  const pinHash = bcrypt.hashSync(pin, 10);
+  await dbRun(
+    `INSERT INTO happy_staff (id, tenant_id, name, role, pin_hash) VALUES (?,?,?,?,?)`,
+    crypto.randomUUID(), tenantId, 'Admin', 'admin', pinHash,
+  );
+  return pin;
+}
+
 // POST /admin/tenants
 adminRouter.post('/tenants', async (req: Request, res: Response) => {
   const {
@@ -115,15 +133,33 @@ adminRouter.post('/tenants', async (req: Request, res: Response) => {
   );
 
   let happyTenantCode: string | null = null;
+  let happyAdminPin: string | null = null;
   if (HAPPY_TYPES.includes(type)) {
     happyTenantCode = await provisionHappySettings(tenantId, type, name, tenantCode);
+    happyAdminPin   = await provisionInitialHappyAdmin(tenantId);
   }
 
   ok(res, {
     tenant: await dbGet('SELECT * FROM tenants WHERE id=?', tenantId),
     user:   await dbGet('SELECT id,email,role,tenant_id,created_at FROM users WHERE id=?', userId),
     happyTenantCode,
+    happyAdminPin,
   });
+});
+
+// POST /admin/tenants/:id/happy-bootstrap-admin
+// Backfill: create the first happy_staff admin for a happy_ tenant that
+// doesn't have one yet (e.g. created before this endpoint existed, or the
+// PIN was lost). No-op with an error if an admin already exists.
+adminRouter.post('/tenants/:id/happy-bootstrap-admin', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const tenant = await dbGet('SELECT id, type FROM tenants WHERE id=?', id) as any;
+  if (!tenant) return err(res, 'Tenant not found', 404);
+  if (!HAPPY_TYPES.includes(tenant.type)) return err(res, 'Not a happy_ tenant');
+  const existingAdmin = await dbGet(`SELECT id FROM happy_staff WHERE tenant_id=? AND role='admin' AND is_active=1`, id);
+  if (existingAdmin) return err(res, 'This tenant already has an active admin');
+  const pin = await provisionInitialHappyAdmin(id);
+  ok(res, { happyAdminPin: pin });
 });
 
 // PUT /admin/tenants/:id
