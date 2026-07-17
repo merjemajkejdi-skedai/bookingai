@@ -768,6 +768,314 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_inv_delivery_lines       ON inventory_delivery_lines(delivery_id);
   CREATE INDEX IF NOT EXISTS idx_inv_waste_tenant         ON inventory_waste(tenant_id, recorded_at);
   CREATE INDEX IF NOT EXISTS idx_inv_consumption_tenant   ON inventory_consumption(tenant_id, consumed_at);
+
+  -- Happy Restaurant POS (happy_restaurant / happy_bar / happy_hybrid)
+  -- Uses happy_* prefix (not restaurant_*) to avoid colliding with the
+  -- existing restaurant_zones/restaurant_tables/restaurant_reservations
+  -- WhatsApp reservation feature (tenant type 'restaurant'), which this
+  -- module must never touch.
+  CREATE TABLE IF NOT EXISTS happy_settings (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL UNIQUE,
+    venue_type TEXT NOT NULL,
+    venue_name TEXT NOT NULL,
+    tenant_code TEXT UNIQUE,
+    currency TEXT NOT NULL DEFAULT 'ALL',
+    timezone TEXT NOT NULL DEFAULT 'Europe/Tirane',
+    table_numbering_type TEXT NOT NULL DEFAULT 'both',
+    max_tables INTEGER NOT NULL DEFAULT 50,
+    counter_service_enabled INTEGER NOT NULL DEFAULT 0,
+    counter_ticket_reset TEXT NOT NULL DEFAULT 'daily',
+    send_by_course INTEGER NOT NULL DEFAULT 0,
+    allow_item_void_after_send INTEGER NOT NULL DEFAULT 1,
+    void_requires_manager_approval INTEGER NOT NULL DEFAULT 0,
+    void_requires_reason INTEGER NOT NULL DEFAULT 1,
+    allow_split_bill INTEGER NOT NULL DEFAULT 1,
+    split_mode TEXT NOT NULL DEFAULT 'both',
+    allow_merge_tables INTEGER NOT NULL DEFAULT 1,
+    kitchen_display_enabled INTEGER NOT NULL DEFAULT 1,
+    bar_display_enabled INTEGER NOT NULL DEFAULT 0,
+    default_item_destination TEXT NOT NULL DEFAULT 'kitchen',
+    printer_enabled INTEGER NOT NULL DEFAULT 0,
+    printer_type TEXT,
+    printer_ip TEXT,
+    kitchen_course_alert INTEGER NOT NULL DEFAULT 1,
+    kitchen_void_alert INTEGER NOT NULL DEFAULT 1,
+    fiscal_receipt_on_payment INTEGER NOT NULL DEFAULT 1,
+    fiscal_receipt_on_bill_print INTEGER NOT NULL DEFAULT 0,
+    allow_manual_offline_payment INTEGER NOT NULL DEFAULT 1,
+    allow_room_charge INTEGER NOT NULL DEFAULT 0,
+    waiter_login_method TEXT NOT NULL DEFAULT 'both',
+    menu_time_based INTEGER NOT NULL DEFAULT 0,
+    loyalty_enabled INTEGER NOT NULL DEFAULT 0,
+    loyalty_identifier TEXT NOT NULL DEFAULT 'both',
+    loyalty_earn_and_redeem_same_tx INTEGER NOT NULL DEFAULT 1,
+    pms_enabled INTEGER NOT NULL DEFAULT 0,
+    pms_provider TEXT,
+    pms_api_url TEXT,
+    pms_api_key TEXT,
+    pms_verify_room_on_charge INTEGER NOT NULL DEFAULT 1,
+    shift_report_enabled INTEGER NOT NULL DEFAULT 1,
+    whatsapp_enabled INTEGER NOT NULL DEFAULT 0,
+    ai_enabled INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_happy_settings_code ON happy_settings(tenant_code) WHERE tenant_code IS NOT NULL;
+
+  CREATE TABLE IF NOT EXISTS happy_staff (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    email TEXT,
+    pin_hash TEXT,
+    role TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_happy_staff_email ON happy_staff(tenant_id, email) WHERE email IS NOT NULL;
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_happy_staff_pin   ON happy_staff(tenant_id, pin_hash) WHERE pin_hash IS NOT NULL;
+
+  CREATE TABLE IF NOT EXISTS happy_tables (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    number INTEGER,
+    name TEXT,
+    section TEXT,
+    capacity INTEGER NOT NULL DEFAULT 4,
+    status TEXT NOT NULL DEFAULT 'available',
+    current_order_id TEXT,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE INDEX IF NOT EXISTS idx_happy_tables_tenant ON happy_tables(tenant_id, is_active);
+
+  CREATE TABLE IF NOT EXISTS happy_menu_categories (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    image_url TEXT,
+    destination TEXT NOT NULL DEFAULT 'kitchen',
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    available_from TEXT,
+    available_until TEXT,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE INDEX IF NOT EXISTS idx_happy_menu_cat_tenant ON happy_menu_categories(tenant_id, is_active);
+
+  CREATE TABLE IF NOT EXISTS happy_menu_items (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    category_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    price REAL NOT NULL,
+    image_url TEXT,
+    destination_override TEXT,
+    course TEXT,
+    is_available INTEGER NOT NULL DEFAULT 1,
+    stock_quantity INTEGER,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE INDEX IF NOT EXISTS idx_happy_menu_items_tenant ON happy_menu_items(tenant_id, is_active);
+  CREATE INDEX IF NOT EXISTS idx_happy_menu_items_cat    ON happy_menu_items(category_id);
+
+  CREATE TABLE IF NOT EXISTS happy_modifier_groups (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    is_required INTEGER NOT NULL DEFAULT 0,
+    min_selections INTEGER NOT NULL DEFAULT 0,
+    max_selections INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE TABLE IF NOT EXISTS happy_item_modifier_groups (
+    item_id TEXT NOT NULL,
+    modifier_group_id TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (item_id, modifier_group_id)
+  );
+  CREATE TABLE IF NOT EXISTS happy_modifiers (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    group_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    price_adjustment REAL NOT NULL DEFAULT 0,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE INDEX IF NOT EXISTS idx_happy_modifiers_group ON happy_modifiers(group_id);
+
+  CREATE TABLE IF NOT EXISTS happy_orders (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    table_id TEXT,
+    waiter_id TEXT NOT NULL,
+    order_number INTEGER NOT NULL,
+    ticket_number INTEGER,
+    status TEXT NOT NULL DEFAULT 'open',
+    payment_status TEXT NOT NULL DEFAULT 'unpaid',
+    payment_method TEXT,
+    subtotal REAL NOT NULL DEFAULT 0,
+    discount REAL NOT NULL DEFAULT 0,
+    total REAL NOT NULL DEFAULT 0,
+    notes TEXT,
+    fiscal_status TEXT NOT NULL DEFAULT 'not_fiscalized',
+    fiscal_iic TEXT,
+    fiscal_fic TEXT,
+    fiscal_inv_num TEXT,
+    fiscal_verify_url TEXT,
+    fiscal_error TEXT,
+    fiscal_at TEXT,
+    pms_room_number TEXT,
+    pms_guest_name TEXT,
+    pms_reservation_id TEXT,
+    pms_folio_number TEXT,
+    pms_charge_posted INTEGER,
+    pms_charge_posted_at TEXT,
+    pms_charge_error TEXT,
+    loyalty_customer_id TEXT,
+    loyalty_phone TEXT,
+    loyalty_card TEXT,
+    loyalty_points_earned INTEGER,
+    loyalty_points_redeemed INTEGER,
+    loyalty_discount REAL,
+    parent_order_id TEXT,
+    is_split INTEGER NOT NULL DEFAULT 0,
+    merged_into_order_id TEXT,
+    opened_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    bill_requested_at TEXT,
+    paid_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE INDEX IF NOT EXISTS idx_happy_orders_tenant ON happy_orders(tenant_id, status);
+  CREATE INDEX IF NOT EXISTS idx_happy_orders_table  ON happy_orders(table_id);
+  CREATE INDEX IF NOT EXISTS idx_happy_orders_waiter ON happy_orders(waiter_id);
+
+  CREATE TABLE IF NOT EXISTS happy_order_sequences (
+    tenant_id TEXT NOT NULL,
+    date TEXT NOT NULL,
+    last_order_number INTEGER NOT NULL DEFAULT 0,
+    last_ticket_number INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (tenant_id, date)
+  );
+
+  CREATE TABLE IF NOT EXISTS happy_order_items (
+    id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL,
+    tenant_id TEXT NOT NULL,
+    menu_item_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    unit_price REAL NOT NULL,
+    modifiers_price REAL NOT NULL DEFAULT 0,
+    total_price REAL NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 1,
+    course TEXT,
+    destination TEXT NOT NULL DEFAULT 'kitchen',
+    status TEXT NOT NULL DEFAULT 'pending',
+    sent_at TEXT,
+    voided_at TEXT,
+    voided_by TEXT,
+    void_approved_by TEXT,
+    void_reason TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE INDEX IF NOT EXISTS idx_happy_order_items_order  ON happy_order_items(order_id);
+  CREATE INDEX IF NOT EXISTS idx_happy_order_items_tenant ON happy_order_items(tenant_id);
+
+  CREATE TABLE IF NOT EXISTS happy_order_item_modifiers (
+    id TEXT PRIMARY KEY,
+    order_item_id TEXT NOT NULL,
+    modifier_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    price_adjustment REAL NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE INDEX IF NOT EXISTS idx_happy_oim_item ON happy_order_item_modifiers(order_item_id);
+
+  CREATE TABLE IF NOT EXISTS happy_void_log (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    order_id TEXT NOT NULL,
+    order_item_id TEXT NOT NULL,
+    voided_by TEXT NOT NULL,
+    approved_by TEXT,
+    reason TEXT,
+    item_name TEXT NOT NULL,
+    unit_price REAL NOT NULL,
+    quantity INTEGER NOT NULL,
+    total_value REAL NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE INDEX IF NOT EXISTS idx_happy_void_log_tenant ON happy_void_log(tenant_id);
+
+  CREATE TABLE IF NOT EXISTS happy_kitchen_events (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    order_id TEXT NOT NULL,
+    table_id TEXT,
+    table_display TEXT,
+    event_type TEXT NOT NULL,
+    destination TEXT NOT NULL DEFAULT 'kitchen',
+    course TEXT,
+    items TEXT NOT NULL DEFAULT '[]',
+    is_acknowledged INTEGER NOT NULL DEFAULT 0,
+    acknowledged_at TEXT,
+    acknowledged_by TEXT,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE INDEX IF NOT EXISTS idx_happy_kitchen_events_dest ON happy_kitchen_events(tenant_id, destination, is_acknowledged);
+
+  CREATE TABLE IF NOT EXISTS happy_pms_charge_queue (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    order_id TEXT NOT NULL,
+    room_number TEXT NOT NULL,
+    guest_name TEXT,
+    reservation_id TEXT,
+    amount REAL NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_attempt_at TEXT,
+    error TEXT,
+    posted_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE INDEX IF NOT EXISTS idx_happy_pms_queue_tenant ON happy_pms_charge_queue(tenant_id, status);
+
+  CREATE TABLE IF NOT EXISTS happy_shift_reports (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    generated_by TEXT NOT NULL,
+    shift_start TEXT NOT NULL,
+    shift_end TEXT NOT NULL,
+    total_revenue REAL NOT NULL DEFAULT 0,
+    total_orders INTEGER NOT NULL DEFAULT 0,
+    total_covers INTEGER NOT NULL DEFAULT 0,
+    voided_items_count INTEGER NOT NULL DEFAULT 0,
+    voided_items_value REAL NOT NULL DEFAULT 0,
+    payment_breakdown TEXT NOT NULL DEFAULT '{}',
+    per_waiter_breakdown TEXT NOT NULL DEFAULT '[]',
+    top_items TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE INDEX IF NOT EXISTS idx_happy_shift_reports_tenant ON happy_shift_reports(tenant_id);
 `;
 
 export async function runMigrations() {

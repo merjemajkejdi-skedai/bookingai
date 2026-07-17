@@ -259,8 +259,8 @@ async function runAgent(
   if (tenantType === 'art_class')        return runArtClassAgent(message, history, phone, tenantId);
   if (tenantType === 'art_event')        return runArtEventAgent(message, history, phone, tenantId);
   if (tenantType === 'restaurant')       return runRestaurantAgent(message, history, phone, tenantId);
-  // happy_restaurant uses the POS app — WhatsApp is an optional bolt-on, never route to a generic agent
-  if (tenantType === 'happy_restaurant') return '';
+  // happy_ POS tenants use the POS app — WhatsApp is an optional bolt-on, never route to a generic agent
+  if (tenantType.startsWith('happy_')) return '';
   return runBookingAgent(message, history, phone, tenantId);
 }
 

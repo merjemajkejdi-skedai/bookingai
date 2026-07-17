@@ -45,6 +45,37 @@ function normaliseWhatsapp(raw: string | undefined | null): string {
   return cleaned.startsWith('whatsapp:') ? cleaned : `whatsapp:${cleaned}`;
 }
 
+const HAPPY_TYPES = ['happy_restaurant', 'happy_bar', 'happy_hybrid'];
+
+function slugify(raw: string): string {
+  return raw.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'venue';
+}
+
+// Provision a happy_settings row for a freshly-created happy_ tenant.
+// tenant_code is how staff identify the venue at POS login (/restaurant/auth/login).
+async function provisionHappySettings(tenantId: string, venueType: string, venueName: string, requestedCode?: string) {
+  let code = slugify(requestedCode || venueName);
+  let suffix = 0;
+  while (await dbGet('SELECT 1 FROM happy_settings WHERE tenant_code=?', suffix ? `${code}-${suffix}` : code)) {
+    suffix += 1;
+  }
+  if (suffix) code = `${code}-${suffix}`;
+
+  const isBar = venueType === 'happy_bar';
+  await dbRun(
+    `INSERT INTO happy_settings
+       (id, tenant_id, venue_type, venue_name, tenant_code,
+        counter_service_enabled, send_by_course, kitchen_display_enabled, bar_display_enabled)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+    crypto.randomUUID(), tenantId, venueType, venueName, code,
+    isBar ? 1 : 0,           // counter_service_enabled defaults on for bars
+    0,                       // send_by_course — off until enabled explicitly (always off for bars)
+    isBar ? 0 : 1,           // kitchen_display_enabled — always off for bars
+    venueType === 'happy_restaurant' ? 0 : 1, // bar_display_enabled — on for bar/hybrid
+  );
+  return code;
+}
+
 // POST /admin/tenants
 adminRouter.post('/tenants', async (req: Request, res: Response) => {
   const {
@@ -52,6 +83,7 @@ adminRouter.post('/tenants', async (req: Request, res: Response) => {
     ownerEmail, ownerPassword, whatsappNumber='', plan='starter', billingEmail='',
     provider='twilio', metaPhoneNumberId='', metaAccessToken='', metaWabaId='',
     twilioAccountSid='', twilioAuthToken='', twilioDeptTemplateSid='',
+    tenantCode='',
   } = req.body;
 
   if (!name || !ownerEmail || !ownerPassword)
@@ -82,9 +114,15 @@ adminRouter.post('/tenants', async (req: Request, res: Response) => {
     userId, ownerEmail.toLowerCase(), hash, tenantId,
   );
 
+  let happyTenantCode: string | null = null;
+  if (HAPPY_TYPES.includes(type)) {
+    happyTenantCode = await provisionHappySettings(tenantId, type, name, tenantCode);
+  }
+
   ok(res, {
     tenant: await dbGet('SELECT * FROM tenants WHERE id=?', tenantId),
     user:   await dbGet('SELECT id,email,role,tenant_id,created_at FROM users WHERE id=?', userId),
+    happyTenantCode,
   });
 });
 

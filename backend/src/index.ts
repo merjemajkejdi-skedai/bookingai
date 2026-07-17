@@ -10,6 +10,7 @@ import { bookingRouter } from './modules/booking/routes.js';
 import { artEventRouter } from './modules/art_event/routes.js';
 import { artClassRouter } from './modules/art_class/routes.js';
 import { restaurantRouter } from './modules/restaurant/routes.js';
+import { happyRestaurantRouter } from './modules/happyRestaurant/routes.js';
 import { hotelRouter } from './routes/hotel.js';
 import { hotelMenusRouter } from './routes/hotelMenus.js';
 import { shopRouter } from './routes/shop.js';
@@ -57,6 +58,7 @@ const authLimiter = rateLimit({
 });
 app.use('/auth/', authLimiter);
 app.use('/api/auth/', authLimiter);
+app.use('/restaurant/auth/', authLimiter); // happy_ POS PIN login — short PINs need brute-force protection too
 
 // Public QR ordering: 300 per 15 min per IP
 // (50 guests sharing one WiFi router × ~4 requests each = ~200; 300 gives headroom)
@@ -82,6 +84,7 @@ const generalApiLimiter = rateLimit({
 });
 app.use('/shop/', generalApiLimiter);
 app.use('/hotel/', generalApiLimiter);
+app.use('/restaurant/', generalApiLimiter);
 app.use('/admin/', generalApiLimiter);
 app.use('/api/', generalApiLimiter);
 // NOTE: /whatsapp/ and /meta/ routes are intentionally NOT rate limited —
@@ -98,6 +101,7 @@ app.use('/api', bookingRouter);
 app.use('/api', artEventRouter);
 app.use('/api', artClassRouter);
 app.use('/api', restaurantRouter);
+app.use('/restaurant', happyRestaurantRouter);
 app.use('/auth', authRouter);
 app.use('/admin', adminRouter);
 app.use('/admin/analytics', adminAnalyticsRouter);
