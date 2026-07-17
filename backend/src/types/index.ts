@@ -5,7 +5,7 @@
 export interface Tenant {
   id: string;
   name: string;
-  type: 'barbershop' | 'salon' | 'dentist' | 'medical' | 'hotel';
+  type: 'barbershop' | 'salon' | 'dentist' | 'medical' | 'hotel' | 'happy_restaurant';
   timezone: string;
   createdAt: string;
 }

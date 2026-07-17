@@ -255,10 +255,12 @@ async function runAgent(
   tenantId: string,
   tenantType: string,
 ): Promise<string> {
-  if (tenantType === 'hotel')      return runHotelAgent(message, history, phone, tenantId);
-  if (tenantType === 'art_class')  return runArtClassAgent(message, history, phone, tenantId);
-  if (tenantType === 'art_event')  return runArtEventAgent(message, history, phone, tenantId);
-  if (tenantType === 'restaurant') return runRestaurantAgent(message, history, phone, tenantId);
+  if (tenantType === 'hotel')            return runHotelAgent(message, history, phone, tenantId);
+  if (tenantType === 'art_class')        return runArtClassAgent(message, history, phone, tenantId);
+  if (tenantType === 'art_event')        return runArtEventAgent(message, history, phone, tenantId);
+  if (tenantType === 'restaurant')       return runRestaurantAgent(message, history, phone, tenantId);
+  // happy_restaurant uses the POS app — WhatsApp is an optional bolt-on, never route to a generic agent
+  if (tenantType === 'happy_restaurant') return '';
   return runBookingAgent(message, history, phone, tenantId);
 }
 

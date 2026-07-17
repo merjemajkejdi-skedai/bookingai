@@ -218,6 +218,9 @@ metaRouter.post('/meta/webhook', async (req: Request, res: Response) => {
               reply = await withTimeout(runArtClassAgent(textToAgent, history, customerPhone, tenant.id), 15_000);
             } else if (tenantType === 'restaurant') {
               reply = await withTimeout(runRestaurantAgent(textToAgent, history, customerPhone, tenant.id), 15_000);
+            } else if (tenantType === 'happy_restaurant') {
+              // happy_restaurant uses the POS app — WhatsApp is an optional bolt-on, stay silent by default
+              reply = '';
             } else {
               reply = await withTimeout(runBookingAgent(textToAgent, history, customerPhone, tenant.id), 15_000);
             }
