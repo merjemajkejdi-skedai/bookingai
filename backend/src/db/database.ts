@@ -1332,6 +1332,8 @@ export async function runMigrations() {
       `UPDATE hotel_conversations SET messages = '[]' WHERE messages IS NULL OR messages::text = '' OR messages::text NOT LIKE '[%'`,
       // messages_jsonb_002 — convert messages from text to jsonb so || does array merge, not string concat
       `ALTER TABLE hotel_conversations ALTER COLUMN messages TYPE jsonb USING messages::jsonb`,
+      // hotel_requests_room_001 — make room_number nullable; guard in tools.ts handles the pre-check
+      `ALTER TABLE hotel_requests ALTER COLUMN room_number DROP NOT NULL`,
       // instagram_003 — per-channel AI + connection settings
       `CREATE TABLE IF NOT EXISTS hotel_channel_settings (
         id TEXT PRIMARY KEY,

@@ -467,6 +467,15 @@ Text to translate: ${description}`,
         };
       }
 
+      // ── GUARD: room number required to log a request ─────────────────────────
+      if (!finalRoom) {
+        return {
+          success:          false,
+          need_room_number: true,
+          message:          'Room number is required to log this request. Please ask the guest for their room number first.',
+        };
+      }
+
       // ── INSERT (no recent duplicate found) ───────────────────────────────────
       const id = crypto.randomUUID();
       await dbRun(
