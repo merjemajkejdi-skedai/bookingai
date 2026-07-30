@@ -6,6 +6,18 @@
       "runtimeExecutable": "npx",
       "runtimeArgs": ["serve", "-p", "4500", "-s", "landing"],
       "port": 4500
+    },
+    {
+      "name": "happy-restaurant-pos",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "C:/Projects/happy-restaurant-pos", "run", "start:web", "--", "--port", "4501"],
+      "port": 4501
+    },
+    {
+      "name": "happy-backend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "C:/Projects/happy-backend", "run", "dev"],
+      "port": 3001
     }
   ]
 }
