@@ -21,9 +21,10 @@ interface Props { onLogout: () => void; }
 export function HotelModule({ onLogout }: Props) {
   const currentUser = getStoredUser();
   const [page, setPage] = useState<Page>('conversations');
-  const [reviewsEnabled, setReviewsEnabled] = useState(false);
-  const [surveyEnabled,  setSurveyEnabled]  = useState(false);
-  const [menusEnabled,   setMenusEnabled]   = useState(false);
+  const [reviewsEnabled,    setReviewsEnabled]    = useState(false);
+  const [surveyEnabled,     setSurveyEnabled]     = useState(false);
+  const [menusEnabled,      setMenusEnabled]      = useState(false);
+  const [addToFaqEnabled,   setAddToFaqEnabled]   = useState(false);
 
   useEffect(() => {
     api.getConfig()
@@ -31,6 +32,7 @@ export function HotelModule({ onLogout }: Props) {
         setReviewsEnabled(!!c?.reviews_enabled);
         setSurveyEnabled(!!c?.survey_enabled);
         setMenusEnabled(!!c?.menus_enabled);
+        setAddToFaqEnabled(!!c?.add_conversation_to_faq_enabled);
       })
       .catch(() => {});
   }, []);
@@ -111,7 +113,7 @@ export function HotelModule({ onLogout }: Props) {
         {page === 'requests' && <RequestsPage />}
         {page === 'guests'   && <GuestsPage />}
         {page === 'faq'      && <FaqPage />}
-        {page === 'conversations' && <ConversationsPage surveyEnabled={surveyEnabled} />}
+        {page === 'conversations' && <ConversationsPage surveyEnabled={surveyEnabled} addToFaqEnabled={addToFaqEnabled} />}
         {page === 'config'        && <ConfigPage />}
         {page === 'departments'   && <DepartmentsPage />}
         {page === 'blocked'       && <BlockedPage />}

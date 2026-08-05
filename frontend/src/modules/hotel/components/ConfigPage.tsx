@@ -187,6 +187,7 @@ interface Config {
   fallback_message: string;
   // Behaviour flags
   ask_maintenance_photo: boolean;
+  add_conversation_to_faq_enabled: boolean;
 }
 
 const DEFAULT_POSITIVE_MSG =
@@ -216,6 +217,7 @@ const EMPTY: Config = {
   front_office_phone: '',
   fallback_message: '',
   ask_maintenance_photo: true,
+  add_conversation_to_faq_enabled: false,
 };
 
 export function ConfigPage() {
@@ -244,6 +246,7 @@ export function ConfigPage() {
             front_office_phone:          c.front_office_phone          ?? '',
             fallback_message:            c.fallback_message            ?? '',
             ask_maintenance_photo:       c.ask_maintenance_photo       !== 0,
+            add_conversation_to_faq_enabled: c.add_conversation_to_faq_enabled !== 0,
           });
         }
       })
@@ -275,6 +278,7 @@ export function ConfigPage() {
         front_office_phone:         config.front_office_phone         || null,
         fallback_message:           config.fallback_message           || null,
         ask_maintenance_photo:      config.ask_maintenance_photo      ? 1 : 0,
+        add_conversation_to_faq_enabled: config.add_conversation_to_faq_enabled ? 1 : 0,
       } as any);
       // Reload from server to confirm what was actually persisted
       const fresh = await api.getConfig() as any;
@@ -292,6 +296,7 @@ export function ConfigPage() {
           front_office_phone:         fresh.front_office_phone          ?? '',
           fallback_message:           fresh.fallback_message            ?? '',
           ask_maintenance_photo:      fresh.ask_maintenance_photo       !== 0,
+          add_conversation_to_faq_enabled: fresh.add_conversation_to_faq_enabled !== 0,
         }));
       }
       setSaved(true);
@@ -429,6 +434,12 @@ export function ConfigPage() {
                 icon:  <AlertTriangle size={15} className="text-slate-400 mt-0.5 flex-shrink-0" />,
                 label: 'Ask guests for maintenance photos',
                 desc:  'When on, the AI gently asks once for a photo when a guest reports a maintenance issue. Helps staff arrive prepared with the right tools. When off, photos are accepted if sent but never requested.',
+              },
+              {
+                key:   'add_conversation_to_faq_enabled' as const,
+                icon:  <BookOpen size={15} className="text-slate-400 mt-0.5 flex-shrink-0" />,
+                label: 'Add-to-FAQ from conversations',
+                desc:  'Show a button on each conversation to extract a guest question and turn it into a FAQ entry with one click.',
               },
             ] as const).map(({ key, icon, label, desc }) => (
               <div key={key} className="flex items-start gap-3">

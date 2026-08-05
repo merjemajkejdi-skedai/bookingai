@@ -1334,6 +1334,8 @@ export async function runMigrations() {
       `ALTER TABLE hotel_conversations ALTER COLUMN messages TYPE jsonb USING messages::jsonb`,
       // hotel_requests_room_001 — make room_number nullable; guard in tools.ts handles the pre-check
       `ALTER TABLE hotel_requests ALTER COLUMN room_number DROP NOT NULL`,
+      // add_to_faq_001 — per-hotel toggle: surface "Add to FAQ" button on conversations
+      `ALTER TABLE hotel_config ADD COLUMN IF NOT EXISTS add_conversation_to_faq_enabled INTEGER NOT NULL DEFAULT 0`,
       // instagram_003 — per-channel AI + connection settings
       `CREATE TABLE IF NOT EXISTS hotel_channel_settings (
         id TEXT PRIMARY KEY,

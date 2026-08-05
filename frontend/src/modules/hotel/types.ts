@@ -195,4 +195,5 @@ export interface HotelConfig {
   fallback_message: string | null;
   // Behaviour flags
   ask_maintenance_photo: number; // 1 = ask for photo, 0 = never ask
+  add_conversation_to_faq_enabled: number; // 1 = show "Add to FAQ" button on conversations
 }

@@ -620,6 +620,7 @@ hotelRouter.put('/config', requireAuth, async (req: Request, res: Response) => {
     front_office_phone = null,
     fallback_message = null,
     ask_maintenance_photo = 1,
+    add_conversation_to_faq_enabled = 0,
   } = req.body;
 
   if (!hotel_name) return err(res, 'hotel_name is required');
@@ -632,8 +633,9 @@ hotelRouter.put('/config', requireAuth, async (req: Request, res: Response) => {
           location_url, menu_url, ask_guest_identity, message_forward,
           review_platform_url, review_platform_name, survey_positive_threshold,
           survey_negative_message, survey_positive_message,
-          front_office_phone, fallback_message, ask_maintenance_photo)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+          front_office_phone, fallback_message, ask_maintenance_photo,
+          add_conversation_to_faq_enabled)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT (tenant_id) DO UPDATE SET
          hotel_name = excluded.hotel_name,
          check_in_time = excluded.check_in_time,
@@ -655,7 +657,8 @@ hotelRouter.put('/config', requireAuth, async (req: Request, res: Response) => {
          survey_positive_message = COALESCE(excluded.survey_positive_message, hotel_config.survey_positive_message),
          front_office_phone = excluded.front_office_phone,
          fallback_message = excluded.fallback_message,
-         ask_maintenance_photo = excluded.ask_maintenance_photo`,
+         ask_maintenance_photo = excluded.ask_maintenance_photo,
+         add_conversation_to_faq_enabled = excluded.add_conversation_to_faq_enabled`,
       tenantId, hotel_name, check_in_time, check_out_time, wifi_password,
       breakfast_hours, pool_hours, restaurant_hours, reception_phone, emergency_phone,
       location_url, menu_url, ask_guest_identity ? 1 : 0, message_forward ? 1 : 0,
@@ -666,6 +669,7 @@ hotelRouter.put('/config', requireAuth, async (req: Request, res: Response) => {
       front_office_phone || null,
       fallback_message || null,
       ask_maintenance_photo ? 1 : 0,
+      add_conversation_to_faq_enabled ? 1 : 0,
     );
     ok(res, { updated: true });
   } catch (e: any) { err(res, e.message, 500); }
@@ -1209,6 +1213,126 @@ hotelRouter.get('/conversations/:phone/pause-status', requireAuth, async (req: R
       paused_by:         row?.ai_paused_by ?? null,
     });
   } catch (e: any) { err(res, e.message, 500); }
+});
+
+// POST /hotel/conversations/:id/extract-faq  — extract FAQ-worthy Q&A from conversation
+hotelRouter.post('/conversations/:id/extract-faq', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const convId   = req.params.id;
+
+  try {
+    const conv = await dbGet(
+      `SELECT messages FROM hotel_conversations WHERE tenant_id = ? AND id = ?`,
+      tenantId, convId,
+    ) as any;
+    if (!conv) return err(res, 'Conversation not found', 404);
+
+    const allMessages: any[] = Array.isArray(conv.messages)
+      ? conv.messages
+      : (() => { try { return JSON.parse(conv.messages || '[]'); } catch { return []; } })();
+
+    if (allMessages.length === 0) return err(res, 'No messages in this conversation');
+
+    // Filter to last 24h relative to the most recent message timestamp
+    const maxTs = Math.max(0, ...allMessages.map((m: any) => m.ts ? new Date(m.ts).getTime() : 0));
+    const cutoff = maxTs > 0 ? maxTs - 24 * 60 * 60 * 1000 : 0;
+    const recent = maxTs > 0
+      ? allMessages.filter((m: any) => m.ts && new Date(m.ts).getTime() >= cutoff)
+      : allMessages; // no timestamps — use all
+
+    if (recent.length === 0) {
+      return err(res, 'No recent messages (last 24 hours) in this conversation to analyze');
+    }
+
+    // Get existing FAQ entries for categories + similarity check
+    const faqs = await dbAll(
+      `SELECT id, question, category FROM hotel_faq WHERE tenant_id = ? AND is_active = 1`,
+      tenantId,
+    ) as any[];
+    const existingCategories = [...new Set(faqs.map((f: any) => f.category as string))];
+
+    const conversationText = recent
+      .map((m: any) => {
+        const role = m.role === 'user' ? 'GUEST' : m.role === 'staff' ? 'STAFF' : 'AI';
+        return `${role}: ${String(m.content ?? '').slice(0, 800)}`;
+      })
+      .join('\n');
+
+    const { default: Anthropic } = await import('@anthropic-ai/sdk');
+    const anthropic = new (Anthropic as any)({ apiKey: process.env.CLAUDE_API_KEY });
+    const model = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
+
+    const claudeRes = await anthropic.messages.create({
+      model,
+      max_tokens: 600,
+      messages: [{
+        role: 'user',
+        content: `You are analyzing a hotel guest conversation to create ONE FAQ entry.
+
+Here is the conversation (last 24 hours):
+${conversationText}
+
+Existing FAQ categories for this hotel:
+${existingCategories.length > 0 ? existingCategories.join(', ') : '(none yet)'}
+
+Your task:
+1. Identify the SINGLE most useful, reusable question a guest asked that would make a good FAQ (something future guests would also ask). Ignore one-off or guest-specific requests (e.g. "bring towels to room 305"). Focus on general questions (wifi, check-out, amenities, how things work, etc.).
+2. Write the QUESTION in clear, general English (not guest-specific).
+3. Write the ANSWER: if hotel staff or the assistant gave a correct, useful answer in the conversation, base the answer on THAT (prefer a human staff correction over an earlier automated answer). If no useful answer was given, write a sensible common-sense answer and set answer_source to ai_suggested.
+4. Always write the FAQ in ENGLISH, even if the conversation was in another language.
+5. Suggest a category: pick from the existing categories if one fits, otherwise suggest a new sensible name.
+6. Set answer_source to "staff" if the answer is based on a staff or AI reply in the conversation, or "ai_suggested" if you had to invent a common-sense answer.
+
+Respond ONLY in JSON (no markdown, no code fence):
+{"question":"...","answer":"...","suggested_category":"...","answer_source":"staff","found_faq_worthy_question":true}
+
+If there is no FAQ-worthy general question, set found_faq_worthy_question to false and leave other fields as empty strings.`,
+      }],
+    });
+
+    const textBlock = claudeRes.content.find((b: any) => b.type === 'text');
+    if (!textBlock) return err(res, 'No response from Claude');
+
+    let extracted: any;
+    try {
+      const raw = ((textBlock as any).text as string).trim()
+        .replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+      extracted = JSON.parse(raw);
+    } catch {
+      return err(res, 'Failed to parse Claude response');
+    }
+
+    if (!extracted.found_faq_worthy_question) {
+      return ok(res, { no_question_found: true });
+    }
+
+    // Word-overlap (Jaccard) similarity against existing FAQs
+    function jaccard(a: string, b: string): number {
+      const wa = new Set(a.toLowerCase().split(/\W+/).filter(Boolean));
+      const wb = new Set(b.toLowerCase().split(/\W+/).filter(Boolean));
+      const inter = [...wa].filter(w => wb.has(w)).length;
+      const union = new Set([...wa, ...wb]).size;
+      return union === 0 ? 0 : inter / union;
+    }
+
+    const similarFaqs = faqs
+      .map((f: any) => ({ id: f.id, question: f.question, category: f.category, sim: jaccard(extracted.question, f.question) }))
+      .filter((f: any) => f.sim > 0.3)
+      .sort((a: any, b: any) => b.sim - a.sim)
+      .slice(0, 3)
+      .map(({ id, question, category }: any) => ({ id, question, category }));
+
+    return ok(res, {
+      question:            String(extracted.question  || ''),
+      answer:              String(extracted.answer    || ''),
+      suggested_category:  String(extracted.suggested_category || 'General'),
+      answer_source:       extracted.answer_source === 'staff' ? 'staff' : 'ai_suggested',
+      similar_faqs:        similarFaqs,
+      existing_categories: existingCategories,
+    });
+  } catch (e: any) {
+    err(res, e.message, 500);
+  }
 });
 
 // ─────────────────────────────────────────

@@ -138,6 +138,16 @@ export const api = {
     req<{ paused: boolean; paused_until: string | null; minutes_remaining: number; paused_by: string | null }>(
       `/hotel/conversations/${encodeURIComponent(phone)}/pause-status`,
     ),
+  extractFaq: (conversationId: string) =>
+    req<{
+      question?: string;
+      answer?: string;
+      suggested_category?: string;
+      answer_source?: 'staff' | 'ai_suggested';
+      similar_faqs?: { id: string; question: string; category: string }[];
+      existing_categories?: string[];
+      no_question_found?: boolean;
+    }>(`/hotel/conversations/${conversationId}/extract-faq`, { method: 'POST' }),
 
   // Blocked numbers / staff
   getBlocked: () => req<BlockedNumber[]>('/hotel/blocked'),

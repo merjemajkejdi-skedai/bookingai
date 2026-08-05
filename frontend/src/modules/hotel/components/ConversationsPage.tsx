@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { MessageSquare, RefreshCw, Send, User, Bot, UserCheck, Search, Bell, BellOff, LogOut, PauseCircle } from 'lucide-react';
+import { MessageSquare, RefreshCw, Send, User, Bot, UserCheck, Search, Bell, BellOff, LogOut, PauseCircle, BookOpen } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../api';
 import type { Conversation, HotelMessage } from '../types';
@@ -549,14 +549,193 @@ function ThreadPanel({
   );
 }
 
+// ── FaqExtractModal ───────────────────────────────────────────────────────────
+
+interface FaqExtractData {
+  question: string;
+  answer: string;
+  suggested_category: string;
+  answer_source: 'staff' | 'ai_suggested';
+  similar_faqs: { id: string; question: string; category: string }[];
+  existing_categories: string[];
+}
+
+interface FaqModalState {
+  noFaqFound: boolean;
+  result: FaqExtractData | null;
+}
+
+function FaqExtractModal({ state, onClose, onSaved }: {
+  state: FaqModalState;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const r = state.result;
+  const [question,    setQuestion]    = useState(r?.question           ?? '');
+  const [answer,      setAnswer]      = useState(r?.answer             ?? '');
+  const [category,    setCategory]    = useState(r?.suggested_category ?? '');
+  const [showNewCat,  setShowNewCat]  = useState(false);
+  const [newCat,      setNewCat]      = useState('');
+  const [saving,      setSaving]      = useState(false);
+
+  const allCategories = r ? [
+    ...r.existing_categories,
+    ...(r.suggested_category && !r.existing_categories.includes(r.suggested_category)
+      ? [r.suggested_category] : []),
+  ] : [];
+  const isNewSuggested = r && r.suggested_category && !r.existing_categories.includes(r.suggested_category);
+
+  async function handleSave() {
+    const finalCategory = showNewCat ? newCat.trim() : category;
+    if (!question.trim() || !answer.trim() || !finalCategory) return;
+    setSaving(true);
+    try {
+      await api.createFaq({ question: question.trim(), answer: answer.trim(), category: finalCategory });
+      onSaved();
+    } catch (e: any) {
+      alert(`Failed to save FAQ: ${e.message}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <BookOpen size={16} className="text-brand-500" />
+            <h2 className="font-semibold text-slate-800 text-sm">Add to FAQ</h2>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+        </div>
+
+        {state.noFaqFound ? (
+          <div className="px-5 py-10 text-center">
+            <BookOpen size={32} className="text-slate-200 mx-auto mb-3" />
+            <p className="text-sm font-medium text-slate-600">No general FAQ question found</p>
+            <p className="text-xs text-slate-400 mt-1">Only guest-specific requests were detected in this conversation.</p>
+            <button onClick={onClose} className="mt-5 px-5 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-sm font-medium text-slate-700 transition-colors">
+              Close
+            </button>
+          </div>
+        ) : (
+          <div className="px-5 py-4 space-y-4">
+            {/* Similar FAQ warning */}
+            {r && r.similar_faqs.length > 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 space-y-1">
+                <p className="text-xs font-semibold text-amber-700">⚠ Similar FAQ already exists:</p>
+                {r.similar_faqs.map(f => (
+                  <p key={f.id} className="text-xs text-amber-600">
+                    "{f.question}" <span className="text-amber-400">({f.category})</span>
+                  </p>
+                ))}
+                <p className="text-xs text-amber-500">You can still proceed — this will create an additional entry.</p>
+              </div>
+            )}
+
+            {/* Question */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Question</label>
+              <input
+                type="text"
+                value={question}
+                onChange={e => setQuestion(e.target.value)}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400/40"
+              />
+            </div>
+
+            {/* Answer */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Answer</label>
+              <textarea
+                rows={4}
+                value={answer}
+                onChange={e => setAnswer(e.target.value)}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-brand-400/40"
+              />
+              {r?.answer_source === 'ai_suggested' && (
+                <p className="text-xs text-amber-600 mt-1">ℹ This answer was suggested by AI — please review before saving.</p>
+              )}
+              {r?.answer_source === 'staff' && (
+                <p className="text-xs text-green-600 mt-1">✓ Based on your team's reply in the conversation.</p>
+              )}
+            </div>
+
+            {/* Category */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Category</label>
+              {!showNewCat ? (
+                <select
+                  value={category}
+                  onChange={e => {
+                    if (e.target.value === '__new__') { setShowNewCat(true); setNewCat(r?.suggested_category ?? ''); }
+                    else setCategory(e.target.value);
+                  }}
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400/40 bg-white"
+                >
+                  {allCategories.map(cat => (
+                    <option key={cat} value={cat}>
+                      {cat}{isNewSuggested && cat === r?.suggested_category ? ' (new)' : ''}
+                    </option>
+                  ))}
+                  <option value="__new__">＋ Create new category</option>
+                </select>
+              ) : (
+                <div className="flex gap-2 items-center">
+                  <input
+                    autoFocus
+                    type="text"
+                    value={newCat}
+                    onChange={e => setNewCat(e.target.value)}
+                    placeholder="New category name"
+                    className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400/40"
+                  />
+                  <button
+                    onClick={() => { setShowNewCat(false); setCategory(r?.suggested_category ?? category); }}
+                    className="text-xs text-slate-500 hover:text-slate-700 px-2 flex-shrink-0"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 pt-1 pb-1">
+              <button
+                onClick={onClose}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving || !question.trim() || !answer.trim() || (!showNewCat && !category) || (showNewCat && !newCat.trim())}
+                className="flex-1 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-semibold text-sm transition-colors"
+              >
+                {saving ? 'Saving…' : 'Add to FAQ'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-export function ConversationsPage({ surveyEnabled = false }: { surveyEnabled?: boolean }) {
+export function ConversationsPage({ surveyEnabled = false, addToFaqEnabled = false }: { surveyEnabled?: boolean; addToFaqEnabled?: boolean }) {
   const [convs, setConvs]             = useState<Conversation[]>([]);
   const [loading, setLoading]         = useState(true);
   const [selected, setSelected]       = useState<Conversation | null>(null);
   const [search, setSearch]           = useState('');
   const [checkingOutId, setCheckingOutId] = useState<string | null>(null);
+  const [extractingId, setExtractingId]   = useState<string | null>(null);
+  const [faqModal, setFaqModal]           = useState<FaqModalState | null>(null);
+  const [faqToast, setFaqToast]           = useState(false);
 
   const { permission, request: requestNotifPermission } = useNotificationPermission();
 
@@ -631,6 +810,34 @@ export function ConversationsPage({ surveyEnabled = false }: { surveyEnabled?: b
     setSelected(c);
   }
 
+  // Extract FAQ from conversation
+  async function handleExtractFaq(e: React.MouseEvent, c: Conversation) {
+    e.stopPropagation();
+    setExtractingId(c.id);
+    try {
+      const result = await api.extractFaq(c.id);
+      if (result.no_question_found) {
+        setFaqModal({ noFaqFound: true, result: null });
+      } else {
+        setFaqModal({
+          noFaqFound: false,
+          result: {
+            question:           result.question           ?? '',
+            answer:             result.answer             ?? '',
+            suggested_category: result.suggested_category ?? 'General',
+            answer_source:      result.answer_source      ?? 'ai_suggested',
+            similar_faqs:       result.similar_faqs       ?? [],
+            existing_categories: result.existing_categories ?? [],
+          },
+        });
+      }
+    } catch (err: any) {
+      alert(`Analysis failed: ${err.message}`);
+    } finally {
+      setExtractingId(null);
+    }
+  }
+
   // Check out a guest directly from the list
   async function handleCheckoutFromList(e: React.MouseEvent, c: Conversation) {
     e.stopPropagation();
@@ -671,6 +878,25 @@ export function ConversationsPage({ surveyEnabled = false }: { surveyEnabled?: b
 
   return (
     <div className="h-full flex flex-col gap-3">
+      {/* FAQ extract modal */}
+      {faqModal && (
+        <FaqExtractModal
+          state={faqModal}
+          onClose={() => setFaqModal(null)}
+          onSaved={() => {
+            setFaqModal(null);
+            setFaqToast(true);
+            setTimeout(() => setFaqToast(false), 3000);
+          }}
+        />
+      )}
+      {/* FAQ saved toast */}
+      {faqToast && (
+        <div className="fixed bottom-4 right-4 bg-green-600 text-white px-4 py-2.5 rounded-xl shadow-lg text-sm font-semibold z-50 pointer-events-none">
+          Added to FAQ ✅
+        </div>
+      )}
+
       {/* Notification permission banner */}
       <NotificationBanner permission={permission} onRequest={requestNotifPermission} />
 
@@ -812,6 +1038,19 @@ export function ConversationsPage({ surveyEnabled = false }: { surveyEnabled?: b
                         }`}>
                           {c.survey_score != null ? `★ ${c.survey_score}/10` : 'Survey pending'}
                         </span>
+                      )}
+                      {/* Add to FAQ button */}
+                      {addToFaqEnabled && (
+                        <button
+                          onClick={e => handleExtractFaq(e, c)}
+                          disabled={extractingId === c.id}
+                          className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 bg-brand-50 hover:bg-brand-100 disabled:opacity-50 text-brand-700 rounded-md border border-brand-200 transition-colors"
+                        >
+                          {extractingId === c.id
+                            ? <RefreshCw size={9} className="animate-spin" />
+                            : <BookOpen size={9} />}
+                          {extractingId === c.id ? 'Analyzing…' : 'Add to FAQ'}
+                        </button>
                       )}
                     </div>
                   </div>
