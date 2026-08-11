@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import type { GuestStay, HotelRequest, FaqEntry, HotelConfig, Department, DepartmentSchedule, Conversation, BlockedNumber, HotelReview, ReviewStats, ReviewConfig, ChannelSetting } from './types';
+import type { GuestStay, HotelRequest, FaqEntry, HotelConfig, Department, DepartmentSchedule, Conversation, BlockedNumber, HotelReview, ReviewStats, ReviewConfig, ChannelSetting, EmailAccount, EmailConversation, EmailMessage } from './types';
 
 const BASE = `${import.meta.env.VITE_API_URL || ''}`;
 
@@ -230,4 +230,23 @@ export const api = {
     req(`/hotel/menus/${menuId}/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteMenuItem: (menuId: string, itemId: string) =>
     req(`/hotel/menus/${menuId}/items/${itemId}`, { method: 'DELETE' }),
+
+  // Email accounts
+  getEmailAccounts: () => req<EmailAccount[]>('/hotel/email/accounts'),
+  createEmailAccount: (data: Record<string, unknown>) =>
+    req<EmailAccount>('/hotel/email/accounts', { method: 'POST', body: JSON.stringify(data) }),
+  updateEmailAccount: (id: string, data: Record<string, unknown>) =>
+    req('/hotel/email/accounts/' + id, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteEmailAccount: (id: string) =>
+    req('/hotel/email/accounts/' + id, { method: 'DELETE' }),
+  toggleEmailAccount: (id: string, field: 'is_enabled' | 'ai_enabled') =>
+    req<EmailAccount>('/hotel/email/accounts/' + id + '/toggle', { method: 'PUT', body: JSON.stringify({ field }) }),
+  testEmailConnection: (id: string) =>
+    req<{ readAccess: boolean; sendAccess: boolean; folderAccess: boolean; error?: string }>(
+      '/hotel/email/accounts/' + id + '/test', { method: 'POST' }),
+  listEmailFolders: (id: string) =>
+    req<{ name: string; path: string }[]>('/hotel/email/accounts/' + id + '/folders'),
+  getEmailConversations: () => req<EmailConversation[]>('/hotel/email/conversations'),
+  getEmailMessages: (convId: string) => req<EmailMessage[]>('/hotel/email/conversations/' + convId + '/messages'),
+  getOAuthUrl: () => `${BASE}/hotel/email/oauth/microsoft`,
 };

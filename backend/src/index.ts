@@ -18,6 +18,8 @@ import { emailWebhookRouter } from './routes/emailWebhook.js';
 import { skedaiRouter } from './skedai/routes.js';
 import { startDigestCron } from './reviews/digestCron.js';
 import { startShopCron } from './shop/cron.js';
+import { emailAccountsRouter } from './routes/emailAccounts.js';
+import { startEmailWorker } from './channels/email/worker.js';
 import { adminAnalyticsRouter } from './routes/adminAnalytics.js';
 import { alertError, cleanupCooldowns } from './utils/errorMonitor.js';
 import instagramRouter from './routes/instagramWebhook.js';
@@ -107,6 +109,7 @@ app.use('/admin', adminRouter);
 app.use('/admin/analytics', adminAnalyticsRouter);
 app.use('/hotel', hotelRouter);
 app.use('/hotel', hotelMenusRouter);
+app.use('/hotel/email', emailAccountsRouter);
 app.use('/shop', shopRouter);
 app.use('/api', skedaiRouter);
 app.use('/whatsapp', whatsappRouter);
@@ -138,6 +141,7 @@ async function start() {
   await runMigrations();
   startDigestCron();
   startShopCron();
+  startEmailWorker();
   app.listen(Number(PORT), '0.0.0.0', () => {
     console.log(`\n🚀 BookingAI backend running at http://localhost:${PORT}`);
     console.log(`   API:       http://localhost:${PORT}/api`);

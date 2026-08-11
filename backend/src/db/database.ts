@@ -1387,6 +1387,41 @@ export async function runMigrations() {
        ON CONFLICT (tenant_id, channel) DO NOTHING`,
     ).catch((e: any) => console.warn('PG seed skip (Bloom WA):', e.message));
 
+    // email_001 — email accounts + messages + skipped log
+    await pool.query(`CREATE TABLE IF NOT EXISTS tenant_email_accounts (
+      id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, provider TEXT NOT NULL DEFAULT 'imap',
+      email_address TEXT NOT NULL, display_name TEXT NOT NULL DEFAULT '',
+      imap_host TEXT, imap_port INTEGER DEFAULT 993, imap_secure INTEGER DEFAULT 1,
+      smtp_host TEXT, smtp_port INTEGER DEFAULT 587, smtp_secure INTEGER DEFAULT 0,
+      username TEXT, password_enc TEXT,
+      oauth_access_token_enc TEXT, oauth_refresh_token_enc TEXT, oauth_expires_at TEXT, oauth_email TEXT,
+      watch_folder TEXT NOT NULL DEFAULT 'SkedAI',
+      answered_folder TEXT NOT NULL DEFAULT 'SkedAI/Answered',
+      failed_folder TEXT NOT NULL DEFAULT 'SkedAI/Failed',
+      is_enabled INTEGER NOT NULL DEFAULT 0, ai_enabled INTEGER NOT NULL DEFAULT 0,
+      consecutive_failures INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT, last_checked_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+      UNIQUE(tenant_id, email_address)
+    )`).catch((e: any) => console.warn('email_001a skipped:', e.message));
+    await pool.query(`CREATE TABLE IF NOT EXISTS email_messages (
+      id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, account_id TEXT NOT NULL, conversation_id TEXT,
+      direction TEXT NOT NULL DEFAULT 'inbound', rfc822_message_id TEXT NOT NULL,
+      in_reply_to TEXT, references_header TEXT,
+      from_address TEXT NOT NULL, from_name TEXT, to_address TEXT NOT NULL,
+      subject TEXT NOT NULL DEFAULT '', body_text TEXT, body_raw TEXT,
+      provider_ref TEXT, sent_message_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(tenant_id, rfc822_message_id)
+    )`).catch((e: any) => console.warn('email_001b skipped:', e.message));
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_email_msgs_conv ON email_messages(conversation_id, created_at)`).catch(() => {});
+    await pool.query(`CREATE TABLE IF NOT EXISTS email_skipped_log (
+      id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, account_id TEXT NOT NULL,
+      rfc822_message_id TEXT, from_address TEXT, subject TEXT,
+      reason TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`).catch((e: any) => console.warn('email_001c skipped:', e.message));
+
     console.log('✅ PostgreSQL migrations complete');
     return;
   }
@@ -1785,6 +1820,48 @@ export async function runMigrations() {
     created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     UNIQUE(tenant_id, channel)
+  )`);
+
+  // email_001 — email accounts + messages
+  exec(`CREATE TABLE IF NOT EXISTS tenant_email_accounts (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    provider TEXT NOT NULL DEFAULT 'imap',
+    email_address TEXT NOT NULL,
+    display_name TEXT NOT NULL DEFAULT '',
+    imap_host TEXT, imap_port INTEGER DEFAULT 993, imap_secure INTEGER DEFAULT 1,
+    smtp_host TEXT, smtp_port INTEGER DEFAULT 587, smtp_secure INTEGER DEFAULT 0,
+    username TEXT, password_enc TEXT,
+    oauth_access_token_enc TEXT, oauth_refresh_token_enc TEXT, oauth_expires_at TEXT, oauth_email TEXT,
+    watch_folder TEXT NOT NULL DEFAULT 'SkedAI',
+    answered_folder TEXT NOT NULL DEFAULT 'SkedAI/Answered',
+    failed_folder TEXT NOT NULL DEFAULT 'SkedAI/Failed',
+    is_enabled INTEGER NOT NULL DEFAULT 0,
+    ai_enabled INTEGER NOT NULL DEFAULT 0,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT, last_checked_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    UNIQUE(tenant_id, email_address)
+  )`);
+  exec(`CREATE TABLE IF NOT EXISTS email_messages (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL, account_id TEXT NOT NULL, conversation_id TEXT,
+    direction TEXT NOT NULL DEFAULT 'inbound',
+    rfc822_message_id TEXT NOT NULL,
+    in_reply_to TEXT, references_header TEXT,
+    from_address TEXT NOT NULL, from_name TEXT, to_address TEXT NOT NULL,
+    subject TEXT NOT NULL DEFAULT '', body_text TEXT, body_raw TEXT,
+    provider_ref TEXT, sent_message_id TEXT,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    UNIQUE(tenant_id, rfc822_message_id)
+  )`);
+  exec(`CREATE INDEX IF NOT EXISTS idx_email_msgs_conv ON email_messages(conversation_id, created_at)`);
+  exec(`CREATE TABLE IF NOT EXISTS email_skipped_log (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL, account_id TEXT NOT NULL,
+    rfc822_message_id TEXT, from_address TEXT, subject TEXT,
+    reason TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
   )`);
 
   console.log('✅ SQLite migrations complete');

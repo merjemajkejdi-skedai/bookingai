@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Save, Wifi, Coffee, Waves, UtensilsCrossed, Clock, Phone, MapPin, BookOpen, UserCheck, Star, MessageSquare, SmilePlus, AlertTriangle } from 'lucide-react';
+import { Save, Wifi, Coffee, Waves, UtensilsCrossed, Clock, Phone, MapPin, BookOpen, UserCheck, Star, MessageSquare, SmilePlus, AlertTriangle, Mail, Plus, Trash2, CheckCircle, XCircle, Loader } from 'lucide-react';
 import { api } from '../api';
-import { Button, Input, Spinner } from '../ui';
+import { Button, Input, Select, Spinner } from '../ui';
+import type { EmailAccount } from '../types';
 
 // ── Review Management section ─────────────────────────────────────────────────
 
@@ -219,6 +220,172 @@ const EMPTY: Config = {
   ask_maintenance_photo: true,
   add_conversation_to_faq_enabled: false,
 };
+
+// ---------------------------------------------------------------------------
+// Email channel settings
+// ---------------------------------------------------------------------------
+type TestResult = { readAccess: boolean; sendAccess: boolean; folderAccess: boolean; error?: string } | null;
+
+function EmailSection() {
+  const [accounts, setAccounts]     = useState<EmailAccount[]>([]);
+  const [loadingAccts, setLoading]  = useState(true);
+  const [showForm, setShowForm]     = useState(false);
+  const [provider, setProvider]     = useState<'imap' | 'graph'>('imap');
+  const [form, setForm]             = useState<Record<string, string>>({});
+  const [saving, setSaving]         = useState(false);
+  const [testing, setTesting]       = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<Record<string, TestResult>>({});
+
+  async function loadAccounts() {
+    setLoading(true);
+    try { setAccounts(await api.getEmailAccounts()); } catch { /* ignore */ }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { loadAccounts(); }, []);
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api.createEmailAccount({ ...form, provider });
+      setShowForm(false); setForm({});
+      await loadAccounts();
+    } catch (err: any) { alert(err.message); }
+    finally { setSaving(false); }
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm('Remove this email account?')) return;
+    try { await api.deleteEmailAccount(id); await loadAccounts(); } catch (e: any) { alert(e.message); }
+  }
+
+  async function handleToggle(id: string, field: 'is_enabled' | 'ai_enabled') {
+    try {
+      const updated = await api.toggleEmailAccount(id, field);
+      setAccounts(prev => prev.map(a => a.id === id ? { ...a, ...updated } : a));
+    } catch (e: any) { alert(e.message); }
+  }
+
+  async function handleTest(id: string) {
+    setTesting(id);
+    try {
+      const result = await api.testEmailConnection(id);
+      setTestResult(prev => ({ ...prev, [id]: result }));
+    } catch (e: any) {
+      setTestResult(prev => ({ ...prev, [id]: { readAccess: false, sendAccess: false, folderAccess: false, error: e.message } }));
+    } finally { setTesting(null); }
+  }
+
+  function f(key: string) {
+    return {
+      value: form[key] ?? '',
+      onChange: (e: React.ChangeEvent<HTMLInputElement>) => setForm(p => ({ ...p, [key]: e.target.value })),
+    };
+  }
+
+  return (
+    <section className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Mail size={15} className="text-slate-400" />
+          <h2 className="text-sm font-semibold text-slate-700">Email Channel</h2>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => setShowForm(v => !v)}>
+          <Plus size={13} /> Add account
+        </Button>
+      </div>
+
+      {loadingAccts ? <Spinner /> : accounts.length === 0 && !showForm ? (
+        <p className="text-xs text-slate-400">No email accounts connected.</p>
+      ) : null}
+
+      {accounts.map(acct => {
+        const tr = testResult[acct.id];
+        return (
+          <div key={acct.id} className="border border-slate-100 rounded-lg p-4 space-y-3">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <p className="text-sm font-medium text-slate-800">{acct.email_address}</p>
+                <p className="text-xs text-slate-400">{acct.provider === 'graph' ? 'Microsoft 365' : 'IMAP / SMTP'}</p>
+              </div>
+              <button onClick={() => handleDelete(acct.id)} className="text-slate-300 hover:text-red-400 transition-colors">
+                <Trash2 size={14} />
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {(['is_enabled', 'ai_enabled'] as const).map(field => (
+                <button key={field} type="button" onClick={() => handleToggle(acct.id, field)}
+                  className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors ${acct[field] ? 'bg-brand-50 border-brand-200 text-brand-700' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
+                  <span className={`w-2 h-2 rounded-full ${acct[field] ? 'bg-brand-500' : 'bg-slate-300'}`} />
+                  {field === 'is_enabled' ? 'Enabled' : 'AI replies'}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => handleTest(acct.id)} disabled={testing === acct.id}>
+                {testing === acct.id ? <Loader size={12} className="animate-spin" /> : null}
+                Test connection
+              </Button>
+              {tr && (
+                <span className="flex items-center gap-2 text-xs">
+                  {(['readAccess', 'sendAccess', 'folderAccess'] as const).map((k, i) => (
+                    <span key={k} className="flex items-center gap-0.5">
+                      {tr[k] ? <CheckCircle size={11} className="text-emerald-500" /> : <XCircle size={11} className="text-red-400" />}
+                      <span className={tr[k] ? 'text-slate-600' : 'text-red-500'}>{['Read','Send','Folder'][i]}</span>
+                    </span>
+                  ))}
+                  {tr.error && <span className="text-red-500 truncate max-w-[180px]">{tr.error}</span>}
+                </span>
+              )}
+            </div>
+            {acct.last_error && <p className="text-xs text-red-500">Last error: {acct.last_error}</p>}
+            {acct.last_checked_at && <p className="text-xs text-slate-400">Last checked: {new Date(acct.last_checked_at).toLocaleString()}</p>}
+          </div>
+        );
+      })}
+
+      {showForm && (
+        <form onSubmit={handleCreate} className="border border-brand-200 bg-brand-50/30 rounded-lg p-4 space-y-3">
+          <Select label="Provider" value={provider} onChange={(e: any) => setProvider(e.target.value)}>
+            <option value="imap">IMAP / SMTP (Gmail, cPanel, etc.)</option>
+            <option value="graph">Microsoft 365 / Outlook (OAuth)</option>
+          </Select>
+          {provider === 'imap' ? (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <Input label="Email address" type="email" required placeholder="info@hotel.com" {...f('email_address')} />
+                <Input label="Display name" placeholder="Grand Hotel" {...f('display_name')} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Input label="IMAP host" required placeholder="imap.gmail.com" {...f('imap_host')} />
+                <Input label="IMAP port" type="number" placeholder="993" {...f('imap_port')} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Input label="SMTP host" required placeholder="smtp.gmail.com" {...f('smtp_host')} />
+                <Input label="SMTP port" type="number" placeholder="587" {...f('smtp_port')} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Input label="Username" placeholder="info@hotel.com" {...f('username')} />
+                <Input label="Password / App password" type="password" required {...f('password')} />
+              </div>
+            </>
+          ) : (
+            <div className="space-y-2">
+              <Input label="Email address" type="email" required placeholder="info@hotel.com" {...f('email_address')} />
+              <a href={api.getOAuthUrl()} className="inline-flex items-center gap-1.5 text-xs text-brand-600 hover:text-brand-700 font-medium">
+                Connect Microsoft account →
+              </a>
+            </div>
+          )}
+          <div className="flex gap-2 pt-1">
+            <Button type="submit" size="sm" disabled={saving}>{saving ? 'Saving…' : 'Save account'}</Button>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setShowForm(false)}>Cancel</Button>
+          </div>
+        </form>
+      )}
+    </section>
+  );
+}
 
 export function ConfigPage() {
   const [config, setConfig] = useState<Config>(EMPTY);
@@ -555,6 +722,11 @@ export function ConfigPage() {
         {/* Review Management — own form/state, outside main form */}
         <div className="mt-5">
           <ReviewSettings />
+        </div>
+
+        {/* Email channel settings */}
+        <div className="mt-5">
+          <EmailSection />
         </div>
       </div>
     </div>
