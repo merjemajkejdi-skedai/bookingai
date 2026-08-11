@@ -71,17 +71,17 @@ export const shopTools: Anthropic.Tool[] = [
   },
   {
     name: 'add_to_order',
-    description: 'Add more items to an existing order. Only works for orders with status "new".',
+    description: 'Add more items to an existing open order (status "new"). order_id is optional — if omitted the system finds the guest\'s most recent open order automatically. Prefer this over create_order when the guest already has an open order.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        order_id: { type: 'string' },
+        order_id: { type: 'string', description: 'UUID of the order to add to. Optional — omit to auto-find the guest\'s open order.' },
         items: {
           type: 'array',
           items: { type: 'object', properties: { item_id: { type: 'string' }, quantity: { type: 'number' } }, required: ['item_id', 'quantity'] },
         },
       },
-      required: ['order_id', 'items'],
+      required: ['items'],
     },
   },
   {
@@ -236,6 +236,24 @@ export async function executeShopTool(
       const { items, pickup_name, notes } = input as { items: Array<{ item_id: string; quantity: number; rental_tier?: string }>; pickup_name: string; notes?: string };
       if (!items?.length) return { success: false, message: 'No items provided' };
 
+      // Guard: prevent duplicate orders when guest already has an open order.
+      // Return the existing order_id so the agent can use add_to_order instead.
+      const openOrder = await dbGet(
+        `SELECT id, order_number, total_price FROM shop_orders WHERE tenant_id = ? AND guest_phone = ? AND status = 'new' ORDER BY created_at DESC LIMIT 1`,
+        tenantId, guestPhone,
+      );
+      if (openOrder) {
+        console.log('[Shop create_order] ⚠️ guest already has open order:', openOrder.order_number, openOrder.id);
+        return {
+          success: false,
+          has_open_order: true,
+          order_id: openOrder.id,
+          order_number: openOrder.order_number,
+          current_total: openOrder.total_price,
+          message: `Guest already has open order #${openOrder.order_number} (order_id: ${openOrder.id}, current total: ${openOrder.total_price}). Use add_to_order with this order_id to add the new items instead of creating a duplicate order.`,
+        };
+      }
+
       const ids = items.map((i) => i.item_id);
       const ph = ids.map(() => '?').join(',');
       const menuItems = await dbAll(`SELECT * FROM shop_menu_items WHERE tenant_id = ? AND id IN (${ph}) AND is_active = 1`, tenantId, ...ids);
@@ -326,7 +344,18 @@ export async function executeShopTool(
     }
 
     case 'add_to_order': {
-      const { order_id, items } = input as { order_id: string; items: Array<{ item_id: string; quantity: number }> };
+      const { items } = input as { order_id?: string; items: Array<{ item_id: string; quantity: number }> };
+      // order_id is optional — if omitted, auto-lookup the most recent open order for this guest
+      let order_id: string = input.order_id;
+      if (!order_id) {
+        const recent = await dbGet(
+          `SELECT id FROM shop_orders WHERE tenant_id = ? AND guest_phone = ? AND status = 'new' ORDER BY created_at DESC LIMIT 1`,
+          tenantId, guestPhone,
+        );
+        if (!recent) return { success: false, message: 'No open order found for this guest. Create a new order first.' };
+        order_id = recent.id;
+        console.log('[Shop add_to_order] auto-resolved order_id:', order_id);
+      }
       const order = await dbGet(
         `SELECT * FROM shop_orders WHERE id = ? AND tenant_id = ? AND status = 'new'`,
         order_id, tenantId,
