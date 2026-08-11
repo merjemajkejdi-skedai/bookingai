@@ -7,7 +7,8 @@
   <title>SkedAI — Your AI on WhatsApp</title>
   <link rel="icon" href="logo.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&display=swap" rel="stylesheet" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -25,22 +26,29 @@
       --slate-700:  #334155;
       --slate-800:  #1e293b;
       --slate-900:  #0f172a;
+      --warm-bg:    #f5f4f0;
     }
     html { scroll-behavior: smooth; }
-    body { font-family: 'DM Sans', sans-serif; background: #fff; color: var(--slate-800); line-height: 1.6; }
+    body { font-family: 'Inter', sans-serif; background: #fff; color: var(--slate-800); line-height: 1.6; }
 
-    /* ── NAV ────────────────────────────────── */
+    /* ── NAV ─────────────────────────────────────────────── */
     nav {
       position: sticky; top: 0; z-index: 50;
       display: flex; align-items: center; justify-content: space-between;
       padding: 0 6%; height: 68px;
+      background: rgba(255,255,255,0);
+      border-bottom: 1px solid transparent;
+      transition: background .3s ease, border-color .3s ease;
+    }
+    nav.scrolled {
       background: rgba(255,255,255,0.92);
       backdrop-filter: blur(14px);
-      border-bottom: 1px solid var(--slate-200);
+      -webkit-backdrop-filter: blur(14px);
+      border-bottom-color: var(--slate-200);
     }
     .nav-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
     .nav-logo img { height: 40px; width: auto; }
-    .nav-logo-text { font-size: 20px; font-weight: 800; color: var(--slate-900); letter-spacing: -0.5px; }
+    .nav-logo-text { font-family: 'Bricolage Grotesque', sans-serif; font-size: 20px; font-weight: 800; color: var(--slate-900); letter-spacing: -0.5px; }
     .nav-logo-text span { color: var(--teal-light); }
     .nav-links { display: flex; align-items: center; gap: 26px; }
     .nav-links a { text-decoration: none; font-size: 14px; font-weight: 500; color: var(--slate-600); transition: color .2s; }
@@ -53,11 +61,15 @@
     }
     .btn-nav:hover { background: var(--teal-dark); }
 
-    /* ── HERO ───────────────────────────────── */
-    .hero {
-      text-align: center;
-      padding: 96px 6% 72px;
+    /* ── HERO ────────────────────────────────────────────── */
+    .hero-outer {
       background: linear-gradient(170deg, #e8faf3 0%, #fff 55%);
+      padding: 72px 6% 80px;
+    }
+    .hero {
+      max-width: 1140px; margin: 0 auto;
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 64px; align-items: center;
     }
     .hero-badge {
       display: inline-flex; align-items: center; gap: 8px;
@@ -65,79 +77,123 @@
       padding: 6px 16px; border-radius: 100px;
       font-size: 13px; font-weight: 600; margin-bottom: 28px;
     }
-    .hero-badge-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+    .hero-badge-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
     h1 {
-      font-size: clamp(36px, 5.5vw, 66px);
-      font-weight: 800; line-height: 1.1;
+      font-family: 'Bricolage Grotesque', sans-serif;
+      font-size: clamp(2.5rem, 5.5vw, 4.5rem);
+      font-weight: 800; line-height: 1.07;
       letter-spacing: -2px; color: var(--slate-900);
-      max-width: 800px; margin: 0 auto 22px;
+      margin-bottom: 22px;
     }
     h1 span { color: var(--teal-mid); }
     .hero-sub {
-      font-size: clamp(16px, 2vw, 19px);
-      color: var(--slate-600); max-width: 540px;
-      margin: 0 auto 40px;
+      font-size: clamp(16px, 1.8vw, 18px);
+      color: var(--slate-600); max-width: 480px;
+      margin-bottom: 38px; line-height: 1.65;
     }
-    .hero-ctas { display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; }
+    .hero-ctas { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
     .btn-primary {
       background: var(--teal-mid); color: #fff;
-      padding: 14px 32px; border-radius: 10px;
+      padding: 14px 28px; border-radius: 10px;
       font-size: 15px; font-weight: 700;
       text-decoration: none; transition: all .2s;
       box-shadow: 0 4px 18px rgba(15,122,106,.28);
+      display: inline-flex; align-items: center; gap: 8px;
     }
     .btn-primary:hover { background: var(--teal-dark); transform: translateY(-1px); }
+    .btn-primary:focus-visible { outline: 2px solid var(--teal-mid); outline-offset: 3px; }
     .btn-secondary {
       border: 1.5px solid var(--slate-200); color: var(--slate-700);
-      padding: 14px 28px; border-radius: 10px;
+      padding: 14px 24px; border-radius: 10px;
       font-size: 15px; font-weight: 600;
       text-decoration: none; background: #fff; transition: all .2s;
     }
     .btn-secondary:hover { border-color: var(--teal-light); color: var(--teal-mid); }
+    .btn-secondary:focus-visible { outline: 2px solid var(--teal-mid); outline-offset: 3px; }
     .hero-note { margin-top: 14px; font-size: 13px; color: var(--slate-400); }
 
-    /* ── VIDEO ──────────────────────────────── */
-    .video-section { padding: 0 6% 90px; display: flex; justify-content: center; }
-    .video-wrapper {
-      width: 100%; max-width: 880px;
-      border-radius: 20px; overflow: hidden;
-      box-shadow: 0 28px 80px rgba(11,94,82,.18);
-      border: 1px solid rgba(11,94,82,.15);
-      aspect-ratio: 16/9; position: relative;
-      background: var(--slate-900);
-    }
-    /* ── When video is added: replace the placeholder div with an iframe ──
-       Example:
-       <iframe src="https://www.youtube.com/embed/YOUR_VIDEO_ID?autoplay=0&rel=0"
-               allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
-               allowfullscreen style="position:absolute;inset:0;width:100%;height:100%;border:0;">
-       </iframe>
-    ── */
-    .video-placeholder {
-      position: absolute; inset: 0;
+    /* ── PHONE FRAME ─────────────────────────────────────── */
+    .hero-phone { display: flex; justify-content: center; align-items: center; }
+    .phone-frame {
+      width: 320px; height: 510px;
+      border-radius: 36px; overflow: hidden;
+      background: #fff;
+      box-shadow: 0 32px 80px rgba(11,94,82,.18), 0 0 0 1px rgba(0,0,0,.06);
       display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      gap: 18px; color: #fff;
-      background: linear-gradient(135deg, #0b3d35 0%, #0f5c4e 100%);
     }
-    .play-ring {
-      width: 80px; height: 80px; border-radius: 50%;
-      background: rgba(255,255,255,.12);
-      border: 2px solid rgba(255,255,255,.3);
+    .phone-bar {
+      display: flex; align-items: center; gap: 11px;
+      padding: 14px 16px; background: var(--teal-dark);
+      flex-shrink: 0;
+    }
+    .phone-avatar {
+      width: 38px; height: 38px; border-radius: 50%;
+      background: rgba(255,255,255,.18);
       display: flex; align-items: center; justify-content: center;
+      font-family: 'Bricolage Grotesque', sans-serif;
+      font-size: 13px; font-weight: 700; color: #fff; flex-shrink: 0;
     }
-    .play-ring svg { margin-left: 5px; }
-    .video-label { font-size: 16px; font-weight: 500; opacity: .75; }
-    .video-sub { font-size: 13px; opacity: .45; margin-top: -10px; }
+    .phone-info { flex: 1; min-width: 0; }
+    .phone-name { font-size: 15px; font-weight: 700; color: #fff; line-height: 1.2; }
+    .phone-status { display: flex; align-items: center; gap: 5px; font-size: 12px; color: rgba(255,255,255,.75); }
+    .online-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+    .phone-body {
+      flex: 1; overflow-y: auto; background: var(--warm-bg);
+      padding: 14px 12px;
+      scrollbar-width: none; -ms-overflow-style: none;
+    }
+    .phone-body::-webkit-scrollbar { display: none; }
+    #chat-content { display: flex; flex-direction: column; gap: 8px; transition: opacity 300ms ease; }
 
-    /* ── SECTIONS ───────────────────────────── */
+    /* ── CHAT BUBBLES ────────────────────────────────────── */
+    .bubble {
+      max-width: 78%; padding: 9px 13px;
+      border-radius: 16px; font-size: 13.5px; line-height: 1.5;
+      word-break: break-word;
+      animation: bubble-in 200ms ease-out both;
+    }
+    .bubble-guest {
+      align-self: flex-end;
+      background: #d9f2c4; color: #172917;
+      border-bottom-right-radius: 4px;
+    }
+    .bubble-ai {
+      align-self: flex-start;
+      background: #fff; color: var(--slate-800);
+      border-bottom-left-radius: 4px;
+      box-shadow: 0 1px 2px rgba(0,0,0,.08);
+    }
+    .bubble-typing { display: flex; align-items: center; gap: 4px; padding: 12px 14px; }
+    .bubble-instant { animation: none !important; }
+
+    @keyframes bubble-in {
+      from { opacity: 0; transform: translateY(12px) scale(0.96); }
+      to   { opacity: 1; transform: translateY(0)   scale(1);    }
+    }
+
+    /* typing indicator dots */
+    .td {
+      display: inline-block; width: 6px; height: 6px;
+      border-radius: 50%; background: var(--slate-400);
+      animation: td-pulse 1.2s ease-in-out infinite;
+    }
+    .td:nth-child(2) { animation-delay: .2s; }
+    .td:nth-child(3) { animation-delay: .4s; }
+    @keyframes td-pulse {
+      0%, 80%, 100% { opacity: .3; transform: scale(.75); }
+      40%           { opacity: 1;  transform: scale(1);   }
+    }
+
+    /* ── SECTIONS ────────────────────────────────────────── */
     .section { padding: 90px 6%; }
+    .section-inner { max-width: 1140px; margin: 0 auto; }
     .section-label {
       text-align: center; font-size: 12px; font-weight: 700;
       color: var(--teal-light); letter-spacing: 2.5px;
       text-transform: uppercase; margin-bottom: 10px;
     }
     h2 {
+      font-family: 'Bricolage Grotesque', sans-serif;
       text-align: center; font-size: clamp(28px, 3.5vw, 42px);
       font-weight: 800; letter-spacing: -1.5px;
       color: var(--slate-900); margin-bottom: 14px;
@@ -148,13 +204,12 @@
       margin: 0 auto 56px;
     }
 
-    /* ── HOW IT WORKS ───────────────────────── */
+    /* ── HOW IT WORKS ────────────────────────────────────── */
     .steps { display: flex; flex-direction: column; gap: 20px; max-width: 680px; margin: 0 auto; }
     .step {
       display: flex; gap: 22px; align-items: flex-start;
       background: var(--slate-50); border: 1px solid var(--slate-200);
-      border-radius: 16px; padding: 26px;
-      transition: box-shadow .2s;
+      border-radius: 16px; padding: 26px; transition: box-shadow .2s;
     }
     .step:hover { box-shadow: 0 6px 24px rgba(11,94,82,.09); }
     .step-num {
@@ -162,64 +217,71 @@
       background: linear-gradient(135deg, var(--teal-mid), var(--teal-dark));
       color: #fff; font-size: 17px; font-weight: 800;
       display: flex; align-items: center; justify-content: center;
+      font-family: 'Bricolage Grotesque', sans-serif;
     }
-    .step-body h3 { font-size: 16px; font-weight: 700; color: var(--slate-900); margin-bottom: 5px; }
+    .step-body h3 {
+      font-family: 'Bricolage Grotesque', sans-serif;
+      font-size: 16px; font-weight: 700; color: var(--slate-900); margin-bottom: 5px;
+    }
     .step-body p { font-size: 14px; color: var(--slate-600); line-height: 1.6; }
 
-    /* ── INDUSTRIES ─────────────────────────── */
+    /* ── INDUSTRIES ──────────────────────────────────────── */
     .bg-tint { background: #f0faf6; border-top: 1px solid #d4ede5; border-bottom: 1px solid #d4ede5; }
     .industries-grid {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
-      gap: 16px; max-width: 920px; margin: 0 auto;
+      display: grid; grid-template-columns: repeat(2, 1fr);
+      gap: 16px; max-width: 760px; margin: 0 auto;
     }
     .industry-card {
       background: #fff; border: 1.5px solid var(--slate-200);
-      border-radius: 16px; padding: 28px 20px; text-align: center;
-      transition: all .2s;
+      border-radius: 16px; padding: 28px 24px; transition: all .2s;
     }
     .industry-card:hover { border-color: var(--teal-light); box-shadow: 0 8px 28px rgba(11,94,82,.1); transform: translateY(-2px); }
-    .industry-emoji { font-size: 34px; margin-bottom: 12px; }
-    .industry-card h3 { font-size: 15px; font-weight: 700; color: var(--slate-800); margin-bottom: 4px; }
-    .industry-card p { font-size: 12px; color: var(--slate-500); line-height: 1.45; }
-    .card-features { list-style: none; padding: 0; margin: 10px 0 0; }
-    .card-features li { font-size: 11px; color: var(--teal); font-weight: 600; padding: 2px 0; }
-
-    /* ── PRICING ────────────────────────────── */
-    .pricing-grid {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(255px, 1fr));
-      gap: 22px; max-width: 880px; margin: 0 auto;
+    .industry-card.wide {
+      grid-column: 1 / -1;
+      display: flex; align-items: flex-start; gap: 20px;
     }
+    .industry-icon {
+      width: 48px; height: 48px; border-radius: 12px;
+      background: var(--green-soft);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--teal-mid); flex-shrink: 0; margin-bottom: 14px;
+    }
+    .industry-card.wide .industry-icon { margin-bottom: 0; }
+    .industry-card h3 {
+      font-family: 'Bricolage Grotesque', sans-serif;
+      font-size: 16px; font-weight: 700; color: var(--slate-800); margin-bottom: 6px;
+    }
+    .industry-card p { font-size: 13.5px; color: var(--slate-500); line-height: 1.5; }
+
+    /* ── PRICING ─────────────────────────────────────────── */
+    .pricing-wrap { max-width: 440px; margin: 0 auto; }
     .pricing-card {
-      border: 1.5px solid var(--slate-200);
-      border-radius: 20px; padding: 34px 26px;
-      background: #fff; position: relative; transition: all .25s;
+      border: 2px solid var(--teal-mid); border-radius: 24px;
+      padding: 40px 36px; background: #fff;
+      box-shadow: 0 12px 40px rgba(11,94,82,.12);
+      text-align: center; position: relative;
     }
-    .pricing-card:hover { box-shadow: 0 14px 44px rgba(11,94,82,.1); }
-    .pricing-card.popular { border-color: var(--teal-mid); box-shadow: 0 12px 40px rgba(11,94,82,.15); }
-    .popular-badge {
-      position: absolute; top: -14px; left: 50%; transform: translateX(-50%);
+    .pricing-badge {
+      position: absolute; top: -15px; left: 50%; transform: translateX(-50%);
       background: var(--teal-mid); color: #fff;
-      padding: 4px 18px; border-radius: 100px;
-      font-size: 11px; font-weight: 700; white-space: nowrap; letter-spacing: .5px;
+      padding: 4px 20px; border-radius: 100px;
+      font-size: 12px; font-weight: 700; white-space: nowrap; letter-spacing: .5px;
     }
-    .plan-name { font-size: 12px; font-weight: 700; color: var(--slate-400); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1.5px; }
-    .plan-price { font-size: 46px; font-weight: 800; color: var(--slate-900); letter-spacing: -2px; line-height: 1; margin-bottom: 4px; }
-    .plan-price span { font-size: 16px; font-weight: 500; color: var(--slate-400); }
-    .plan-desc { font-size: 13px; color: var(--slate-500); margin-bottom: 26px; }
-    .plan-features { list-style: none; display: flex; flex-direction: column; gap: 10px; margin-bottom: 30px; }
-    .plan-features li { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--slate-700); }
-    .check { color: var(--green); font-weight: 700; flex-shrink: 0; }
-    .plan-cta {
-      display: block; text-align: center;
-      padding: 12px; border-radius: 10px;
-      font-size: 14px; font-weight: 700; text-decoration: none; transition: all .2s;
+    .pricing-who { font-size: 13px; font-weight: 700; color: var(--slate-400); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 18px; }
+    .pricing-price {
+      font-family: 'Bricolage Grotesque', sans-serif;
+      font-size: 62px; font-weight: 800; color: var(--slate-900);
+      letter-spacing: -3px; line-height: 1; margin-bottom: 6px;
     }
-    .plan-cta-outline { border: 1.5px solid var(--slate-200); color: var(--slate-700); }
-    .plan-cta-outline:hover { border-color: var(--teal-mid); color: var(--teal-mid); }
-    .plan-cta-fill { background: var(--teal-mid); color: #fff; box-shadow: 0 4px 14px rgba(11,94,82,.25); }
-    .plan-cta-fill:hover { background: var(--teal-dark); }
+    .pricing-price sup { font-size: 28px; letter-spacing: 0; vertical-align: top; margin-top: 12px; }
+    .pricing-period { font-size: 15px; font-weight: 500; color: var(--slate-400); margin-bottom: 30px; }
+    .pricing-features { list-style: none; text-align: left; margin-bottom: 32px; display: flex; flex-direction: column; gap: 13px; }
+    .pricing-features li { display: flex; align-items: center; gap: 10px; font-size: 15px; color: var(--slate-700); }
+    .pricing-check { color: var(--green); font-weight: 700; flex-shrink: 0; }
+    .pricing-cta { display: flex; align-items: center; justify-content: center; text-decoration: none; width: 100%; }
+    .pricing-note { font-size: 13px; color: var(--slate-400); margin-top: 18px; }
 
-    /* ── CONTACT ────────────────────────────── */
+    /* ── CONTACT ─────────────────────────────────────────── */
     .contact-section { background: #f0faf6; border-top: 1px solid #d4ede5; }
     .contact-inner { max-width: 560px; margin: 0 auto; }
     .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -229,34 +291,29 @@
       width: 100%; padding: 11px 14px;
       border: 1.5px solid var(--slate-200); border-radius: 10px;
       font-family: inherit; font-size: 14px; color: var(--slate-800);
-      background: #fff; outline: none; transition: border .2s;
-      appearance: none;
+      background: #fff; outline: none; transition: border .2s; appearance: none;
     }
     input:focus, textarea:focus, select:focus { border-color: var(--teal-mid); }
+    input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--teal-mid); outline-offset: 1px; }
     textarea { resize: vertical; min-height: 108px; }
-
-    /* hidden honeypot */
     .hp { display: none; }
-
     .btn-submit {
       width: 100%; padding: 14px;
       background: var(--teal-mid); color: #fff;
       border: none; border-radius: 10px;
       font-size: 15px; font-weight: 700; cursor: pointer;
-      transition: all .2s; margin-top: 6px;
-      font-family: inherit;
+      transition: all .2s; margin-top: 6px; font-family: inherit;
     }
     .btn-submit:hover { background: var(--teal-dark); }
+    .btn-submit:focus-visible { outline: 2px solid var(--teal-mid); outline-offset: 3px; }
     .btn-submit:disabled { opacity: .6; cursor: not-allowed; }
     .form-status { text-align: center; font-size: 14px; margin-top: 10px; min-height: 22px; }
     .form-status.ok  { color: var(--teal-mid); font-weight: 600; }
     .form-status.err { color: #e55; }
-
     .contact-channels { display: flex; justify-content: center; gap: 28px; margin-top: 40px; flex-wrap: wrap; }
     .channel-item {
       display: flex; align-items: center; gap: 9px;
-      font-size: 14px; color: var(--slate-600);
-      text-decoration: none; transition: color .2s;
+      font-size: 14px; color: var(--slate-600); text-decoration: none; transition: color .2s;
     }
     .channel-item:hover { color: var(--teal-mid); }
     .channel-icon {
@@ -265,7 +322,7 @@
       font-size: 17px; background: #fff; border: 1px solid var(--slate-200);
     }
 
-    /* ── FOOTER ─────────────────────────────── */
+    /* ── FOOTER ──────────────────────────────────────────── */
     footer {
       padding: 30px 6%; border-top: 1px solid var(--slate-200);
       display: flex; align-items: center; justify-content: space-between;
@@ -273,26 +330,68 @@
     }
     .footer-logo { display: flex; align-items: center; gap: 9px; text-decoration: none; }
     .footer-logo img { height: 30px; width: auto; }
-    .footer-logo-text { font-size: 15px; font-weight: 800; color: var(--slate-800); letter-spacing: -0.3px; }
+    .footer-logo-text { font-family: 'Bricolage Grotesque', sans-serif; font-size: 15px; font-weight: 800; color: var(--slate-800); letter-spacing: -0.3px; }
     .footer-logo-text span { color: var(--teal-mid); }
     .footer-copy { font-size: 13px; color: var(--slate-400); }
     .footer-links { display: flex; gap: 20px; }
     .footer-links a { font-size: 13px; color: var(--slate-500); text-decoration: none; }
     .footer-links a:hover { color: var(--teal-mid); }
 
+    /* ── SCROLL REVEAL ───────────────────────────────────── */
+    .reveal {
+      opacity: 0; transform: translateY(16px);
+      transition: opacity 400ms ease, transform 400ms ease;
+    }
+    .reveal.on { opacity: 1; transform: translateY(0); }
+    .d1 { transition-delay:  80ms; }
+    .d2 { transition-delay: 160ms; }
+    .d3 { transition-delay: 240ms; }
+
+    /* ── REDUCED MOTION ──────────────────────────────────── */
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      .reveal { opacity: 1; transform: none; transition: none; }
+      .d1, .d2, .d3 { transition-delay: 0ms; }
+      .bubble { animation: none !important; }
+      #chat-content { transition: none !important; }
+      .td { animation: none !important; opacity: 1; transform: none; }
+    }
+
+    /* ── GLOBAL FOCUS ────────────────────────────────────── */
+    a:focus-visible, button:focus-visible {
+      outline: 2px solid var(--teal-mid); outline-offset: 3px;
+    }
+
+    /* ── RESPONSIVE ──────────────────────────────────────── */
+    @media (max-width: 900px) {
+      .hero { grid-template-columns: 1fr; gap: 48px; text-align: center; }
+      .hero-sub { margin-left: auto; margin-right: auto; }
+      .hero-ctas { justify-content: center; }
+      .hero-phone { order: 2; }
+      .phone-frame { width: 290px; height: 470px; }
+    }
     @media (max-width: 640px) {
       .nav-links { display: none; }
+      .hero-outer { padding: 60px 5% 64px; }
+      .section { padding: 72px 5%; }
+      .industries-grid { grid-template-columns: 1fr; }
+      .industry-card.wide { flex-direction: column; }
       .form-grid { grid-template-columns: 1fr; }
       .form-grid .full { grid-column: 1; }
+      .pricing-card { padding: 36px 24px; }
       footer { flex-direction: column; text-align: center; }
+      .footer-links { justify-content: center; }
       .contact-channels { flex-direction: column; align-items: center; }
+    }
+    @media (max-width: 375px) {
+      .phone-frame { width: 270px; height: 450px; }
     }
   </style>
 </head>
 <body>
 
-<!-- ═══ NAV ═══════════════════════════════════════════════ -->
-<nav>
+<!-- ════ NAV ═══════════════════════════════════════════════ -->
+<nav id="main-nav">
   <a href="#" class="nav-logo">
     <img src="logo.png" alt="SkedAI logo" />
     <span class="nav-logo-text">Sked<span>AI</span></span>
@@ -300,205 +399,284 @@
   <div class="nav-links">
     <a href="#how">How it works</a>
     <a href="#industries">Industries</a>
+    <a href="#pricing">Pricing</a>
     <a href="#contact">Contact</a>
     <a href="https://app.skedai.net" class="btn-nav">Log in →</a>
   </div>
 </nav>
 
-<!-- ═══ HERO ═══════════════════════════════════════════════ -->
-<section class="hero">
-  <div class="hero-badge">
-    <div class="hero-badge-dot"></div>
-    Your AI on WhatsApp
+<!-- ════ HERO ══════════════════════════════════════════════ -->
+<section class="hero-outer">
+  <div class="hero">
+
+    <!-- Left: copy -->
+    <div class="hero-copy">
+      <div class="hero-badge">
+        <div class="hero-badge-dot"></div>
+        Live on WhatsApp · 24/7
+      </div>
+      <h1>Run your business<br /><span>while you sleep.</span></h1>
+      <p class="hero-sub">SkedAI answers your guests on WhatsApp instantly — bookings, requests, FAQs — in their language, around the clock. No app needed.</p>
+      <div class="hero-ctas">
+        <a href="https://wa.me/16066991790?text=Hi%2C%20I%27d%20like%20to%20see%20how%20SkedAI%20works"
+           class="btn-primary" target="_blank" rel="noopener">
+          Try it on WhatsApp →
+        </a>
+        <a href="#how" class="btn-secondary">See how it works</a>
+      </div>
+      <p class="hero-note">Free 14-day trial · No credit card required</p>
+    </div>
+
+    <!-- Right: phone frame with animated chat -->
+    <div class="hero-phone">
+      <div class="phone-frame" id="phone-frame">
+        <div class="phone-bar">
+          <div class="phone-avatar">LF</div>
+          <div class="phone-info">
+            <div class="phone-name">La Favorita</div>
+            <div class="phone-status"><span class="online-dot"></span>online</div>
+          </div>
+        </div>
+        <div class="phone-body" id="phone-body">
+          <div id="chat-content"></div>
+        </div>
+      </div>
+    </div>
+
   </div>
-  <h1>Run your business<br /><span>while you sleep.</span></h1>
-  <p class="hero-sub">SkedAI handles bookings, reservations, guest requests and FAQs — automatically, 24/7, via WhatsApp. No app needed for your customers.</p>
-  <div class="hero-ctas">
-    <a href="#contact" class="btn-primary">Get started free →</a>
-    <a href="#how" class="btn-secondary">See how it works</a>
-  </div>
-  <p class="hero-note">Free 14-day trial · No credit card required</p>
 </section>
 
-<!-- ═══ HOW IT WORKS ════════════════════════════════════════ -->
+<!-- ════ HOW IT WORKS ═══════════════════════════════════════ -->
 <section class="section" id="how">
-  <p class="section-label">How it works</p>
-  <h2>Set up in minutes.<br/>Running in seconds.</h2>
-  <p class="section-sub">Connect your WhatsApp number and let SkedAI handle your guests automatically.</p>
-  <div class="steps">
-    <div class="step">
-      <div class="step-num">1</div>
-      <div class="step-body">
-        <h3>Connect your WhatsApp number</h3>
-        <p>Link your existing business WhatsApp in 2 minutes. No IT skills required — just scan a QR code.</p>
+  <div class="section-inner">
+    <p class="section-label reveal">How it works</p>
+    <h2 class="reveal d1">Set up in minutes.<br/>Running in seconds.</h2>
+    <p class="section-sub reveal d2">Connect your WhatsApp number and let SkedAI handle your guests automatically.</p>
+    <div class="steps">
+      <div class="step reveal">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h3>Connect your WhatsApp number</h3>
+          <p>Link your existing business WhatsApp in 2 minutes. No IT skills required — just scan a QR code.</p>
+        </div>
       </div>
-    </div>
-    <div class="step">
-      <div class="step-num">2</div>
-      <div class="step-body">
-        <h3>Configure your business</h3>
-        <p>Add your services, hours, pricing, departments, FAQ and menu from a simple dashboard. The AI learns your business instantly.</p>
+      <div class="step reveal d1">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h3>Configure your business</h3>
+          <p>Add your services, hours, pricing, departments, FAQ and menu from a simple dashboard. The AI learns your business instantly.</p>
+        </div>
       </div>
-    </div>
-    <div class="step">
-      <div class="step-num">3</div>
-      <div class="step-body">
-        <h3>Your AI concierge goes live</h3>
-        <p>Guests message your WhatsApp and the AI handles bookings, requests and questions — in any language, around the clock.</p>
+      <div class="step reveal d2">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h3>Your AI concierge goes live</h3>
+          <p>Guests message your WhatsApp and the AI handles bookings, requests and questions — in any language, around the clock.</p>
+        </div>
       </div>
-    </div>
-    <div class="step">
-      <div class="step-num">4</div>
-      <div class="step-body">
-        <h3>Manage from your dashboard</h3>
-        <p>See all bookings, requests and guest activity in one place. Departments get instant WhatsApp alerts for new tasks.</p>
+      <div class="step reveal d3">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <h3>Manage from your dashboard</h3>
+          <p>See all bookings, requests and guest activity in one place. Departments get instant WhatsApp alerts for new tasks.</p>
+        </div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ═══ INDUSTRIES ══════════════════════════════════════════ -->
+<!-- ════ INDUSTRIES ═════════════════════════════════════════ -->
 <section class="section bg-tint" id="industries">
-  <p class="section-label">Industries</p>
-  <h2>Built for hospitality<br/>and beyond</h2>
-  <p class="section-sub">One platform, multiple verticals — each with its own AI behaviour, tools, and dashboard.</p>
-  <div class="industries-grid">
-    <div class="industry-card">
-      <div class="industry-emoji">🏨</div>
-      <h3>Hotels</h3>
-      <p>Concierge requests, room service, housekeeping, maintenance — routed to the right department instantly.</p>
-    </div>
-    <div class="industry-card">
-      <div class="industry-emoji">🍽️</div>
-      <h3>F&amp;B</h3>
-      <p>Table reservations, seating preferences, menu and location links — fully automated.</p>
-      <ul class="card-features">
-        <li>✓ AI waiter</li>
-        <li>✓ AI sommelier</li>
-        <li>✓ AI orders</li>
-      </ul>
-    </div>
-    <div class="industry-card">
-      <div class="industry-emoji">🎨</div>
-      <h3>Art Studios</h3>
-      <p>Class and event bookings, waitlists, capacity management — all handled automatically.</p>
-    </div>
-    <div class="industry-card">
-      <div class="industry-emoji">🏋️</div>
-      <h3>Gyms &amp; Wellness</h3>
-      <p>Session bookings, trainer assignments and class schedules — coming soon.</p>
-    </div>
-    <div class="industry-card">
-      <div class="industry-emoji">🏡</div>
-      <h3>Short-term Rentals</h3>
-      <p>Check-in, property FAQs, maintenance requests and local tips — coming soon.</p>
-    </div>
-    <div class="industry-card">
-      <div class="industry-emoji">✂️</div>
-      <h3>Barbershops &amp; Salons</h3>
-      <p>Appointment booking, specialist selection, reminders and rescheduling via WhatsApp.</p>
-    </div>
-    <div class="industry-card">
-      <div class="industry-emoji">🎯</div>
-      <h3>Tailor made for your industry</h3>
-      <p>Whatever your business, SkedAI adapts to it. If your use case exists, we can build for it — get in touch and we'll make it work.</p>
-    </div>
-  </div>
-</section>
+  <div class="section-inner">
+    <p class="section-label reveal">Industries</p>
+    <h2 class="reveal d1">Built for hospitality<br/>and beyond</h2>
+    <p class="section-sub reveal d2">One platform, multiple verticals — each with its own AI behaviour, tools, and dashboard.</p>
 
-<!-- ═══ PRICING ═════════════════════════════════════════════ -->
-<section class="section" id="pricing">
-  <p class="section-label">Pricing</p>
-  <h2>Simple, transparent pricing</h2>
-  <p class="section-sub">Start free. Scale as you grow. No hidden fees, no per-message charges.</p>
-</section>
+    <div class="industries-grid">
 
-<!-- ═══ CONTACT ═════════════════════════════════════════════ -->
-<section class="section contact-section" id="contact">
-  <p class="section-label">Contact</p>
-  <h2>Ready to get started?</h2>
-  <p class="section-sub">Tell us about your business and we'll set up your AI concierge within 24 hours.</p>
-
-  <div class="contact-inner">
-
-    <!--
-      FORM SETUP (one-time, free):
-      1. Go to https://formspree.io and sign up for free
-      2. Click "New Form", name it "SkedAI Contact"
-      3. Copy your form ID (looks like "xpwzabcd")
-      4. Replace "YOUR_FORM_ID" in the action URL below
-      Free tier: 50 submissions/month — upgrade at $10/mo for unlimited
-    -->
-    <form
-      id="contact-form"
-      action="https://formspree.io/f/xaqllwja"
-      method="POST"
-      onsubmit="handleSubmit(event)"
-    >
-      <!-- Honeypot spam protection -->
-      <input type="text" name="_gotcha" class="hp" tabindex="-1" autocomplete="off" />
-      <input type="hidden" name="_subject" value="New SkedAI enquiry" />
-      <input type="hidden" name="_replyto" value="support@skedai.net" />
-
-      <div class="form-grid">
-        <div class="full">
-          <label class="field-label">Name *</label>
-          <input type="text" name="name" placeholder="Your name" required />
+      <!-- Hotels -->
+      <div class="industry-card reveal">
+        <div class="industry-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect width="16" height="20" x="4" y="2" rx="2"/>
+            <path d="M9 22v-4h6v4"/>
+            <path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M12 6h.01"/>
+            <path d="M12 10h.01"/><path d="M16 10h.01"/><path d="M8 10h.01"/>
+            <path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 14h.01"/>
+          </svg>
         </div>
-        <div class="full">
-          <label class="field-label">Email *</label>
-          <input type="email" name="email" placeholder="john@yourbusiness.com" required />
+        <h3>Hotels</h3>
+        <p>Concierge requests, room service, housekeeping, maintenance — routed to the right department instantly.</p>
+      </div>
+
+      <!-- Restaurants -->
+      <div class="industry-card reveal d1">
+        <div class="industry-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/>
+            <path d="M7 2v20"/>
+            <path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>
+          </svg>
+        </div>
+        <h3>Restaurants &amp; Cafés</h3>
+        <p>Table reservations, AI orders, seating preferences, menu and location links — fully automated.</p>
+      </div>
+
+      <!-- Salons -->
+      <div class="industry-card reveal d1">
+        <div class="industry-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="6" cy="6" r="3"/>
+            <circle cx="6" cy="18" r="3"/>
+            <line x1="20" x2="8.12" y1="4" y2="15.88"/>
+            <line x1="14.47" x2="20" y1="14.48" y2="20"/>
+            <line x1="8.12" x2="12" y1="8.12" y2="12"/>
+          </svg>
+        </div>
+        <h3>Barbershops &amp; Salons</h3>
+        <p>Appointment booking, specialist selection, reminders and rescheduling via WhatsApp.</p>
+      </div>
+
+      <!-- Art Studios -->
+      <div class="industry-card reveal d2">
+        <div class="industry-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/>
+            <circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/>
+            <circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/>
+            <circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/>
+            <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>
+          </svg>
+        </div>
+        <h3>Art Studios</h3>
+        <p>Class and event bookings, waitlists, capacity management — all handled automatically.</p>
+      </div>
+
+      <!-- Tailor-made: wide card -->
+      <div class="industry-card wide reveal d2">
+        <div class="industry-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+            <path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/>
+          </svg>
         </div>
         <div>
-          <label class="field-label">WhatsApp / Phone</label>
-          <input type="tel" name="phone" placeholder="+355 69..." />
-        </div>
-        <div>
-          <label class="field-label">Industry</label>
-          <select name="industry">
-            <option value="">Select…</option>
-            <option>Hotel</option>
-            <option>Restaurant</option>
-            <option>Barbershop / Salon</option>
-            <option>Art Studio</option>
-            <option>Gym / Wellness</option>
-            <option>Other</option>
-          </select>
-        </div>
-        <div class="full">
-          <label class="field-label">Message</label>
-          <textarea name="message" placeholder="Tell us a bit about your business…"></textarea>
+          <h3>Tailor made for your industry</h3>
+          <p>Whatever your business — gyms, short-term rentals, event spaces — SkedAI adapts to it. If your use case exists, we can build for it. Get in touch and we'll make it work.</p>
         </div>
       </div>
-      <button type="submit" class="btn-submit" id="submit-btn">Send message →</button>
-      <div class="form-status" id="form-status"></div>
-    </form>
 
-    <div class="contact-channels">
-      <a href="mailto:support@skedai.net" class="channel-item">
-        <div class="channel-icon">📧</div>
-        support@skedai.net
-      </a>
-      <a href="https://wa.me/355698038120" target="_blank" class="channel-item">
-        <div class="channel-icon">💬</div>
-        WhatsApp us
-      </a>
-      <span class="channel-item">
-        <div class="channel-icon">📍</div>
-        Tirana, Albania
-      </span>
     </div>
   </div>
 </section>
 
-<!-- ═══ FOOTER ══════════════════════════════════════════════ -->
+<!-- ════ PRICING ════════════════════════════════════════════ -->
+<section class="section" id="pricing">
+  <div class="section-inner">
+    <p class="section-label reveal">Pricing</p>
+    <h2 class="reveal d1">Simple, transparent pricing</h2>
+    <p class="section-sub reveal d2">Start free. Scale as you grow. No hidden fees, no per-message charges.</p>
+
+    <div class="pricing-wrap reveal d2">
+      <div class="pricing-card">
+        <div class="pricing-badge">Most popular</div>
+        <div class="pricing-who">Hotels &amp; Shops</div>
+        <div class="pricing-price"><sup>€</sup>89</div>
+        <div class="pricing-period">per month</div>
+        <ul class="pricing-features">
+          <li><span class="pricing-check">✓</span> Unlimited conversations</li>
+          <li><span class="pricing-check">✓</span> All languages</li>
+          <li><span class="pricing-check">✓</span> Dashboard + department alerts</li>
+          <li><span class="pricing-check">✓</span> 14-day free trial</li>
+        </ul>
+        <a href="https://wa.me/16066991790?text=Hi%2C%20I%27d%20like%20to%20see%20how%20SkedAI%20works"
+           class="btn-primary pricing-cta" target="_blank" rel="noopener">
+          Try free for 14 days →
+        </a>
+        <p class="pricing-note">Billed quarterly. Cancel with 30 days' notice.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════ CONTACT ════════════════════════════════════════════ -->
+<section class="section contact-section" id="contact">
+  <div class="section-inner">
+    <p class="section-label reveal">Contact</p>
+    <h2 class="reveal d1">Ready to get started?</h2>
+    <p class="section-sub reveal d2">Tell us about your business and we'll set up your AI concierge within 24 hours.</p>
+
+    <div class="contact-inner reveal d2">
+      <form
+        id="contact-form"
+        action="https://formspree.io/f/xaqllwja"
+        method="POST"
+        onsubmit="handleSubmit(event)"
+      >
+        <input type="text" name="_gotcha" class="hp" tabindex="-1" autocomplete="off" />
+        <input type="hidden" name="_subject" value="New SkedAI enquiry" />
+        <input type="hidden" name="_replyto" value="support@skedai.net" />
+
+        <div class="form-grid">
+          <div class="full">
+            <label class="field-label" for="f-name">Name *</label>
+            <input id="f-name" type="text" name="name" placeholder="Your name" required />
+          </div>
+          <div class="full">
+            <label class="field-label" for="f-email">Email *</label>
+            <input id="f-email" type="email" name="email" placeholder="john@yourbusiness.com" required />
+          </div>
+          <div>
+            <label class="field-label" for="f-phone">WhatsApp / Phone</label>
+            <input id="f-phone" type="tel" name="phone" placeholder="+355 69..." />
+          </div>
+          <div>
+            <label class="field-label" for="f-industry">Industry</label>
+            <select id="f-industry" name="industry">
+              <option value="">Select…</option>
+              <option>Hotel</option>
+              <option>Restaurant</option>
+              <option>Barbershop / Salon</option>
+              <option>Art Studio</option>
+              <option>Gym / Wellness</option>
+              <option>Other</option>
+            </select>
+          </div>
+          <div class="full">
+            <label class="field-label" for="f-message">Message</label>
+            <textarea id="f-message" name="message" placeholder="Tell us a bit about your business…"></textarea>
+          </div>
+        </div>
+        <button type="submit" class="btn-submit" id="submit-btn">Get started free →</button>
+        <div class="form-status" id="form-status"></div>
+      </form>
+
+      <div class="contact-channels">
+        <a href="mailto:support@skedai.net" class="channel-item">
+          <div class="channel-icon">📧</div>
+          support@skedai.net
+        </a>
+        <a href="https://wa.me/355698038120" target="_blank" rel="noopener" class="channel-item">
+          <div class="channel-icon">💬</div>
+          WhatsApp us
+        </a>
+        <span class="channel-item">
+          <div class="channel-icon">📍</div>
+          Tirana, Albania
+        </span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════ FOOTER ═════════════════════════════════════════════ -->
 <footer>
   <a href="#" class="footer-logo">
     <img src="logo.png" alt="SkedAI" />
     <span class="footer-logo-text">Sked<span>AI</span></span>
   </a>
-  <span class="footer-copy">© 2025 SkedAI. All rights reserved.</span>
-<div class="footer-links">
+  <span class="footer-copy">© <span id="yr"></span> SkedAI. All rights reserved.</span>
+  <div class="footer-links">
     <a href="/privacy-policy">Privacy</a>
     <a href="#">Terms</a>
     <a href="#contact">Contact</a>
@@ -506,38 +684,150 @@
 </footer>
 
 <script>
-  async function handleSubmit(e) {
-    e.preventDefault();
-    const btn    = document.getElementById('submit-btn');
-    const status = document.getElementById('form-status');
-    const form   = document.getElementById('contact-form');
+/* ── Footer year ────────────────────────────────────────── */
+document.getElementById('yr').textContent = new Date().getFullYear();
 
-    btn.disabled = true;
-    btn.textContent = 'Sending…';
-    status.className = 'form-status';
-    status.textContent = '';
+/* ── Nav background on scroll ───────────────────────────── */
+(function () {
+  const nav = document.getElementById('main-nav');
+  function tick() { nav.classList.toggle('scrolled', window.scrollY > 40); }
+  window.addEventListener('scroll', tick, { passive: true });
+  tick();
+})();
 
-    try {
-      const res = await fetch(form.action, {
-        method: 'POST',
-        body: new FormData(form),
-        headers: { Accept: 'application/json' },
-      });
-      if (res.ok) {
-        status.className = 'form-status ok';
-        status.textContent = '✓ Message sent! We\'ll be in touch within 24 hours.';
-        form.reset();
-      } else {
-        throw new Error('server');
+/* ── Scroll reveal ──────────────────────────────────────── */
+(function () {
+  const els = document.querySelectorAll('.reveal');
+  if (!els.length) return;
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('on'); obs.unobserve(e.target); } });
+  }, { threshold: 0.15 });
+  els.forEach(el => obs.observe(el));
+})();
+
+/* ── Chat animation ─────────────────────────────────────── */
+(function () {
+  const exchanges = [
+    { guest: "Hi, what's the wifi password?",
+      ai:    "The network is La Favorita and the password is lafavorita24. Anything else I can help with?" },
+    { guest: "Buongiorno, a che ora è il check-out?",
+      ai:    "Il check-out è alle 11:00. Se le serve lasciare i bagagli dopo, abbiamo un deposito. 😊" },
+    { guest: "A mund të më sillni një hekur hekurosjeje?",
+      ai:    "Sigurisht! Mund të më jepni numrin e dhomës? Do ta njoftoj menjëherë ekipin." },
+    { guest: "Können wir das Frühstück um 7:30 bekommen?",
+      ai:    "Ja, das Frühstück beginnt um 07:00. Wir sehen uns morgen früh!" },
+  ];
+
+  const frame   = document.getElementById('phone-frame');
+  const body    = document.getElementById('phone-body');
+  const content = document.getElementById('chat-content');
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function bubble(role, text) {
+    const el = document.createElement('div');
+    el.className = 'bubble bubble-' + role;
+    el.textContent = text;
+    return el;
+  }
+  function typing() {
+    const el = document.createElement('div');
+    el.className = 'bubble bubble-ai bubble-typing';
+    el.innerHTML = '<span class="td"></span><span class="td"></span><span class="td"></span>';
+    return el;
+  }
+  function append(el) { content.appendChild(el); body.scrollTop = body.scrollHeight; }
+
+  /* reduced-motion: static render of all exchanges */
+  if (reduced) {
+    exchanges.forEach(ex => {
+      const g = bubble('guest', ex.guest); g.classList.add('bubble-instant');
+      const a = bubble('ai', ex.ai);       a.classList.add('bubble-instant');
+      append(g); append(a);
+    });
+    return;
+  }
+
+  /* animated render */
+  let gen = 0;
+  let sleepRes = null, sleepId = null;
+
+  function sleep(ms) {
+    return new Promise(resolve => {
+      sleepRes = resolve;
+      sleepId  = setTimeout(() => { sleepRes = null; resolve(); }, ms);
+    });
+  }
+  function cancelSleep() {
+    if (sleepId)  { clearTimeout(sleepId); sleepId = null; }
+    if (sleepRes) { sleepRes(); sleepRes = null; }
+  }
+
+  async function run(g) {
+    while (gen === g) {
+      content.innerHTML = '';
+      content.style.opacity = '1';
+
+      for (let i = 0; i < exchanges.length; i++) {
+        if (gen !== g) break;
+        append(bubble('guest', exchanges[i].guest));
+        await sleep(600);  if (gen !== g) break;
+
+        const t = typing(); append(t);
+        await sleep(1200); if (gen !== g) { t.remove(); break; }
+        t.remove();
+
+        append(bubble('ai', exchanges[i].ai));
+        await sleep(2500); if (gen !== g) break;
       }
-    } catch {
-      status.className = 'form-status err';
-      status.textContent = 'Something went wrong. Please email us at support@skedai.net';
-    } finally {
-      btn.disabled = false;
-      btn.textContent = 'Send message →';
+      if (gen !== g) break;
+
+      content.style.opacity = '0';
+      await sleep(300);   if (gen !== g) break;
+      content.innerHTML = '';
+      content.style.opacity = '1';
+      await sleep(3000);
     }
   }
+
+  const obs = new IntersectionObserver(entries => {
+    if (entries[0].isIntersecting) {
+      const g = ++gen;
+      run(g);
+    } else {
+      gen++;
+      cancelSleep();
+      content.style.opacity = '1';
+    }
+  }, { threshold: 0.3 });
+
+  obs.observe(frame);
+})();
+
+/* ── Contact form ───────────────────────────────────────── */
+async function handleSubmit(e) {
+  e.preventDefault();
+  const btn    = document.getElementById('submit-btn');
+  const status = document.getElementById('form-status');
+  const form   = document.getElementById('contact-form');
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  status.className = 'form-status';
+  status.textContent = '';
+  try {
+    const res = await fetch(form.action, { method: 'POST', body: new FormData(form), headers: { Accept: 'application/json' } });
+    if (res.ok) {
+      status.className = 'form-status ok';
+      status.textContent = '✓ Message sent! We\'ll be in touch within 24 hours.';
+      form.reset();
+    } else { throw new Error(); }
+  } catch {
+    status.className = 'form-status err';
+    status.textContent = 'Something went wrong. Please email us at support@skedai.net';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Get started free →';
+  }
+}
 </script>
 
 </body>
