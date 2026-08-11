@@ -1,14 +1,15 @@
 import { useState } from 'react';
-import { BellRing, Users, BookOpen, Settings, Shield, LogOut } from 'lucide-react';
+import { BellRing, Users, BookOpen, Settings, Shield, LogOut, Mail } from 'lucide-react';
 import clsx from 'clsx';
 import { isAdmin, getStoredUser, clearAuth } from '../../shared/lib/auth';
 import { AdminPage } from '../../pages/AdminPage';
-import { RequestsPage } from './components/RequestsPage';
-import { GuestsPage }   from './components/GuestsPage';
-import { FaqPage }      from './components/FaqPage';
-import { ConfigPage }   from './components/ConfigPage';
+import { RequestsPage }       from './components/RequestsPage';
+import { GuestsPage }         from './components/GuestsPage';
+import { FaqPage }            from './components/FaqPage';
+import { ConfigPage }         from './components/ConfigPage';
+import { ConversationsPage }  from './components/ConversationsPage';
 
-type Page = 'requests' | 'guests' | 'faq' | 'config' | 'admin';
+type Page = 'requests' | 'guests' | 'faq' | 'config' | 'admin' | 'conversations';
 
 interface Props { onLogout: () => void; }
 
@@ -19,10 +20,11 @@ export function HotelModule({ onLogout }: Props) {
   function handleLogout() { clearAuth(); onLogout(); }
 
   const nav: { id: Page; label: string; icon: React.ReactNode }[] = [
-    { id: 'requests', label: 'Requests',      icon: <BellRing size={16} /> },
-    { id: 'guests',   label: 'Guests',        icon: <Users size={16} /> },
-    { id: 'faq',      label: 'FAQ',           icon: <BookOpen size={16} /> },
-    { id: 'config',   label: 'Hotel Config',  icon: <Settings size={16} /> },
+    { id: 'requests',      label: 'Requests',      icon: <BellRing size={16} /> },
+    { id: 'guests',        label: 'Guests',        icon: <Users size={16} /> },
+    { id: 'conversations', label: 'Email',         icon: <Mail size={16} /> },
+    { id: 'faq',           label: 'FAQ',           icon: <BookOpen size={16} /> },
+    { id: 'config',        label: 'Hotel Config',  icon: <Settings size={16} /> },
     ...(isAdmin() ? [{ id: 'admin' as Page, label: 'Admin', icon: <Shield size={16} /> }] : []),
   ];
 
@@ -84,11 +86,12 @@ export function HotelModule({ onLogout }: Props) {
 
       {/* Main content */}
       <main className="flex-1 min-w-0 overflow-hidden flex flex-col p-3 md:p-5">
-        {page === 'requests' && <RequestsPage />}
-        {page === 'guests'   && <GuestsPage />}
-        {page === 'faq'      && <FaqPage />}
-        {page === 'config'   && <ConfigPage />}
-        {page === 'admin'    && <AdminPage />}
+        {page === 'requests'      && <RequestsPage />}
+        {page === 'guests'        && <GuestsPage />}
+        {page === 'conversations' && <ConversationsPage />}
+        {page === 'faq'           && <FaqPage />}
+        {page === 'config'        && <ConfigPage />}
+        {page === 'admin'         && <AdminPage />}
       </main>
 
       {/* Mobile bottom nav */}

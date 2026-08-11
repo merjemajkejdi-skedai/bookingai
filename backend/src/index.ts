@@ -9,6 +9,9 @@ import { bookingRouter } from './modules/booking/routes.js';
 import { artEventRouter } from './modules/art_event/routes.js';
 import { artClassRouter } from './modules/art_class/routes.js';
 import { restaurantRouter } from './modules/restaurant/routes.js';
+import { hotelRouter } from './routes/hotel.js';
+import { emailAccountsRouter } from './routes/emailAccounts.js';
+import { startEmailWorker } from './channels/email/worker.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -38,9 +41,12 @@ app.use('/api', restaurantRouter);
 app.use('/auth', authRouter);
 app.use('/admin', adminRouter);
 app.use('/whatsapp', whatsappRouter);
+app.use('/hotel', hotelRouter);
+app.use('/hotel/email', emailAccountsRouter);
 
 async function start() {
   await runMigrations();
+  startEmailWorker();
   app.listen(Number(PORT), '0.0.0.0', () => {
     console.log(`\n🚀 BookingAI backend running at http://localhost:${PORT}`);
     console.log(`   API:       http://localhost:${PORT}/api`);

@@ -251,6 +251,123 @@ const SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS idx_restaurant_res_tenant ON restaurant_reservations(tenant_id, date);
   CREATE INDEX IF NOT EXISTS idx_restaurant_tables_zone ON restaurant_tables(zone_id);
+  CREATE TABLE IF NOT EXISTS hotel_config (
+    tenant_id TEXT PRIMARY KEY,
+    hotel_name TEXT NOT NULL DEFAULT '',
+    check_in_time TEXT NOT NULL DEFAULT '14:00',
+    check_out_time TEXT NOT NULL DEFAULT '11:00',
+    wifi_password TEXT,
+    breakfast_hours TEXT,
+    pool_hours TEXT,
+    restaurant_hours TEXT,
+    reception_phone TEXT,
+    emergency_phone TEXT,
+    timezone TEXT NOT NULL DEFAULT 'Europe/Tirane'
+  );
+  CREATE TABLE IF NOT EXISTS hotel_guest_stays (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    room_number TEXT NOT NULL,
+    guest_name TEXT NOT NULL,
+    guest_phone TEXT NOT NULL,
+    check_in TEXT NOT NULL,
+    check_out TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'checked_in',
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE TABLE IF NOT EXISTS hotel_requests (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    stay_id TEXT,
+    room_number TEXT NOT NULL,
+    guest_phone TEXT NOT NULL,
+    request_type TEXT NOT NULL,
+    description TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    department TEXT NOT NULL DEFAULT 'reception',
+    priority TEXT NOT NULL DEFAULT 'normal',
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    resolved_at TEXT
+  );
+  CREATE TABLE IF NOT EXISTS hotel_faq (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    question TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'general',
+    is_active INTEGER NOT NULL DEFAULT 1
+  );
+  CREATE TABLE IF NOT EXISTS hotel_conversations (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    channel TEXT NOT NULL DEFAULT 'whatsapp',
+    channel_user_id TEXT NOT NULL,
+    subject TEXT,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_hotel_conv_unique ON hotel_conversations(tenant_id, channel, channel_user_id);
+  CREATE TABLE IF NOT EXISTS tenant_email_accounts (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    provider TEXT NOT NULL DEFAULT 'imap',
+    email_address TEXT NOT NULL,
+    display_name TEXT NOT NULL DEFAULT '',
+    imap_host TEXT,
+    imap_port INTEGER DEFAULT 993,
+    imap_secure INTEGER DEFAULT 1,
+    smtp_host TEXT,
+    smtp_port INTEGER DEFAULT 587,
+    smtp_secure INTEGER DEFAULT 0,
+    username TEXT,
+    password_enc TEXT,
+    oauth_access_token_enc TEXT,
+    oauth_refresh_token_enc TEXT,
+    oauth_expires_at TEXT,
+    oauth_email TEXT,
+    watch_folder TEXT NOT NULL DEFAULT 'SkedAI',
+    answered_folder TEXT NOT NULL DEFAULT 'SkedAI/Answered',
+    failed_folder TEXT NOT NULL DEFAULT 'SkedAI/Failed',
+    is_enabled INTEGER NOT NULL DEFAULT 0,
+    ai_enabled INTEGER NOT NULL DEFAULT 0,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    last_checked_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    UNIQUE(tenant_id, email_address)
+  );
+  CREATE TABLE IF NOT EXISTS email_messages (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    conversation_id TEXT,
+    direction TEXT NOT NULL DEFAULT 'inbound',
+    rfc822_message_id TEXT NOT NULL,
+    in_reply_to TEXT,
+    references_header TEXT,
+    from_address TEXT NOT NULL,
+    from_name TEXT,
+    to_address TEXT NOT NULL,
+    subject TEXT NOT NULL DEFAULT '',
+    body_text TEXT,
+    body_raw TEXT,
+    provider_ref TEXT,
+    sent_message_id TEXT,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    UNIQUE(tenant_id, rfc822_message_id)
+  );
+  CREATE TABLE IF NOT EXISTS email_skipped_log (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    rfc822_message_id TEXT,
+    from_address TEXT,
+    subject TEXT,
+    reason TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  );
+  CREATE INDEX IF NOT EXISTS idx_email_msgs_conv ON email_messages(conversation_id, created_at);
+  CREATE INDEX IF NOT EXISTS idx_email_msgs_tenant ON email_messages(tenant_id, created_at);
 `;
 
 export async function runMigrations() {
@@ -274,6 +391,20 @@ export async function runMigrations() {
       `ALTER TABLE restaurant_zones ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''`,
       `ALTER TABLE restaurant_zones ADD COLUMN IF NOT EXISTS max_concurrent INTEGER NOT NULL DEFAULT 10`,
       `ALTER TABLE restaurant_zones ADD COLUMN IF NOT EXISTS is_vip INTEGER NOT NULL DEFAULT 0`,
+      // email_001 — hotel tables (CREATE IF NOT EXISTS is idempotent on PG too)
+      `CREATE TABLE IF NOT EXISTS hotel_config (tenant_id TEXT PRIMARY KEY, hotel_name TEXT NOT NULL DEFAULT '', check_in_time TEXT NOT NULL DEFAULT '14:00', check_out_time TEXT NOT NULL DEFAULT '11:00', wifi_password TEXT, breakfast_hours TEXT, pool_hours TEXT, restaurant_hours TEXT, reception_phone TEXT, emergency_phone TEXT, timezone TEXT NOT NULL DEFAULT 'Europe/Tirane')`,
+      `CREATE TABLE IF NOT EXISTS hotel_guest_stays (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, room_number TEXT NOT NULL, guest_name TEXT NOT NULL, guest_phone TEXT NOT NULL, check_in TEXT NOT NULL, check_out TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'checked_in', created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP))`,
+      `CREATE TABLE IF NOT EXISTS hotel_requests (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, stay_id TEXT, room_number TEXT NOT NULL, guest_phone TEXT NOT NULL, request_type TEXT NOT NULL, description TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', department TEXT NOT NULL DEFAULT 'reception', priority TEXT NOT NULL DEFAULT 'normal', created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP), resolved_at TEXT)`,
+      `CREATE TABLE IF NOT EXISTS hotel_faq (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, question TEXT NOT NULL, answer TEXT NOT NULL, category TEXT NOT NULL DEFAULT 'general', is_active INTEGER NOT NULL DEFAULT 1)`,
+      // email_002 — hotel_conversations + email tables
+      `CREATE TABLE IF NOT EXISTS hotel_conversations (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, channel TEXT NOT NULL DEFAULT 'whatsapp', channel_user_id TEXT NOT NULL, subject TEXT, created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP), updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP))`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_hotel_conv_unique ON hotel_conversations(tenant_id, channel, channel_user_id)`,
+      `CREATE TABLE IF NOT EXISTS tenant_email_accounts (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, provider TEXT NOT NULL DEFAULT 'imap', email_address TEXT NOT NULL, display_name TEXT NOT NULL DEFAULT '', imap_host TEXT, imap_port INTEGER DEFAULT 993, imap_secure INTEGER DEFAULT 1, smtp_host TEXT, smtp_port INTEGER DEFAULT 587, smtp_secure INTEGER DEFAULT 0, username TEXT, password_enc TEXT, oauth_access_token_enc TEXT, oauth_refresh_token_enc TEXT, oauth_expires_at TEXT, oauth_email TEXT, watch_folder TEXT NOT NULL DEFAULT 'SkedAI', answered_folder TEXT NOT NULL DEFAULT 'SkedAI/Answered', failed_folder TEXT NOT NULL DEFAULT 'SkedAI/Failed', is_enabled INTEGER NOT NULL DEFAULT 0, ai_enabled INTEGER NOT NULL DEFAULT 0, consecutive_failures INTEGER NOT NULL DEFAULT 0, last_error TEXT, last_checked_at TEXT, created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP), UNIQUE(tenant_id, email_address))`,
+      // email_003 — email_messages + email_skipped_log
+      `CREATE TABLE IF NOT EXISTS email_messages (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, account_id TEXT NOT NULL, conversation_id TEXT, direction TEXT NOT NULL DEFAULT 'inbound', rfc822_message_id TEXT NOT NULL, in_reply_to TEXT, references_header TEXT, from_address TEXT NOT NULL, from_name TEXT, to_address TEXT NOT NULL, subject TEXT NOT NULL DEFAULT '', body_text TEXT, body_raw TEXT, provider_ref TEXT, sent_message_id TEXT, created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP), UNIQUE(tenant_id, rfc822_message_id))`,
+      `CREATE TABLE IF NOT EXISTS email_skipped_log (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, account_id TEXT NOT NULL, rfc822_message_id TEXT, from_address TEXT, subject TEXT, reason TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP))`,
+      `CREATE INDEX IF NOT EXISTS idx_email_msgs_conv ON email_messages(conversation_id, created_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_email_msgs_tenant ON email_messages(tenant_id, created_at)`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
