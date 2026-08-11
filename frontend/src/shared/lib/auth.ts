@@ -160,4 +160,18 @@ export const adminApi = {
     }),
   disconnectInstagram: (tenantId: string) =>
     authFetch(`/admin/tenants/${tenantId}/channels/instagram/disconnect`, { method: 'DELETE' }),
+  getEmailAccounts: (tenantId: string) =>
+    adminFetch<any[]>(`/hotel/email/accounts?tenantId=${encodeURIComponent(tenantId)}`),
+  createEmailAccount: (tenantId: string, data: Record<string, any>) =>
+    adminFetch<any>(`/hotel/email/accounts?tenantId=${encodeURIComponent(tenantId)}`, {
+      method: 'POST', body: JSON.stringify(data),
+    }),
+  deleteEmailAccount: (tenantId: string, accountId: string) =>
+    adminFetch<any>(`/hotel/email/accounts/${accountId}?tenantId=${encodeURIComponent(tenantId)}`, {
+      method: 'DELETE',
+    }),
+  toggleEmailAccount: (tenantId: string, accountId: string, field: 'is_enabled' | 'ai_enabled') =>
+    adminFetch<any>(`/hotel/email/accounts/${accountId}/toggle?tenantId=${encodeURIComponent(tenantId)}`, {
+      method: 'PUT', body: JSON.stringify({ field }),
+    }),
 };

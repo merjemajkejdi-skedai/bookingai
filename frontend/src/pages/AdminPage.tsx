@@ -337,12 +337,21 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
   // Instagram disconnect confirm
   const [igDisconnectOpen, setIgDisconnectOpen]   = useState(false);
   const [igDisconnecting, setIgDisconnecting]     = useState(false);
+  // Email accounts
+  const [emailAccounts, setEmailAccounts]     = useState<any[]>([]);
+  const [emailFormOpen, setEmailFormOpen]     = useState(false);
+  const [emailForm, setEmailForm]             = useState<Record<string, string>>({});
+  const [emailSaving, setEmailSaving]         = useState(false);
+  const [emailError, setEmailError]           = useState('');
   const [saving, setSaving]                   = useState(false);
   const [error, setError]                     = useState('');
 
   useEffect(() => {
     adminApi.getTenant(tenant.id)
       .then(d => { if (d.channels) setChannels(d.channels); })
+      .catch(() => {});
+    adminApi.getEmailAccounts(tenant.id)
+      .then(setEmailAccounts)
       .catch(() => {});
   }, [tenant.id]);
 
@@ -370,6 +379,34 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
       setIgFormOpen(false); setIgToken(''); setIgAccountId('');
     } catch (e: any) { setIgConnectError(e.message); }
     finally { setIgConnecting(false); }
+  }
+
+  async function handleEmailCreate() {
+    if (!emailForm.email_address || !emailForm.imap_host || !emailForm.smtp_host || !emailForm.password) {
+      setEmailError('Email, IMAP host, SMTP host and password are required');
+      return;
+    }
+    setEmailSaving(true); setEmailError('');
+    try {
+      const acct = await adminApi.createEmailAccount(tenant.id, { ...emailForm, provider: 'imap' });
+      setEmailAccounts(prev => [...prev, acct]);
+      setEmailFormOpen(false); setEmailForm({});
+    } catch (e: any) { setEmailError(e.message); }
+    finally { setEmailSaving(false); }
+  }
+
+  async function handleEmailToggle(accountId: string, field: 'is_enabled' | 'ai_enabled') {
+    try {
+      const updated = await adminApi.toggleEmailAccount(tenant.id, accountId, field);
+      setEmailAccounts(prev => prev.map((a: any) => a.id === accountId ? { ...a, ...updated } : a));
+    } catch (e: any) { setError(e.message); }
+  }
+
+  async function handleEmailDelete(accountId: string) {
+    try {
+      await adminApi.deleteEmailAccount(tenant.id, accountId);
+      setEmailAccounts(prev => prev.filter((a: any) => a.id !== accountId));
+    } catch (e: any) { setError(e.message); }
   }
 
   async function handleInstagramDisconnect() {
@@ -658,7 +695,93 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
               );
             }
 
-            // ── Default row (WhatsApp, Facebook, Email) ───────────────────────
+            // ── Email: account list + IMAP add form ──────────────────────────
+            if (key === 'email') {
+              const anyEnabled = emailAccounts.some((a: any) => a.is_enabled);
+              const ef = (k: string) => ({
+                value: emailForm[k] ?? '',
+                onChange: (e: any) => setEmailForm(p => ({ ...p, [k]: e.target.value })),
+              });
+              return (
+                <div key={key} className="border-b border-slate-100 last:border-0 pb-2">
+                  <div className="flex items-center justify-between py-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] font-bold ${anyEnabled ? 'text-green-500' : 'text-slate-300'}`}>●</span>
+                      <span className="text-sm text-slate-700">{icon} {label}</span>
+                      <span className="text-xs text-slate-400">
+                        {emailAccounts.length === 0
+                          ? 'No accounts'
+                          : `${emailAccounts.filter((a: any) => a.is_enabled).length}/${emailAccounts.length} enabled`}
+                      </span>
+                    </div>
+                    <button type="button"
+                      onClick={() => { setEmailFormOpen(v => !v); setEmailError(''); setEmailForm({}); }}
+                      className="text-xs font-medium text-indigo-600 hover:text-indigo-800">
+                      {emailFormOpen ? 'Cancel ▲' : 'Add ▼'}
+                    </button>
+                  </div>
+
+                  {emailAccounts.map((acct: any) => (
+                    <div key={acct.id} className="ml-4 mt-1 p-2 bg-slate-50 rounded border border-slate-100">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-xs font-medium text-slate-700">{acct.email_address}</p>
+                          <p className="text-[10px] text-slate-400">{acct.provider === 'graph' ? 'Microsoft 365' : 'IMAP/SMTP'}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button type="button" title="Enable/disable"
+                            onClick={() => handleEmailToggle(acct.id, 'is_enabled')}
+                            className={`relative inline-flex h-4 w-7 flex-shrink-0 rounded-full border-2 border-transparent transition-colors ${acct.is_enabled ? 'bg-green-500' : 'bg-slate-200'}`}>
+                            <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${acct.is_enabled ? 'translate-x-3' : 'translate-x-0'}`} />
+                          </button>
+                          <span className="text-[10px] text-slate-400">On</span>
+                          <button type="button" title="AI replies"
+                            onClick={() => handleEmailToggle(acct.id, 'ai_enabled')}
+                            className={`relative inline-flex h-4 w-7 flex-shrink-0 rounded-full border-2 border-transparent transition-colors ${acct.ai_enabled ? 'bg-indigo-500' : 'bg-slate-200'}`}>
+                            <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${acct.ai_enabled ? 'translate-x-3' : 'translate-x-0'}`} />
+                          </button>
+                          <span className="text-[10px] text-slate-400">AI</span>
+                          <button type="button" onClick={() => handleEmailDelete(acct.id)}
+                            className="text-[10px] text-red-400 hover:text-red-600 ml-1 font-bold">✕</button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {emailFormOpen && (
+                    <div className="mt-2 p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
+                      <p className="text-xs font-medium text-slate-600">Gmail: use an App Password (Google Account → Security → App passwords)</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Input label="Email address" type="email" required {...ef('email_address')} />
+                        <Input label="Display name" {...ef('display_name')} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Input label="IMAP host" required placeholder="imap.gmail.com" {...ef('imap_host')} />
+                        <Input label="IMAP port" placeholder="993" {...ef('imap_port')} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Input label="SMTP host" required placeholder="smtp.gmail.com" {...ef('smtp_host')} />
+                        <Input label="SMTP port" placeholder="587" {...ef('smtp_port')} />
+                      </div>
+                      <Input label="Username" placeholder="same as email" {...ef('username')} />
+                      <Input label="Password / App password" type="password" required {...ef('password')} />
+                      {emailError && <p className="text-xs text-red-500">{emailError}</p>}
+                      <div className="flex justify-end gap-2 pt-1">
+                        <Button variant="ghost" size="sm"
+                          onClick={() => { setEmailFormOpen(false); setEmailError(''); }}>
+                          Cancel
+                        </Button>
+                        <Button size="sm" onClick={handleEmailCreate} disabled={emailSaving}>
+                          {emailSaving ? 'Saving…' : 'Save & Connect'}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            // ── Default row (WhatsApp, Facebook) ─────────────────────────────
             return (
               <div key={key} className="flex items-center justify-between py-1.5 border-b border-slate-100 last:border-0">
                 <div className="flex items-center gap-2">
