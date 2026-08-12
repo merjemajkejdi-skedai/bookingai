@@ -1422,6 +1422,69 @@ export async function runMigrations() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`).catch((e: any) => console.warn('email_001c skipped:', e.message));
 
+    // email_002 — drop stub/old schema and rebuild with full column set.
+    // Guard: only runs when watch_folder_path column is missing (stub schema or old schema).
+    // Safe: email tables are empty during initial setup; no customer data at risk.
+    await pool.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'tenant_email_accounts' AND column_name = 'watch_folder_path'
+        ) THEN
+          DROP TABLE IF EXISTS email_skipped_log;
+          DROP TABLE IF EXISTS email_messages;
+          DROP TABLE IF EXISTS tenant_email_accounts;
+        END IF;
+      END $$
+    `).catch((e: any) => console.warn('email_002 guard skipped:', e.message));
+    await pool.query(`CREATE TABLE IF NOT EXISTS tenant_email_accounts (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      provider TEXT NOT NULL DEFAULT 'imap',
+      email_address TEXT NOT NULL,
+      display_name TEXT NOT NULL DEFAULT '',
+      imap_host TEXT, imap_port INTEGER DEFAULT 993, imap_secure BOOLEAN DEFAULT true,
+      imap_username TEXT, imap_password_encrypted TEXT,
+      smtp_host TEXT, smtp_port INTEGER DEFAULT 587, smtp_secure BOOLEAN DEFAULT false,
+      smtp_username TEXT, smtp_password_encrypted TEXT,
+      oauth_access_token_encrypted TEXT, oauth_refresh_token_encrypted TEXT,
+      oauth_expires_at TIMESTAMPTZ, oauth_scope TEXT,
+      watch_folder_path TEXT NOT NULL DEFAULT 'SkedAI',
+      watch_folder_ref TEXT,
+      answered_folder_path TEXT NOT NULL DEFAULT 'SkedAI/Answered',
+      answered_folder_ref TEXT,
+      failed_folder_path TEXT NOT NULL DEFAULT 'SkedAI/Failed',
+      failed_folder_ref TEXT,
+      sent_folder_path TEXT NOT NULL DEFAULT 'Sent',
+      sent_folder_ref TEXT,
+      is_enabled BOOLEAN NOT NULL DEFAULT false,
+      ai_enabled BOOLEAN NOT NULL DEFAULT false,
+      consecutive_failures INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT, last_checked_at TIMESTAMPTZ, last_success_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(tenant_id, email_address)
+    )`).catch((e: any) => console.warn('email_002a skipped:', e.message));
+    await pool.query(`CREATE TABLE IF NOT EXISTS email_messages (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL, account_id TEXT NOT NULL, conversation_id TEXT,
+      direction TEXT NOT NULL DEFAULT 'inbound',
+      rfc822_message_id TEXT NOT NULL,
+      in_reply_to TEXT, references_header TEXT,
+      from_address TEXT NOT NULL, from_name TEXT, to_address TEXT NOT NULL,
+      subject TEXT NOT NULL DEFAULT '', body_text TEXT, body_raw TEXT,
+      provider_ref TEXT, sent_message_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(tenant_id, rfc822_message_id)
+    )`).catch((e: any) => console.warn('email_002b skipped:', e.message));
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_email_msgs_conv_2 ON email_messages(conversation_id, created_at)`).catch(() => {});
+    await pool.query(`CREATE TABLE IF NOT EXISTS email_skipped_log (
+      id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, account_id TEXT NOT NULL,
+      rfc822_message_id TEXT, from_address TEXT, subject TEXT,
+      reason TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`).catch((e: any) => console.warn('email_002c skipped:', e.message));
+
     console.log('✅ PostgreSQL migrations complete');
     return;
   }
@@ -1863,6 +1926,63 @@ export async function runMigrations() {
     reason TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
   )`);
+
+  // email_002 — rebuild email tables with full column set if watch_folder_path is missing
+  const emailAccCols2 = prepare("SELECT name FROM pragma_table_info('tenant_email_accounts')")
+    .all().map((r: any) => r.name as string);
+  if (!emailAccCols2.includes('watch_folder_path')) {
+    exec('DROP TABLE IF EXISTS email_skipped_log');
+    exec('DROP TABLE IF EXISTS email_messages');
+    exec('DROP TABLE IF EXISTS tenant_email_accounts');
+    exec(`CREATE TABLE IF NOT EXISTS tenant_email_accounts (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      provider TEXT NOT NULL DEFAULT 'imap',
+      email_address TEXT NOT NULL,
+      display_name TEXT NOT NULL DEFAULT '',
+      imap_host TEXT, imap_port INTEGER DEFAULT 993, imap_secure INTEGER DEFAULT 1,
+      imap_username TEXT, imap_password_encrypted TEXT,
+      smtp_host TEXT, smtp_port INTEGER DEFAULT 587, smtp_secure INTEGER DEFAULT 0,
+      smtp_username TEXT, smtp_password_encrypted TEXT,
+      oauth_access_token_encrypted TEXT, oauth_refresh_token_encrypted TEXT,
+      oauth_expires_at TEXT, oauth_scope TEXT,
+      watch_folder_path TEXT NOT NULL DEFAULT 'SkedAI',
+      watch_folder_ref TEXT,
+      answered_folder_path TEXT NOT NULL DEFAULT 'SkedAI/Answered',
+      answered_folder_ref TEXT,
+      failed_folder_path TEXT NOT NULL DEFAULT 'SkedAI/Failed',
+      failed_folder_ref TEXT,
+      sent_folder_path TEXT NOT NULL DEFAULT 'Sent',
+      sent_folder_ref TEXT,
+      is_enabled INTEGER NOT NULL DEFAULT 0,
+      ai_enabled INTEGER NOT NULL DEFAULT 0,
+      consecutive_failures INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT, last_checked_at TEXT, last_success_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+      updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+      UNIQUE(tenant_id, email_address)
+    )`);
+    exec(`CREATE TABLE IF NOT EXISTS email_messages (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL, account_id TEXT NOT NULL, conversation_id TEXT,
+      direction TEXT NOT NULL DEFAULT 'inbound',
+      rfc822_message_id TEXT NOT NULL,
+      in_reply_to TEXT, references_header TEXT,
+      from_address TEXT NOT NULL, from_name TEXT, to_address TEXT NOT NULL,
+      subject TEXT NOT NULL DEFAULT '', body_text TEXT, body_raw TEXT,
+      provider_ref TEXT, sent_message_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+      UNIQUE(tenant_id, rfc822_message_id)
+    )`);
+    exec(`CREATE INDEX IF NOT EXISTS idx_email_msgs_conv_2 ON email_messages(conversation_id, created_at)`);
+    exec(`CREATE TABLE IF NOT EXISTS email_skipped_log (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL, account_id TEXT NOT NULL,
+      rfc822_message_id TEXT, from_address TEXT, subject TEXT,
+      reason TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+    )`);
+  }
 
   console.log('✅ SQLite migrations complete');
 }

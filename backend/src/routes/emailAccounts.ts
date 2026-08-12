@@ -17,11 +17,21 @@ const ok  = <T>(res: Response, data: T) => res.json({ success: true, data });
 const err = (res: Response, msg: string, code = 400) =>
   res.status(code).json({ success: false, error: msg });
 
+function checkCredKey(res: Response): boolean {
+  const k = process.env.EMAIL_CRED_KEY;
+  if (!k || !/^[0-9a-fA-F]{64}$/.test(k)) {
+    err(res, 'EMAIL_CRED_KEY is not configured or invalid — contact admin', 500);
+    return false;
+  }
+  return true;
+}
+
 function scrubAccount(row: any): any {
   const out = { ...row };
-  delete out.password_enc;
-  delete out.oauth_access_token_enc;
-  delete out.oauth_refresh_token_enc;
+  delete out.imap_password_encrypted;
+  delete out.smtp_password_encrypted;
+  delete out.oauth_access_token_encrypted;
+  delete out.oauth_refresh_token_encrypted;
   return out;
 }
 
@@ -49,30 +59,52 @@ emailAccountsRouter.get('/accounts', requireAuth, async (req: Request, res: Resp
 // POST /hotel/email/accounts
 // ---------------------------------------------------------------------------
 emailAccountsRouter.post('/accounts', requireAuth, async (req: Request, res: Response) => {
+  if (!checkCredKey(res)) return;
   const tenantId = resolveTenantId(req);
   const b = req.body as any;
+
   if (!b.email_address || !b.provider) return err(res, 'email_address and provider are required');
   if (b.provider !== 'imap' && b.provider !== 'graph') return err(res, 'provider must be imap or graph');
-  if (b.provider === 'imap' && (!b.imap_host || !b.smtp_host)) return err(res, 'imap_host and smtp_host are required for IMAP accounts');
+
+  if (b.provider === 'imap') {
+    const imapUser = b.imap_username ?? b.username;
+    const imapPass = b.imap_password ?? b.password;
+    const missing: string[] = [];
+    if (!b.imap_host) missing.push('imap_host');
+    if (!b.imap_port) missing.push('imap_port');
+    if (!b.smtp_host) missing.push('smtp_host');
+    if (!b.smtp_port) missing.push('smtp_port');
+    if (!imapUser)   missing.push('imap_username');
+    if (!imapPass)   missing.push('imap_password');
+    if (missing.length) return err(res, `Missing required fields: ${missing.join(', ')}`);
+  }
 
   try {
     const id = crypto.randomUUID();
-    const passwordEnc = b.password ? encrypt(b.password) : null;
+    const imapUser = b.imap_username ?? b.username ?? null;
+    const imapPassEnc = (b.imap_password ?? b.password) ? encrypt(b.imap_password ?? b.password) : null;
+    const smtpUser = b.smtp_username ?? imapUser;
+    const smtpPassEnc = b.smtp_password ? encrypt(b.smtp_password) : null;
+
     await dbRun(
       `INSERT INTO tenant_email_accounts
          (id, tenant_id, provider, email_address, display_name,
-          imap_host, imap_port, imap_secure, smtp_host, smtp_port, smtp_secure,
-          username, password_enc, watch_folder, answered_folder, failed_folder,
+          imap_host, imap_port, imap_secure, imap_username, imap_password_encrypted,
+          smtp_host, smtp_port, smtp_secure, smtp_username, smtp_password_encrypted,
+          watch_folder_path, answered_folder_path, failed_folder_path, sent_folder_path,
           is_enabled, ai_enabled)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       id, tenantId, b.provider, b.email_address.toLowerCase().trim(),
-      b.display_name ?? '', b.imap_host ?? null,
-      b.imap_port ?? 993, b.imap_secure != null ? (b.imap_secure ? 1 : 0) : 1,
-      b.smtp_host ?? null, b.smtp_port ?? 587,
-      b.smtp_secure != null ? (b.smtp_secure ? 1 : 0) : 0,
-      b.username ?? null, passwordEnc,
-      b.watch_folder ?? 'SkedAI', b.answered_folder ?? 'SkedAI/Answered',
-      b.failed_folder ?? 'SkedAI/Failed', 0, 0,
+      b.display_name ?? '',
+      b.imap_host ?? null, b.imap_port ?? 993, b.imap_secure != null ? (b.imap_secure ? 1 : 0) : 1,
+      imapUser, imapPassEnc,
+      b.smtp_host ?? null, b.smtp_port ?? 587, b.smtp_secure != null ? (b.smtp_secure ? 1 : 0) : 0,
+      smtpUser, smtpPassEnc,
+      b.watch_folder_path ?? b.watch_folder ?? 'SkedAI',
+      b.answered_folder_path ?? b.answered_folder ?? 'SkedAI/Answered',
+      b.failed_folder_path ?? b.failed_folder ?? 'SkedAI/Failed',
+      b.sent_folder_path ?? 'Sent',
+      false, false,
     );
     const row = await dbGet('SELECT * FROM tenant_email_accounts WHERE id = ?', id);
     ok(res, scrubAccount(row));
@@ -85,18 +117,32 @@ emailAccountsRouter.post('/accounts', requireAuth, async (req: Request, res: Res
 emailAccountsRouter.put('/accounts/:id', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
   const b = req.body as any;
-  const allowed = ['display_name', 'imap_host', 'imap_port', 'imap_secure', 'smtp_host',
-    'smtp_port', 'smtp_secure', 'username', 'watch_folder', 'answered_folder', 'failed_folder'];
+
+  const allowed = [
+    'display_name', 'imap_host', 'imap_port', 'imap_secure',
+    'imap_username', 'smtp_host', 'smtp_port', 'smtp_secure', 'smtp_username',
+    'watch_folder_path', 'answered_folder_path', 'failed_folder_path', 'sent_folder_path',
+  ];
   const updates = allowed.filter(f => b[f] !== undefined);
 
-  if (b.password !== undefined) updates.push('password_enc');
+  if ((b.imap_password ?? b.password) !== undefined) updates.push('imap_password_encrypted');
+  if (b.smtp_password !== undefined) updates.push('smtp_password_encrypted');
+
+  // Legacy field aliases
+  if (b.username !== undefined && !updates.includes('imap_username')) updates.push('imap_username');
 
   if (!updates.length) return ok(res, { updated: false });
+
+  if (b.imap_password !== undefined || b.password !== undefined || b.smtp_password !== undefined) {
+    if (!checkCredKey(res)) return;
+  }
 
   try {
     const setClause = updates.map(f => `${f} = ?`).join(', ');
     const values = updates.map(f => {
-      if (f === 'password_enc') return b.password ? encrypt(b.password) : null;
+      if (f === 'imap_password_encrypted') return (b.imap_password ?? b.password) ? encrypt(b.imap_password ?? b.password) : null;
+      if (f === 'smtp_password_encrypted') return b.smtp_password ? encrypt(b.smtp_password) : null;
+      if (f === 'imap_username') return b.imap_username ?? b.username;
       return b[f];
     });
     await dbRun(
@@ -130,8 +176,7 @@ emailAccountsRouter.put('/accounts/:id/toggle', requireAuth, async (req: Request
   if (!['is_enabled', 'ai_enabled'].includes(field)) return err(res, 'field must be is_enabled or ai_enabled');
   try {
     await dbRun(
-      `UPDATE tenant_email_accounts SET ${field} = CASE WHEN ${field} = 1 THEN 0 ELSE 1 END
-       WHERE id = ? AND tenant_id = ?`,
+      `UPDATE tenant_email_accounts SET ${field} = NOT ${field} WHERE id = ? AND tenant_id = ?`,
       req.params.id, tenantId,
     );
     const row = await dbGet('SELECT * FROM tenant_email_accounts WHERE id = ?', req.params.id);
@@ -201,10 +246,14 @@ emailAccountsRouter.get('/oauth/callback', async (req: Request, res: Response) =
     return res.send('Invalid state parameter');
   }
 
+  const credKey = process.env.EMAIL_CRED_KEY;
+  if (!credKey || !/^[0-9a-fA-F]{64}$/.test(credKey)) {
+    return res.send('EMAIL_CRED_KEY not configured on server — OAuth cannot complete');
+  }
+
   try {
     const tokens = await GraphAdapter.exchangeCode(code);
 
-    // Fetch the user's email address from Graph
     const userRes = await fetch('https://graph.microsoft.com/v1.0/me?$select=mail,displayName', {
       headers: { Authorization: `Bearer ${tokens.access_token}` },
     });
@@ -217,24 +266,24 @@ emailAccountsRouter.get('/oauth/callback', async (req: Request, res: Response) =
     await dbRun(
       `INSERT INTO tenant_email_accounts
          (id, tenant_id, provider, email_address, display_name,
-          oauth_access_token_enc, oauth_refresh_token_enc, oauth_expires_at, oauth_email,
-          watch_folder, answered_folder, failed_folder, is_enabled, ai_enabled)
+          oauth_access_token_encrypted, oauth_refresh_token_encrypted, oauth_expires_at,
+          watch_folder_path, answered_folder_path, failed_folder_path, sent_folder_path,
+          is_enabled, ai_enabled)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT (tenant_id, email_address) DO UPDATE SET
-         oauth_access_token_enc = excluded.oauth_access_token_enc,
-         oauth_refresh_token_enc = excluded.oauth_refresh_token_enc,
+         oauth_access_token_encrypted = excluded.oauth_access_token_encrypted,
+         oauth_refresh_token_encrypted = excluded.oauth_refresh_token_encrypted,
          oauth_expires_at = excluded.oauth_expires_at`,
       id, tenantId, 'graph', emailAddress, user.displayName ?? emailAddress,
       encrypt(tokens.access_token), encrypt(tokens.refresh_token),
-      expiresAt, emailAddress,
-      'SkedAI', 'SkedAI/Answered', 'SkedAI/Failed', 0, 0,
+      expiresAt,
+      'SkedAI', 'SkedAI/Answered', 'SkedAI/Failed', 'Sent', false, false,
     );
 
-    // Redirect back to the app
     const appUrl = process.env.APP_URL ?? 'https://app.skedai.net';
     res.redirect(`${appUrl}?oauth_success=email`);
   } catch (e: any) {
-    console.error('[EmailOAuth] callback error:', e.message);
+    console.error('[EmailOAuth] callback error:', e.message, '\n', e.stack);
     res.send(`OAuth callback error: ${e.message}`);
   }
 });

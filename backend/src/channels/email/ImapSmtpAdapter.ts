@@ -19,13 +19,13 @@ export class ImapSmtpAdapter implements MailboxAdapter {
   }
 
   private buildClient(): ImapFlow {
-    const password = this.account.password_enc ? decrypt(this.account.password_enc) : '';
+    const password = this.account.imap_password_encrypted ? decrypt(this.account.imap_password_encrypted) : '';
     return new ImapFlow({
       host:    this.account.imap_host!,
       port:    this.account.imap_port ?? 993,
       secure:  !!this.account.imap_secure,
       auth: {
-        user: this.account.username ?? this.account.email_address,
+        user: this.account.imap_username ?? this.account.email_address,
         pass: password,
       },
       logger: false,
@@ -33,13 +33,14 @@ export class ImapSmtpAdapter implements MailboxAdapter {
   }
 
   private buildSmtp() {
-    const password = this.account.password_enc ? decrypt(this.account.password_enc) : '';
+    const enc = this.account.smtp_password_encrypted ?? this.account.imap_password_encrypted;
+    const password = enc ? decrypt(enc) : '';
     return nodemailer.createTransport({
       host:   this.account.smtp_host!,
       port:   this.account.smtp_port ?? 587,
       secure: !!this.account.smtp_secure,
       auth: {
-        user: this.account.username ?? this.account.email_address,
+        user: this.account.smtp_username ?? this.account.imap_username ?? this.account.email_address,
         pass: password,
       },
     });
@@ -175,7 +176,7 @@ export class ImapSmtpAdapter implements MailboxAdapter {
       readAccess = true;
       // Check if watch folder accessible
       try {
-        const lock = await this.imap.getMailboxLock(this.account.watch_folder);
+        const lock = await this.imap.getMailboxLock(this.account.watch_folder_path);
         lock.release();
         folderAccess = true;
       } catch (e: any) {

@@ -62,14 +62,14 @@ export class GraphAdapter implements MailboxAdapter {
   }
 
   private async refreshIfNeeded(): Promise<void> {
-    if (!this.account.oauth_refresh_token_enc) throw new Error('No refresh token — re-connect account');
+    if (!this.account.oauth_refresh_token_encrypted) throw new Error('No refresh token — re-connect account');
     const expiresAt = this.account.oauth_expires_at ? new Date(this.account.oauth_expires_at) : new Date(0);
     const needsRefresh = (expiresAt.getTime() - Date.now()) < 5 * 60 * 1000;
-    if (!needsRefresh && this.account.oauth_access_token_enc) {
-      this.accessToken = decrypt(this.account.oauth_access_token_enc);
+    if (!needsRefresh && this.account.oauth_access_token_encrypted) {
+      this.accessToken = decrypt(this.account.oauth_access_token_encrypted);
       return;
     }
-    const refreshToken = decrypt(this.account.oauth_refresh_token_enc);
+    const refreshToken = decrypt(this.account.oauth_refresh_token_encrypted);
     const res = await fetch(TOKEN_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -85,7 +85,7 @@ export class GraphAdapter implements MailboxAdapter {
     const tokens: any = await res.json();
     this.accessToken = tokens.access_token;
     const newExpiry = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
-    const sql = `UPDATE tenant_email_accounts SET oauth_access_token_enc = ?, oauth_expires_at = ? WHERE id = ?`;
+    const sql = `UPDATE tenant_email_accounts SET oauth_access_token_encrypted = ?, oauth_expires_at = ? WHERE id = ?`;
     const params = [encrypt(tokens.access_token), newExpiry, this.account.id];
     if (isPg) queryRun(sql, params); else prepare(sql).run(...params);
   }
@@ -216,7 +216,7 @@ export class GraphAdapter implements MailboxAdapter {
       readAccess = true;
       sendAccess = true; // Graph Mail.Send scope grants send; we can't test without actually sending
       try {
-        await this.resolveFolderId(this.account.watch_folder);
+        await this.resolveFolderId(this.account.watch_folder_path);
         folderAccess = true;
       } catch { /* folder not created yet */ }
     } catch (e: any) {

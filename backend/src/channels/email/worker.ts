@@ -62,91 +62,41 @@ async function findOrCreateConversation(
 }
 
 // ---------------------------------------------------------------------------
-// Process one account
+// Process one message — returns outcome string, throws on unrecoverable error
 // ---------------------------------------------------------------------------
-async function processAccount(account: EmailAccountRow): Promise<void> {
-  const adapter = buildAdapter(account);
-  const tag = `[Email:${account.email_address}]`;
-  try {
-    await adapter.connect();
-
-    // Ensure watch/answered/failed folders exist
-    await adapter.ensureFolder(account.watch_folder);
-    await adapter.ensureFolder(account.answered_folder);
-    await adapter.ensureFolder(account.failed_folder);
-
-    const messages = await adapter.fetchMessages(account.watch_folder, 20);
-
-    for (const msg of messages) {
-      try {
-        await processMessage(account, adapter, msg, tag);
-      } catch (msgErr: any) {
-        console.error(`${tag} message error (${msg.rfc822MessageId}):`, msgErr.message);
-        try { await adapter.moveMessage(msg.providerRef, account.failed_folder); } catch { /* ignore */ }
-        await dbRun(
-          `INSERT INTO email_skipped_log (id, tenant_id, account_id, rfc822_message_id, from_address, subject, reason)
-           VALUES (?,?,?,?,?,?,?)`,
-          crypto.randomUUID(), account.tenant_id, account.id,
-          msg.rfc822MessageId, msg.from.address, msg.subject, msgErr.message,
-        );
-      }
-    }
-
-    // Reset failure counter and update last_checked_at
-    await dbRun(
-      `UPDATE tenant_email_accounts SET consecutive_failures = 0, last_error = NULL, last_checked_at = ? WHERE id = ?`,
-      new Date().toISOString(), account.id,
-    );
-  } catch (err: any) {
-    console.error(`${tag} account error:`, err.message);
-    await dbRun(
-      `UPDATE tenant_email_accounts
-       SET consecutive_failures = consecutive_failures + 1, last_error = ?, last_checked_at = ?
-       WHERE id = ?`,
-      err.message, new Date().toISOString(), account.id,
-    );
-  } finally {
-    try { await adapter.disconnect(); } catch { /* ignore */ }
-  }
-}
-
 async function processMessage(
   account: EmailAccountRow,
   adapter: MailboxAdapter,
   msg: InboundMessage,
-  tag: string,
-): Promise<void> {
+): Promise<'replied' | 'skipped-duplicate' | 'skipped-safety' | 'skipped-empty' | 'pending-ai-disabled'> {
   // (a) Idempotency check
   const already = await dbGet(
     `SELECT id FROM email_messages WHERE tenant_id = ? AND rfc822_message_id = ?`,
     account.tenant_id, msg.rfc822MessageId,
   );
   if (already) {
-    console.log(`${tag} skip duplicate ${msg.rfc822MessageId}`);
-    await adapter.moveMessage(msg.providerRef, account.answered_folder);
-    return;
+    await adapter.moveMessage(msg.providerRef, account.answered_folder_path);
+    return 'skipped-duplicate';
   }
 
   // (b) Safety checks
   const skipReason = safetyCheck(msg, account.email_address);
   if (skipReason) {
-    console.log(`${tag} skip safety (${skipReason}): ${msg.rfc822MessageId}`);
     await dbRun(
       `INSERT INTO email_skipped_log (id, tenant_id, account_id, rfc822_message_id, from_address, subject, reason)
        VALUES (?,?,?,?,?,?,?)`,
       crypto.randomUUID(), account.tenant_id, account.id,
       msg.rfc822MessageId, msg.from.address, msg.subject, skipReason,
     );
-    await adapter.moveMessage(msg.providerRef, account.failed_folder);
-    return;
+    await adapter.moveMessage(msg.providerRef, account.failed_folder_path);
+    return 'skipped-safety';
   }
 
   // (c) Clean body
   const cleanedBody = cleanBody(msg.bodyText, msg.bodyHtml);
   if (!cleanedBody.trim()) {
-    console.log(`${tag} skip empty body: ${msg.rfc822MessageId}`);
-    await adapter.moveMessage(msg.providerRef, account.failed_folder);
-    return;
+    await adapter.moveMessage(msg.providerRef, account.failed_folder_path);
+    return 'skipped-empty';
   }
 
   // (d) Find or create conversation
@@ -171,14 +121,12 @@ async function processMessage(
     );
   } catch (dupErr: any) {
     if (dupErr.message?.includes('UNIQUE') || dupErr.code === '23505') {
-      // Race condition — another worker already processed this
-      await adapter.moveMessage(msg.providerRef, account.answered_folder);
-      return;
+      await adapter.moveMessage(msg.providerRef, account.answered_folder_path);
+      return 'skipped-duplicate';
     }
     throw dupErr;
   }
 
-  // Update conversation updated_at
   await dbRun(
     `UPDATE hotel_conversations SET updated_at = ? WHERE id = ?`,
     new Date().toISOString(), conversationId,
@@ -186,12 +134,10 @@ async function processMessage(
 
   // (f) AI disabled → leave in watch folder (shows as pending in dashboard)
   if (!account.ai_enabled) {
-    console.log(`${tag} AI disabled — message pending manual reply: ${msg.rfc822MessageId}`);
-    return;
+    return 'pending-ai-disabled';
   }
 
   // (g) Call hotel agent
-  console.log(`${tag} calling agent for ${msg.from.address}`);
   const reply = await runHotelAgent(
     cleanedBody,
     [],
@@ -200,7 +146,7 @@ async function processMessage(
   );
 
   if (!reply) {
-    await adapter.moveMessage(msg.providerRef, account.failed_folder);
+    await adapter.moveMessage(msg.providerRef, account.failed_folder_path);
     throw new Error('Agent returned empty reply');
   }
 
@@ -218,7 +164,7 @@ async function processMessage(
   // (i) Append to Sent if adapter cannot do it automatically
   if (!adapter.capabilities.autoSavesSent && sendResult.rawMime) {
     try { await adapter.appendToSent(sendResult.rawMime, new Date()); } catch (e: any) {
-      console.warn(`${tag} appendToSent failed (non-fatal):`, e.message);
+      console.warn(`[Email] ${account.email_address} — appendToSent failed (non-fatal): ${e.message}`);
     }
   }
 
@@ -238,8 +184,69 @@ async function processMessage(
   );
 
   // (k) Move original to Answered
-  await adapter.moveMessage(msg.providerRef, account.answered_folder);
-  console.log(`${tag} ✅ replied and moved: ${msg.rfc822MessageId}`);
+  await adapter.moveMessage(msg.providerRef, account.answered_folder_path);
+  return 'replied';
+}
+
+// ---------------------------------------------------------------------------
+// Process one account — returns per-account stats, never throws
+// ---------------------------------------------------------------------------
+async function processAccount(account: EmailAccountRow): Promise<{ processed: number; skipped: number; failed: number }> {
+  const stats = { processed: 0, skipped: 0, failed: 0 };
+  const addr = account.email_address;
+  const adapter = buildAdapter(account);
+  try {
+    console.log(`[Email] ${addr} — connecting (${account.provider})`);
+    await adapter.connect();
+
+    await adapter.ensureFolder(account.watch_folder_path);
+    await adapter.ensureFolder(account.answered_folder_path);
+    await adapter.ensureFolder(account.failed_folder_path);
+
+    const messages = await adapter.fetchMessages(account.watch_folder_path, 20);
+    console.log(`[Email] ${addr} — ${messages.length} messages in ${account.watch_folder_path}`);
+
+    for (const msg of messages) {
+      try {
+        const outcome = await processMessage(account, adapter, msg);
+        console.log(`[Email] ${addr} — processed ${msg.rfc822MessageId}: ${outcome}`);
+        outcome === 'replied' ? stats.processed++ : stats.skipped++;
+      } catch (msgErr: any) {
+        stats.failed++;
+        console.error(`[Email] ${addr} — ERROR processing ${msg.rfc822MessageId}: ${msgErr.message}\n${msgErr.stack}`);
+        try {
+          await adapter.moveMessage(msg.providerRef, account.failed_folder_path);
+        } catch (moveErr: any) {
+          console.error(`[Email] ${addr} — ERROR moveToFailed: ${moveErr.message}`);
+        }
+        await dbRun(
+          `INSERT INTO email_skipped_log (id, tenant_id, account_id, rfc822_message_id, from_address, subject, reason)
+           VALUES (?,?,?,?,?,?,?)`,
+          crypto.randomUUID(), account.tenant_id, account.id,
+          msg.rfc822MessageId, msg.from.address, msg.subject, msgErr.message,
+        ).catch((dbErr: any) => console.error(`[Email] ${addr} — ERROR logging skipped: ${dbErr.message}`));
+      }
+    }
+
+    await dbRun(
+      `UPDATE tenant_email_accounts
+       SET consecutive_failures = 0, last_error = NULL, last_checked_at = ?, last_success_at = ?
+       WHERE id = ?`,
+      new Date().toISOString(), new Date().toISOString(), account.id,
+    );
+  } catch (err: any) {
+    console.error(`[Email] ${addr} — ERROR (${err.message})\n${err.stack}`);
+    stats.failed++;
+    await dbRun(
+      `UPDATE tenant_email_accounts
+       SET consecutive_failures = consecutive_failures + 1, last_error = ?, last_checked_at = ?
+       WHERE id = ?`,
+      err.message, new Date().toISOString(), account.id,
+    ).catch(() => {});
+  } finally {
+    try { await adapter.disconnect(); } catch { /* ignore */ }
+  }
+  return stats;
 }
 
 // ---------------------------------------------------------------------------
@@ -247,21 +254,27 @@ async function processMessage(
 // ---------------------------------------------------------------------------
 export function startEmailWorker(): void {
   cron.schedule('* * * * *', async () => {
-    let accounts: EmailAccountRow[];
+    let accounts: EmailAccountRow[] = [];
     try {
       accounts = (await dbAll(
-        `SELECT * FROM tenant_email_accounts WHERE is_enabled = 1 ORDER BY last_checked_at ASC NULLS FIRST`,
+        `SELECT * FROM tenant_email_accounts WHERE is_enabled ORDER BY last_checked_at ASC NULLS FIRST`,
       )) as unknown as EmailAccountRow[];
     } catch (e: any) {
-      console.error('[EmailWorker] failed to load accounts:', e.message);
+      console.error('[Email] FATAL — failed to load accounts (schema issue?):', e.message, '\n', e.stack);
       return;
     }
 
+    console.log(`[Email] Cycle start — ${accounts.length} enabled account(s)`);
+    let cycleProcessed = 0, cycleSkipped = 0, cycleFailed = 0;
+
     for (const account of accounts) {
-      await processAccount(account).catch(e =>
-        console.error(`[EmailWorker] unhandled error for ${account.email_address}:`, e.message),
-      );
+      const stats = await processAccount(account);
+      cycleProcessed += stats.processed;
+      cycleSkipped   += stats.skipped;
+      cycleFailed    += stats.failed;
     }
+
+    console.log(`[Email] Cycle complete — ${cycleProcessed} processed, ${cycleSkipped} skipped, ${cycleFailed} failed`);
   });
   console.log('📧 Email worker started (polling every 60s)');
 }
