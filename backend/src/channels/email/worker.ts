@@ -24,7 +24,6 @@ function buildAdapter(account: EmailAccountRow): MailboxAdapter {
 async function findOrCreateConversation(
   tenantId: string,
   fromAddress: string,
-  subject: string,
   msg: InboundMessage,
 ): Promise<string> {
   const channelUserId = `email:${fromAddress.toLowerCase()}`;
@@ -52,11 +51,14 @@ async function findOrCreateConversation(
   if (existing) return existing.id;
 
   const id = crypto.randomUUID();
-  const now = new Date().toISOString();
+  // Use only columns that exist in hotel_conversations.
+  // guest_phone is NOT NULL so we store the email address there; subject stays in email_messages only.
   await dbRun(
-    `INSERT INTO hotel_conversations (id, tenant_id, channel, channel_user_id, subject, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?)`,
-    id, tenantId, 'email', channelUserId, subject, now, now,
+    `INSERT INTO hotel_conversations
+       (id, tenant_id, guest_phone, messages, channel, channel_user_id,
+        last_message, updated_at, last_guest_message_at)
+     VALUES (?,?,?,'[]','email',?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`,
+    id, tenantId, fromAddress.toLowerCase(), channelUserId,
   );
   return id;
 }
@@ -101,7 +103,7 @@ async function processMessage(
 
   // (d) Find or create conversation
   const conversationId = await findOrCreateConversation(
-    account.tenant_id, msg.from.address, msg.subject, msg,
+    account.tenant_id, msg.from.address, msg,
   );
 
   // (e) Insert inbound email_messages row (UNIQUE fence — safe to race)
