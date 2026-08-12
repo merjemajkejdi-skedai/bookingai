@@ -94,9 +94,9 @@ async function processMessage(
     return 'skipped-safety';
   }
 
-  // (c) Clean body
+  // (c) Clean body — reject empty or suspiciously short (< 5 chars)
   const cleanedBody = cleanBody(msg.bodyText, msg.bodyHtml);
-  if (!cleanedBody.trim()) {
+  if (cleanedBody.trim().length < 5) {
     await adapter.moveMessage(msg.providerRef, account.failed_folder_path);
     return 'skipped-empty';
   }

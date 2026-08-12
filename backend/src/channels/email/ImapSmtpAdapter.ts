@@ -209,26 +209,61 @@ function getHeader(rawHeaders: string, name: string): string | undefined {
   return m?.[1]?.trim();
 }
 
+function decodeQuotedPrintable(text: string): string {
+  return text
+    .replace(/=\r\n/g, '')
+    .replace(/=\n/g, '')
+    .replace(/=([0-9A-Fa-f]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+}
+
+function decodeTransferEncoding(body: string, encoding: string): string {
+  const enc = encoding.toLowerCase().trim();
+  if (enc === 'quoted-printable') return decodeQuotedPrintable(body);
+  if (enc === 'base64') {
+    try { return Buffer.from(body.replace(/\s/g, ''), 'base64').toString('utf8'); } catch { return body; }
+  }
+  return body;
+}
+
 function extractTextParts(rawBody: string, rawHeaders: string): { text?: string; html?: string } {
   const contentType = getHeader(rawHeaders, 'Content-Type') ?? '';
+  const encoding    = getHeader(rawHeaders, 'Content-Transfer-Encoding') ?? '';
+
   if (!contentType.toLowerCase().includes('multipart')) {
-    if (contentType.toLowerCase().includes('text/html')) return { html: rawBody };
-    return { text: rawBody };
+    const decoded = decodeTransferEncoding(rawBody, encoding);
+    if (contentType.toLowerCase().includes('text/html')) return { html: decoded };
+    return { text: decoded };
   }
+
   const boundaryMatch = /boundary="?([^";\r\n]+)"?/i.exec(contentType);
   if (!boundaryMatch) return { text: rawBody };
   const boundary = boundaryMatch[1].trim();
+
   const parts = rawBody.split(`--${boundary}`);
   let text: string | undefined;
   let html: string | undefined;
+
   for (const part of parts) {
+    // Skip preamble, epilogue, and the closing --boundary-- marker
+    if (part.trim() === '' || part.trimStart().startsWith('--')) continue;
+
     const sep = part.indexOf('\r\n\r\n');
     if (sep < 0) continue;
-    const ph = part.slice(0, sep);
-    const pb = part.slice(sep + 4);
-    const ct = (getHeader(ph, 'Content-Type') ?? '').toLowerCase();
-    if (ct.includes('text/plain') && !text) text = pb.replace(/=\r\n/g, '').trim();
-    if (ct.includes('text/html')  && !html) html = pb.replace(/=\r\n/g, '').trim();
+    const partHeaders = part.slice(0, sep);
+    const partBody    = part.slice(sep + 4).replace(/\r\n$/, ''); // strip trailing CRLF
+
+    const partCt  = (getHeader(partHeaders, 'Content-Type') ?? '').toLowerCase();
+    const partEnc = getHeader(partHeaders, 'Content-Transfer-Encoding') ?? '';
+
+    if (partCt.startsWith('multipart/')) {
+      const inner = extractTextParts(partBody, partHeaders);
+      if (!text && inner.text) text = inner.text;
+      if (!html  && inner.html) html = inner.html;
+    } else if (partCt.startsWith('text/plain') && !text) {
+      text = decodeTransferEncoding(partBody, partEnc).trim();
+    } else if (partCt.startsWith('text/html') && !html) {
+      html = decodeTransferEncoding(partBody, partEnc).trim();
+    }
   }
   return { text, html };
 }

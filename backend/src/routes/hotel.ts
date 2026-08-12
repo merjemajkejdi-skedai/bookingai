@@ -990,7 +990,10 @@ hotelRouter.get('/conversations', requireAuth, async (req: Request, res: Respons
          g.check_out,
          g.status       AS guest_status,
          g.survey_sent,
-         g.survey_score
+         g.survey_score,
+         em.subject      AS email_subject,
+         em.from_address AS email_from_address,
+         em.from_name    AS email_from_name
        FROM hotel_conversations c
        LEFT JOIN hotel_guest_stays g
          ON g.id = (
@@ -1005,6 +1008,11 @@ hotelRouter.get('/conversations', requireAuth, async (req: Request, res: Respons
              created_at DESC
            LIMIT 1
          )
+       LEFT JOIN email_messages em ON c.channel = 'email' AND em.id = (
+         SELECT id FROM email_messages
+         WHERE conversation_id = c.id AND direction = 'inbound'
+         ORDER BY created_at ASC LIMIT 1
+       )
        WHERE c.tenant_id = ?
        ORDER BY c.updated_at DESC
        LIMIT 100`,

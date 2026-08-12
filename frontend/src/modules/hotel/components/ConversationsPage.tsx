@@ -401,11 +401,14 @@ function ThreadPanel({
             <p className="text-sm font-semibold text-slate-800 truncate">
               {conv.channel === 'instagram'
                 ? igDisplayName(conv)
-                : (conv.guest_name ?? displayPhone(conv.guest_phone))}
+                : conv.channel === 'email'
+                  ? (conv.email_from_name ?? conv.email_from_address ?? displayPhone(conv.guest_phone))
+                  : (conv.guest_name ?? displayPhone(conv.guest_phone))}
             </p>
             <p className="text-xs text-slate-400 truncate">
-              {displayPhone(conv.guest_phone)}
-              {conv.room_number && ` · Room ${conv.room_number}`}
+              {conv.channel === 'email'
+                ? (conv.email_subject ? `Re: ${conv.email_subject}` : conv.email_from_address ?? displayPhone(conv.guest_phone))
+                : `${displayPhone(conv.guest_phone)}${conv.room_number ? ` · Room ${conv.room_number}` : ''}`}
             </p>
           </div>
         </div>
@@ -542,7 +545,7 @@ function ThreadPanel({
           </Button>
         </div>
         <p className="text-[10px] text-slate-400 mt-1 ml-1">
-          Message sent via {conv.channel === 'instagram' ? 'Instagram' : 'WhatsApp'} as <span className="font-medium">Front Office</span>
+          Message sent via {conv.channel === 'instagram' ? 'Instagram' : conv.channel === 'email' ? 'Email' : 'WhatsApp'} as <span className="font-medium">Front Office</span>
         </p>
       </div>
     </div>
@@ -859,7 +862,10 @@ export function ConversationsPage({ surveyEnabled = false, addToFaqEnabled = fal
     return !q
       || (c.guest_name ?? '').toLowerCase().includes(q)
       || displayPhone(c.guest_phone).includes(q)
-      || (c.room_number ?? '').includes(q);
+      || (c.room_number ?? '').includes(q)
+      || (c.email_from_address ?? '').toLowerCase().includes(q)
+      || (c.email_from_name ?? '').toLowerCase().includes(q)
+      || (c.email_subject ?? '').toLowerCase().includes(q);
   });
 
   // If a conv is selected, show the thread panel full-width
@@ -971,12 +977,19 @@ export function ConversationsPage({ surveyEnabled = false, addToFaqEnabled = fal
                             isUnread ? 'font-bold text-slate-900' : 'font-semibold text-slate-800',
                           )}>
                             {c.channel === 'instagram'
-                            ? igDisplayName(c)
-                            : (c.guest_name ?? displayPhone(c.guest_phone))}
+                              ? igDisplayName(c)
+                              : c.channel === 'email'
+                                ? (c.email_from_name ?? c.email_from_address ?? displayPhone(c.guest_phone))
+                                : (c.guest_name ?? displayPhone(c.guest_phone))}
                           </span>
                           {c.channel === 'instagram' && (
                             <span className="text-[10px] font-semibold bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded flex-shrink-0">
                               📷 IG
+                            </span>
+                          )}
+                          {c.channel === 'email' && (
+                            <span className="text-[10px] font-semibold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded flex-shrink-0">
+                              📧 Email
                             </span>
                           )}
                           {c.room_number && (
@@ -991,20 +1004,28 @@ export function ConversationsPage({ surveyEnabled = false, addToFaqEnabled = fal
                           )}
                         </div>
                         <p className="text-xs text-slate-400 mb-1 truncate">
-                          {displayPhone(c.guest_phone)}
+                          {c.channel === 'email'
+                            ? (c.email_from_address ?? displayPhone(c.guest_phone))
+                            : displayPhone(c.guest_phone)}
                         </p>
-                        {preview && (
+                        {(preview || (c.channel === 'email' && c.email_subject)) && (
                           <p className={clsx(
                             'text-xs truncate',
                             isUnread ? 'text-slate-700 font-medium' : 'text-slate-500',
                           )}>
-                            <span className={clsx(
-                              'font-medium mr-1',
-                              isStaff ? 'text-blue-500' : isAI ? 'text-brand-500' : 'text-slate-400',
-                            )}>
-                              {isStaff ? 'You:' : isAI ? 'AI:' : ''}
-                            </span>
-                            {preview.content}
+                            {c.channel === 'email' && !preview
+                              ? c.email_subject
+                              : (
+                                <>
+                                  <span className={clsx(
+                                    'font-medium mr-1',
+                                    isStaff ? 'text-blue-500' : isAI ? 'text-brand-500' : 'text-slate-400',
+                                  )}>
+                                    {isStaff ? 'You:' : isAI ? 'AI:' : ''}
+                                  </span>
+                                  {preview?.content}
+                                </>
+                              )}
                           </p>
                         )}
                       </div>

@@ -106,6 +106,10 @@ export interface Conversation {
   channel?: string;
   channel_user_id?: string | null;
   guest_username?: string | null;
+  // Email-specific fields (populated only when channel = 'email')
+  email_subject?: string | null;
+  email_from_address?: string | null;
+  email_from_name?: string | null;
 }
 
 export interface ChannelSetting {
