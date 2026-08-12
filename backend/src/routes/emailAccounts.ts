@@ -122,6 +122,7 @@ emailAccountsRouter.put('/accounts/:id', requireAuth, async (req: Request, res: 
     'display_name', 'imap_host', 'imap_port', 'imap_secure',
     'imap_username', 'smtp_host', 'smtp_port', 'smtp_secure', 'smtp_username',
     'watch_folder_path', 'answered_folder_path', 'failed_folder_path', 'sent_folder_path',
+    'is_enabled', 'ai_enabled',
   ];
   const updates = allowed.filter(f => b[f] !== undefined);
 
