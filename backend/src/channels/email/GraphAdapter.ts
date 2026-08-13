@@ -10,6 +10,11 @@ const GRAPH = 'https://graph.microsoft.com/v1.0/me';
 const TOKEN_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
 const SCOPES = 'offline_access Mail.ReadWrite Mail.Send User.Read';
 
+// Support both MICROSOFT_* (new) and MS_* (legacy) env var names
+const clientId     = () => (process.env.MICROSOFT_CLIENT_ID     || process.env.MS_CLIENT_ID)!;
+const clientSecret = () => (process.env.MICROSOFT_CLIENT_SECRET || process.env.MS_CLIENT_SECRET)!;
+const redirectUri  = () => (process.env.MICROSOFT_REDIRECT_URI  || process.env.MS_REDIRECT_URI)!;
+
 export class GraphAdapter implements MailboxAdapter {
   readonly capabilities: AdapterCapabilities = { autoSavesSent: true };
 
@@ -25,16 +30,14 @@ export class GraphAdapter implements MailboxAdapter {
   // OAuth helpers
   // ---------------------------------------------------------------------------
 
-  static authUrl(tenantId: string, state: string): string {
-    const clientId = process.env.MS_CLIENT_ID!;
-    const redirect = process.env.MS_REDIRECT_URI!;
+  static authUrl(tenantId: string, nonce: string): string {
     const params = new URLSearchParams({
-      client_id:     clientId,
+      client_id:     clientId(),
       response_type: 'code',
-      redirect_uri:  redirect,
+      redirect_uri:  redirectUri(),
       response_mode: 'query',
       scope:         SCOPES,
-      state:         JSON.stringify({ tenantId, state }),
+      state:         JSON.stringify({ tenantId, nonce }),
     });
     return `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${params}`;
   }
@@ -49,9 +52,9 @@ export class GraphAdapter implements MailboxAdapter {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
-        client_id:     process.env.MS_CLIENT_ID!,
-        client_secret: process.env.MS_CLIENT_SECRET!,
-        redirect_uri:  process.env.MS_REDIRECT_URI!,
+        client_id:     clientId(),
+        client_secret: clientSecret(),
+        redirect_uri:  redirectUri(),
         grant_type:    'authorization_code',
         scope:         SCOPES,
         code,
@@ -74,18 +77,23 @@ export class GraphAdapter implements MailboxAdapter {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
-        client_id:     process.env.MS_CLIENT_ID!,
-        client_secret: process.env.MS_CLIENT_SECRET!,
+        client_id:     clientId(),
+        client_secret: clientSecret(),
         grant_type:    'refresh_token',
         scope:         SCOPES,
         refresh_token: refreshToken,
       }),
     });
-    if (!res.ok) throw new Error(`Token refresh failed: ${await res.text()}`);
+    if (!res.ok) {
+      // Mark account so the UI shows a reconnect prompt
+      const errSql = `UPDATE tenant_email_accounts SET last_error = 'oauth_refresh_failed', is_enabled = false WHERE id = ?`;
+      if (isPg) queryRun(errSql, [this.account.id]); else prepare(errSql).run(this.account.id);
+      throw new Error(`Token refresh failed: ${await res.text()}`);
+    }
     const tokens: any = await res.json();
     this.accessToken = tokens.access_token;
     const newExpiry = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
-    const sql = `UPDATE tenant_email_accounts SET oauth_access_token_encrypted = ?, oauth_expires_at = ? WHERE id = ?`;
+    const sql = `UPDATE tenant_email_accounts SET oauth_access_token_encrypted = ?, oauth_expires_at = ?, last_error = NULL WHERE id = ?`;
     const params = [encrypt(tokens.access_token), newExpiry, this.account.id];
     if (isPg) queryRun(sql, params); else prepare(sql).run(...params);
   }

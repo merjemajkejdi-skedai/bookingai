@@ -229,9 +229,9 @@ async function processMessage(
   const outboundSubject = msg.subject.startsWith('Re:') ? msg.subject : `Re: ${msg.subject}`;
   console.log(`[Email] Sending via Resend — from: noreply@skedai.net, to: ${msg.from.address}, reply_to: ${account.email_address}`);
   const resendResult = await getResend().emails.send({
-    from:     'SkedAI <noreply@skedai.net>',
-    to:       msg.from.address,
-    reply_to: account.email_address,
+    from:    'SkedAI <noreply@skedai.net>',
+    to:      msg.from.address,
+    replyTo: account.email_address,
     subject:  outboundSubject,
     text:     reply,
     headers: {

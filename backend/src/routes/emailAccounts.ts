@@ -222,70 +222,145 @@ emailAccountsRouter.get('/accounts/:id/folders', requireAuth, async (req: Reques
 });
 
 // ---------------------------------------------------------------------------
-// GET /hotel/email/oauth/microsoft  — start OAuth flow
+// GET /hotel/email/oauth/microsoft/start  — initiate OAuth (no auth; popup navigation)
 // ---------------------------------------------------------------------------
-emailAccountsRouter.get('/oauth/microsoft', requireAuth, async (req: Request, res: Response) => {
-  const tenantId = resolveTenantId(req);
-  const state = crypto.randomBytes(16).toString('hex');
-  const url = GraphAdapter.authUrl(tenantId, state);
-  res.redirect(url);
+emailAccountsRouter.get('/oauth/microsoft/start', async (req: Request, res: Response) => {
+  const tenantId = (req.query.tenantId as string | undefined)?.trim();
+  if (!tenantId) return res.status(400).send('Missing tenantId');
+  const nonce = crypto.randomBytes(16).toString('hex');
+  res.redirect(GraphAdapter.authUrl(tenantId, nonce));
 });
 
 // ---------------------------------------------------------------------------
-// GET /hotel/email/oauth/callback  — exchange code, store encrypted tokens
+// GET /hotel/email/oauth/microsoft  — legacy start (auth-header flow, kept for compat)
+// ---------------------------------------------------------------------------
+emailAccountsRouter.get('/oauth/microsoft', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const nonce = crypto.randomBytes(16).toString('hex');
+  res.redirect(GraphAdapter.authUrl(tenantId, nonce));
+});
+
+// ---------------------------------------------------------------------------
+// GET /hotel/email/oauth/callback  — exchange code, store tokens, postMessage to opener
 // ---------------------------------------------------------------------------
 emailAccountsRouter.get('/oauth/callback', async (req: Request, res: Response) => {
   const { code, state, error: oauthError } = req.query as Record<string, string>;
-  if (oauthError) return res.send(`OAuth error: ${oauthError}`);
-  if (!code || !state) return res.send('Missing code or state');
+
+  function postMessageHtml(payload: Record<string, unknown>) {
+    const json = JSON.stringify(payload).replace(/</g, '\\u003c');
+    return `<!DOCTYPE html><html><head><title>SkedAI</title></head><body>
+<script>
+try { window.opener && window.opener.postMessage(${json}, '*'); } catch(e) {}
+setTimeout(function(){ window.close(); }, 200);
+</script>
+<p style="font-family:sans-serif;text-align:center;margin-top:3rem">
+${payload.type === 'oauth_success' ? 'Connected! You can close this window.' : 'Error: ' + (payload.error ?? 'Unknown')}
+</p></body></html>`;
+  }
+
+  if (oauthError) {
+    return res.send(postMessageHtml({ type: 'oauth_error', error: oauthError }));
+  }
+  if (!code || !state) {
+    return res.send(postMessageHtml({ type: 'oauth_error', error: 'Missing code or state' }));
+  }
 
   let tenantId: string;
   try {
     const parsed = JSON.parse(state);
     tenantId = parsed.tenantId;
+    if (!tenantId) throw new Error('no tenantId in state');
   } catch {
-    return res.send('Invalid state parameter');
+    return res.send(postMessageHtml({ type: 'oauth_error', error: 'Invalid state parameter' }));
   }
 
   const credKey = process.env.EMAIL_CRED_KEY;
   if (!credKey || !/^[0-9a-fA-F]{64}$/.test(credKey)) {
-    return res.send('EMAIL_CRED_KEY not configured on server — OAuth cannot complete');
+    return res.send(postMessageHtml({ type: 'oauth_error', error: 'EMAIL_CRED_KEY not configured on server' }));
   }
 
   try {
     const tokens = await GraphAdapter.exchangeCode(code);
 
-    const userRes = await fetch('https://graph.microsoft.com/v1.0/me?$select=mail,displayName', {
+    const userRes = await fetch('https://graph.microsoft.com/v1.0/me?$select=id,mail,userPrincipalName,displayName', {
       headers: { Authorization: `Bearer ${tokens.access_token}` },
     });
     const user: any = await userRes.json();
-    const emailAddress = (user.mail ?? '').toLowerCase().trim();
-    if (!emailAddress) return res.send('Could not determine email address from Microsoft account');
+    const emailAddress = (user.mail || user.userPrincipalName || '').toLowerCase().trim();
+    const microsoftUserId = user.id ?? null;
+    if (!emailAddress) {
+      return res.send(postMessageHtml({ type: 'oauth_error', error: 'Could not determine email from Microsoft account' }));
+    }
 
     const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
     const id = crypto.randomUUID();
-    await dbRun(
-      `INSERT INTO tenant_email_accounts
-         (id, tenant_id, provider, email_address, display_name,
-          oauth_access_token_encrypted, oauth_refresh_token_encrypted, oauth_expires_at,
-          watch_folder_path, answered_folder_path, failed_folder_path, sent_folder_path,
-          is_enabled, ai_enabled)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-       ON CONFLICT (tenant_id, email_address) DO UPDATE SET
-         oauth_access_token_encrypted = excluded.oauth_access_token_encrypted,
-         oauth_refresh_token_encrypted = excluded.oauth_refresh_token_encrypted,
-         oauth_expires_at = excluded.oauth_expires_at`,
-      id, tenantId, 'graph', emailAddress, user.displayName ?? emailAddress,
-      encrypt(tokens.access_token), encrypt(tokens.refresh_token),
-      expiresAt,
-      'SkedAI', 'SkedAI/Answered', 'SkedAI/Failed', 'Sent', false, false,
-    );
 
-    const appUrl = process.env.APP_URL ?? 'https://app.skedai.net';
-    res.redirect(`${appUrl}?oauth_success=email`);
+    if (isPg) {
+      await dbRun(
+        `INSERT INTO tenant_email_accounts
+           (id, tenant_id, provider, email_address, display_name,
+            oauth_access_token_encrypted, oauth_refresh_token_encrypted,
+            oauth_expires_at, microsoft_user_id,
+            watch_folder_path, answered_folder_path, failed_folder_path, sent_folder_path,
+            is_enabled, ai_enabled)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         ON CONFLICT (tenant_id, email_address) DO UPDATE SET
+           provider = 'graph',
+           oauth_access_token_encrypted  = excluded.oauth_access_token_encrypted,
+           oauth_refresh_token_encrypted = excluded.oauth_refresh_token_encrypted,
+           oauth_expires_at              = excluded.oauth_expires_at,
+           microsoft_user_id             = excluded.microsoft_user_id,
+           last_error                    = NULL,
+           updated_at                    = NOW()`,
+        id, tenantId, 'graph', emailAddress, user.displayName ?? emailAddress,
+        encrypt(tokens.access_token), encrypt(tokens.refresh_token),
+        expiresAt, microsoftUserId,
+        'SkedAI', 'SkedAI/Answered', 'SkedAI/Failed', 'Sent',
+        false, false,
+      );
+    } else {
+      // SQLite — upsert manually
+      const existing = await dbGet(
+        'SELECT id FROM tenant_email_accounts WHERE tenant_id = ? AND email_address = ?',
+        tenantId, emailAddress,
+      ) as any;
+      if (existing) {
+        await dbRun(
+          `UPDATE tenant_email_accounts SET
+             provider = 'graph',
+             oauth_access_token_encrypted  = ?,
+             oauth_refresh_token_encrypted = ?,
+             oauth_expires_at              = ?,
+             microsoft_user_id             = ?,
+             last_error                    = NULL,
+             updated_at                    = CURRENT_TIMESTAMP
+           WHERE tenant_id = ? AND email_address = ?`,
+          encrypt(tokens.access_token), encrypt(tokens.refresh_token),
+          expiresAt, microsoftUserId, tenantId, emailAddress,
+        );
+      } else {
+        await dbRun(
+          `INSERT INTO tenant_email_accounts
+             (id, tenant_id, provider, email_address, display_name,
+              oauth_access_token_encrypted, oauth_refresh_token_encrypted,
+              oauth_expires_at, microsoft_user_id,
+              watch_folder_path, answered_folder_path, failed_folder_path, sent_folder_path,
+              is_enabled, ai_enabled)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          id, tenantId, 'graph', emailAddress, user.displayName ?? emailAddress,
+          encrypt(tokens.access_token), encrypt(tokens.refresh_token),
+          expiresAt, microsoftUserId,
+          'SkedAI', 'SkedAI/Answered', 'SkedAI/Failed', 'Sent',
+          false, false,
+        );
+      }
+    }
+
+    console.log(`[EmailOAuth] Connected Microsoft account ${emailAddress} for tenant ${tenantId}`);
+    res.send(postMessageHtml({ type: 'oauth_success', email: emailAddress }));
   } catch (e: any) {
     console.error('[EmailOAuth] callback error:', e.message, '\n', e.stack);
-    res.send(`OAuth callback error: ${e.message}`);
+    res.send(postMessageHtml({ type: 'oauth_error', error: e.message }));
   }
 });
 

@@ -1485,6 +1485,10 @@ export async function runMigrations() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`).catch((e: any) => console.warn('email_002c skipped:', e.message));
 
+    // email_003: add microsoft_user_id column
+    await pool.query(`ALTER TABLE tenant_email_accounts ADD COLUMN IF NOT EXISTS microsoft_user_id TEXT`)
+      .catch((e: any) => console.warn('email_003 skipped:', e.message));
+
     // email_004: consolidate duplicate email conversations (one per sender per tenant)
     await pool.query(`
       UPDATE email_messages AS em
@@ -2013,6 +2017,12 @@ export async function runMigrations() {
       created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
     )`);
   }
+
+  // email_003: add microsoft_user_id if missing
+  const emailAccCols3 = prepare("SELECT name FROM pragma_table_info('tenant_email_accounts')")
+    .all().map((r: any) => r.name as string);
+  if (!emailAccCols3.includes('microsoft_user_id'))
+    exec('ALTER TABLE tenant_email_accounts ADD COLUMN microsoft_user_id TEXT');
 
   // email_004: consolidate duplicate email conversations (SQLite — idempotent)
   try {

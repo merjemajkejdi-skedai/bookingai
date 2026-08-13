@@ -343,6 +343,8 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
   const [emailForm, setEmailForm]             = useState<Record<string, string>>({});
   const [emailSaving, setEmailSaving]         = useState(false);
   const [emailError, setEmailError]           = useState('');
+  const [emailProvider, setEmailProvider]     = useState<'imap' | 'microsoft'>('imap');
+  const [emailOauthLoading, setEmailOauthLoading] = useState(false);
   const [saving, setSaving]                   = useState(false);
   const [error, setError]                     = useState('');
 
@@ -407,6 +409,34 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
       await adminApi.deleteEmailAccount(tenant.id, accountId);
       setEmailAccounts(prev => prev.filter((a: any) => a.id !== accountId));
     } catch (e: any) { setError(e.message); }
+  }
+
+  function handleMicrosoftConnect(reconnectFor?: string) {
+    setEmailOauthLoading(true);
+    setEmailError('');
+    const base = (import.meta.env.VITE_API_URL as string) ?? '';
+    const oauthUrl = `${base}/hotel/email/oauth/microsoft/start?tenantId=${encodeURIComponent(tenant.id)}`;
+    const popup = window.open(oauthUrl, '_blank', 'width=600,height=700,left=200,top=100');
+
+    const handler = (event: MessageEvent) => {
+      if (event.data?.type === 'oauth_success') {
+        window.removeEventListener('message', handler);
+        setEmailOauthLoading(false);
+        setEmailFormOpen(false);
+        setEmailProvider('imap');
+        adminApi.getEmailAccounts(tenant.id).then(setEmailAccounts).catch(() => {});
+      } else if (event.data?.type === 'oauth_error') {
+        window.removeEventListener('message', handler);
+        setEmailOauthLoading(false);
+        setEmailError(event.data.error ?? 'Microsoft connection failed');
+      }
+    };
+    window.addEventListener('message', handler);
+    setTimeout(() => {
+      window.removeEventListener('message', handler);
+      setEmailOauthLoading(false);
+      if (popup && !popup.closed) popup.close();
+    }, 5 * 60 * 1000);
   }
 
   async function handleInstagramDisconnect() {
@@ -715,7 +745,7 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
                       </span>
                     </div>
                     <button type="button"
-                      onClick={() => { setEmailFormOpen(v => !v); setEmailError(''); setEmailForm({}); }}
+                      onClick={() => { setEmailFormOpen(v => !v); setEmailError(''); setEmailForm({}); setEmailProvider('imap'); }}
                       className="text-xs font-medium text-indigo-600 hover:text-indigo-800">
                       {emailFormOpen ? 'Cancel ▲' : 'Add ▼'}
                     </button>
@@ -745,6 +775,17 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
                             className="text-[10px] text-red-400 hover:text-red-600 ml-1 font-bold">✕</button>
                         </div>
                       </div>
+                      {acct.provider === 'graph' && acct.last_error === 'oauth_refresh_failed' && (
+                        <div className="mt-1.5 flex items-center gap-2 p-1.5 bg-amber-50 border border-amber-200 rounded">
+                          <span className="text-[10px] text-amber-700 font-medium">⚠ Token expired — reconnect needed</span>
+                          <button type="button"
+                            onClick={() => handleMicrosoftConnect(acct.id)}
+                            disabled={emailOauthLoading}
+                            className="text-[10px] text-indigo-600 hover:text-indigo-800 font-semibold underline disabled:opacity-50">
+                            {emailOauthLoading ? 'Connecting…' : 'Reconnect Microsoft'}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
 
@@ -754,26 +795,60 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
                         <p className="font-medium">How replies are sent</p>
                         <p>AI replies go out from <strong>noreply@skedai.net</strong> via SkedAI. The Reply-To header is set to your email address, so when a guest replies it lands back in your inbox.</p>
                       </div>
-                      <p className="text-xs font-medium text-slate-600">Gmail: use an App Password (Google Account → Security → App passwords)</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        <Input label="Email address" type="email" required {...ef('email_address')} />
-                        <Input label="Display name" {...ef('display_name')} />
+
+                      {/* Provider radio */}
+                      <div className="flex gap-4">
+                        {(['imap', 'microsoft'] as const).map(p => (
+                          <label key={p} className="flex items-center gap-1.5 cursor-pointer">
+                            <input type="radio" name="emailProvider" value={p}
+                              checked={emailProvider === p}
+                              onChange={() => setEmailProvider(p)}
+                              className="accent-indigo-600" />
+                            <span className="text-xs text-slate-700">
+                              {p === 'imap' ? 'IMAP / Gmail' : 'Microsoft 365 / Outlook'}
+                            </span>
+                          </label>
+                        ))}
                       </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <Input label="IMAP host" required placeholder="imap.gmail.com" {...ef('imap_host')} />
-                        <Input label="IMAP port" placeholder="993" {...ef('imap_port')} />
-                      </div>
-                      <Input label="Username" placeholder="same as email" {...ef('username')} />
-                      <Input label="Password / App password" type="password" required {...ef('password')} />
+
+                      {emailProvider === 'imap' && (<>
+                        <p className="text-xs font-medium text-slate-600">Gmail: use an App Password (Google Account → Security → App passwords)</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <Input label="Email address" type="email" required {...ef('email_address')} />
+                          <Input label="Display name" {...ef('display_name')} />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <Input label="IMAP host" required placeholder="imap.gmail.com" {...ef('imap_host')} />
+                          <Input label="IMAP port" placeholder="993" {...ef('imap_port')} />
+                        </div>
+                        <Input label="Username" placeholder="same as email" {...ef('username')} />
+                        <Input label="Password / App password" type="password" required {...ef('password')} />
+                      </>)}
+
+                      {emailProvider === 'microsoft' && (
+                        <div className="py-2 text-center space-y-2">
+                          <p className="text-xs text-slate-500">Sign in with your Microsoft / Outlook account. We'll only access your SkedAI inbox folder.</p>
+                          <button type="button"
+                            onClick={() => handleMicrosoftConnect()}
+                            disabled={emailOauthLoading}
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#2f2f2f] text-white text-xs font-medium hover:bg-black disabled:opacity-50 transition-colors">
+                            <svg width="16" height="16" viewBox="0 0 21 21" fill="none"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>
+                            {emailOauthLoading ? 'Connecting…' : 'Sign in with Microsoft'}
+                          </button>
+                        </div>
+                      )}
+
                       {emailError && <p className="text-xs text-red-500">{emailError}</p>}
                       <div className="flex justify-end gap-2 pt-1">
                         <Button variant="ghost" size="sm"
-                          onClick={() => { setEmailFormOpen(false); setEmailError(''); }}>
+                          onClick={() => { setEmailFormOpen(false); setEmailError(''); setEmailProvider('imap'); }}>
                           Cancel
                         </Button>
-                        <Button size="sm" onClick={handleEmailCreate} disabled={emailSaving}>
-                          {emailSaving ? 'Saving…' : 'Save & Connect'}
-                        </Button>
+                        {emailProvider === 'imap' && (
+                          <Button size="sm" onClick={handleEmailCreate} disabled={emailSaving}>
+                            {emailSaving ? 'Saving…' : 'Save & Connect'}
+                          </Button>
+                        )}
                       </div>
                     </div>
                   )}

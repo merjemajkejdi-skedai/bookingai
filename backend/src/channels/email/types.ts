@@ -98,6 +98,7 @@ export interface EmailAccountRow {
   oauth_refresh_token_encrypted?: string;
   oauth_expires_at?: string;
   oauth_scope?: string;
+  microsoft_user_id?: string;
   watch_folder_path: string;
   watch_folder_ref?: string;
   answered_folder_path: string;
