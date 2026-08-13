@@ -227,6 +227,7 @@ async function processMessage(
   //     reply_to: customer's mailbox so guest replies land back in their inbox.
   const referencesChain = [msg.references, msg.rfc822MessageId].filter(Boolean).join(' ');
   const outboundSubject = msg.subject.startsWith('Re:') ? msg.subject : `Re: ${msg.subject}`;
+  console.log(`[Email] Sending via Resend — from: noreply@skedai.net, to: ${msg.from.address}, reply_to: ${account.email_address}`);
   const resendResult = await getResend().emails.send({
     from:     'SkedAI <noreply@skedai.net>',
     to:       msg.from.address,
@@ -332,7 +333,7 @@ async function processAccount(account: EmailAccountRow): Promise<{ processed: nu
 // Public — called from index.ts after runMigrations()
 // ---------------------------------------------------------------------------
 export function startEmailWorker(): void {
-  cron.schedule('* * * * *', async () => {
+  cron.schedule('*/2 * * * *', async () => {
     let accounts: EmailAccountRow[] = [];
     try {
       accounts = (await dbAll(
@@ -342,6 +343,8 @@ export function startEmailWorker(): void {
       console.error('[Email] FATAL — failed to load accounts (schema issue?):', e.message, '\n', e.stack);
       return;
     }
+
+    if (accounts.length === 0) return;
 
     console.log(`[Email] Cycle start — ${accounts.length} enabled account(s)`);
     let cycleProcessed = 0, cycleSkipped = 0, cycleFailed = 0;
@@ -355,5 +358,5 @@ export function startEmailWorker(): void {
 
     console.log(`[Email] Cycle complete — ${cycleProcessed} processed, ${cycleSkipped} skipped, ${cycleFailed} failed`);
   });
-  console.log('📧 Email worker started (polling every 60s)');
+  console.log('📧 Email worker started (polling every 120s)');
 }
