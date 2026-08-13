@@ -382,8 +382,8 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
   }
 
   async function handleEmailCreate() {
-    if (!emailForm.email_address || !emailForm.imap_host || !emailForm.smtp_host || !emailForm.password) {
-      setEmailError('Email, IMAP host, SMTP host and password are required');
+    if (!emailForm.email_address || !emailForm.imap_host || !emailForm.password) {
+      setEmailError('Email address, IMAP host and password are required');
       return;
     }
     setEmailSaving(true); setEmailError('');
@@ -750,6 +750,10 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
 
                   {emailFormOpen && (
                     <div className="mt-2 p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
+                      <div className="p-2 bg-blue-50 border border-blue-100 rounded text-[11px] text-blue-700 space-y-0.5">
+                        <p className="font-medium">How replies are sent</p>
+                        <p>AI replies go out from <strong>noreply@skedai.net</strong> via SkedAI. The Reply-To header is set to your email address, so when a guest replies it lands back in your inbox.</p>
+                      </div>
                       <p className="text-xs font-medium text-slate-600">Gmail: use an App Password (Google Account → Security → App passwords)</p>
                       <div className="grid grid-cols-2 gap-2">
                         <Input label="Email address" type="email" required {...ef('email_address')} />
@@ -758,10 +762,6 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
                       <div className="grid grid-cols-2 gap-2">
                         <Input label="IMAP host" required placeholder="imap.gmail.com" {...ef('imap_host')} />
                         <Input label="IMAP port" placeholder="993" {...ef('imap_port')} />
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <Input label="SMTP host" required placeholder="smtp.gmail.com" {...ef('smtp_host')} />
-                        <Input label="SMTP port" placeholder="587" {...ef('smtp_port')} />
                       </div>
                       <Input label="Username" placeholder="same as email" {...ef('username')} />
                       <Input label="Password / App password" type="password" required {...ef('password')} />

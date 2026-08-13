@@ -1,5 +1,6 @@
 import cron from 'node-cron';
 import crypto from 'crypto';
+import { Resend } from 'resend';
 import { isPg, prepare, query, queryOne, queryRun } from '../../db/database.js';
 import { runHotelAgent } from '../../hotel/agent.js';
 import { ImapSmtpAdapter } from './ImapSmtpAdapter.js';
@@ -7,6 +8,13 @@ import { GraphAdapter } from './GraphAdapter.js';
 import { cleanBody } from './bodyClean.js';
 import { safetyCheck } from './safetyChecks.js';
 import type { EmailAccountRow, InboundMessage, MailboxAdapter } from './types.js';
+
+// Railway blocks outbound SMTP (587 / 465) — all replies go through Resend instead.
+let _resend: Resend | null = null;
+function getResend(): Resend {
+  if (!_resend) _resend = new Resend(process.env.RESEND_API_KEY);
+  return _resend;
+}
 
 async function dbAll(sql: string, ...p: unknown[]) { return isPg ? query(sql, p) : prepare(sql).all(...p); }
 async function dbGet(sql: string, ...p: unknown[]) { return isPg ? queryOne(sql, p) : prepare(sql).get(...p); }
@@ -214,23 +222,30 @@ async function processMessage(
     );
   }
 
-  // (h) Send reply
+  // (h) Send reply via Resend — Railway blocks outbound SMTP on 587 and 465.
+  //     from:     SkedAI sender (verified on Resend); we cannot send as the customer's Gmail.
+  //     reply_to: customer's mailbox so guest replies land back in their inbox.
   const referencesChain = [msg.references, msg.rfc822MessageId].filter(Boolean).join(' ');
-  const sendResult = await adapter.sendReply({
-    to:                    msg.from,
-    from:                  { address: account.email_address, name: account.display_name },
-    subject:               msg.subject,
-    bodyText:              reply,
-    inReplyToMessageId:    msg.rfc822MessageId,
-    referencesChain,
+  const outboundSubject = msg.subject.startsWith('Re:') ? msg.subject : `Re: ${msg.subject}`;
+  const resendResult = await getResend().emails.send({
+    from:     'SkedAI <noreply@skedai.net>',
+    to:       msg.from.address,
+    reply_to: account.email_address,
+    subject:  outboundSubject,
+    text:     reply,
+    headers: {
+      'In-Reply-To': msg.rfc822MessageId,
+      'References':  referencesChain,
+    },
   });
-
-  // (i) Append to Sent if adapter cannot do it automatically
-  if (!adapter.capabilities.autoSavesSent && sendResult.rawMime) {
-    try { await adapter.appendToSent(sendResult.rawMime, new Date()); } catch (e: any) {
-      console.warn(`[Email] ${account.email_address} — appendToSent failed (non-fatal): ${e.message}`);
-    }
+  if (resendResult.error || !resendResult.data) {
+    throw new Error(`Resend send failed: ${resendResult.error?.message ?? 'unknown error'}`);
   }
+  const sentMessageId = `<${resendResult.data.id}@resend.dev>`;
+
+  // (i) appendToSent is not available — Resend has no access to the account's Sent folder.
+  //     Phase 1 known limitation: sent replies are visible in the Resend dashboard only.
+  console.log(`[Email] ${account.email_address} — reply sent via Resend (${sentMessageId})`);
 
   // (j) Insert outbound email_messages row
   await dbRun(
@@ -239,12 +254,12 @@ async function processMessage(
         in_reply_to, references_header, from_address, from_name, to_address, subject, body_text, sent_message_id)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     crypto.randomUUID(), account.tenant_id, account.id, conversationId, 'outbound',
-    sendResult.sentMessageId,
+    sentMessageId,
     msg.rfc822MessageId, referencesChain,
-    account.email_address, account.display_name,
+    'noreply@skedai.net', 'SkedAI',
     msg.from.address,
-    msg.subject.startsWith('Re:') ? msg.subject : `Re: ${msg.subject}`,
-    reply, sendResult.sentMessageId,
+    outboundSubject,
+    reply, sentMessageId,
   );
 
   // (k) Move original to Answered
