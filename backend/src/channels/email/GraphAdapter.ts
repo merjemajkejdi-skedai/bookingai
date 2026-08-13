@@ -187,8 +187,9 @@ export class GraphAdapter implements MailboxAdapter {
 
   async fetchMessages(folderPath: string, limit = 20): Promise<InboundMessage[]> {
     const folderId = await this.ensureHierarchy(folderPath);
-    const fields = 'id,subject,from,toRecipients,receivedDateTime,internetMessageId,conversationId,body,internetMessageHeaders,hasAttachments';
+    const fields = 'id,subject,from,toRecipients,ccRecipients,receivedDateTime,body,internetMessageId,conversationId,internetMessageHeaders';
     const data = await this.gFetch(`/mailFolders/${folderId}/messages?$top=${limit}&$select=${fields}`);
+    console.log(`[Email] ${this.account.email_address} — Graph returned ${data?.value?.length ?? 0} messages in folder`);
     const messages: InboundMessage[] = [];
     for (const m of data?.value ?? []) {
       const headers = (m.internetMessageHeaders ?? []).map((h: any) => `${h.name}: ${h.value}`).join('\r\n');
