@@ -100,6 +100,8 @@ export async function saveGuestMessage(
   userMessage: string,
   roomNumber?: string | null,
 ): Promise<void> {
+  // Email conversations are managed entirely by the email worker — skip
+  if (phone.startsWith('email:')) return;
   const now = new Date().toISOString();
   try {
     // Read current messages from DB (not in-memory — in-memory may lag during
@@ -148,6 +150,8 @@ export async function saveHotelConversation(
   assistantReply: string,
   roomNumber?: string | null,
 ): Promise<void> {
+  // Email conversations are managed entirely by the email worker — skip
+  if (phone.startsWith('email:')) return;
   const key = `${tenantId}:${phone}`;
   const existing = sessions.get(key);
   const now = new Date().toISOString();

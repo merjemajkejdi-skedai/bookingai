@@ -2047,6 +2047,23 @@ export async function runMigrations() {
 // Called once at startup after runMigrations(). Idempotent.
 // ---------------------------------------------------------------------------
 export async function backfillEmailBodies(): Promise<void> {
+  // Delete conversations created by the AI agent with the email: prefix in guest_phone.
+  // These are orphan rows: no email_messages reference them, and they are not real email
+  // conversations (channel IS NULL). Root cause was agent calling saveGuestMessage with
+  // 'email:addr' before the guard was added — fixed in session.ts.
+  try {
+    const agentOrphanSql = `DELETE FROM hotel_conversations
+                            WHERE guest_phone LIKE 'email:%'
+                              AND (channel IS NULL OR channel != 'email')`;
+    if (isPg) {
+      await queryRun(agentOrphanSql, []);
+    } else {
+      prepare(agentOrphanSql).run();
+    }
+  } catch (e: any) {
+    console.warn('[Email] backfill: agent-orphan cleanup failed:', e.message);
+  }
+
   let rows: any[];
   try {
     rows = (await (isPg

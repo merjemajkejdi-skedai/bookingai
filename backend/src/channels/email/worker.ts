@@ -181,6 +181,39 @@ async function processMessage(
     throw new Error('Agent returned empty reply');
   }
 
+  // Append AI reply to hotel_conversations.messages JSONB.
+  // saveHotelConversation is skipped for email: phones so we write directly here.
+  const replySubject = msg.subject.startsWith('Re:') ? msg.subject : `Re: ${msg.subject}`;
+  const assistantMsg = {
+    role: 'assistant',
+    content: reply,
+    subject: replySubject,
+    ts: new Date().toISOString(),
+    channel: 'email',
+    from: account.email_address,
+  };
+  if (isPg) {
+    await dbRun(
+      `UPDATE hotel_conversations
+       SET messages = messages || ?::jsonb,
+           last_message = CURRENT_TIMESTAMP,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      JSON.stringify([assistantMsg]), conversationId,
+    );
+  } else {
+    const convRow2 = await dbGet('SELECT messages FROM hotel_conversations WHERE id = ?', conversationId) as any;
+    const prev2: any[] = (() => { try { return JSON.parse(convRow2?.messages ?? '[]'); } catch { return []; } })();
+    await dbRun(
+      `UPDATE hotel_conversations
+       SET messages = ?,
+           last_message = CURRENT_TIMESTAMP,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      JSON.stringify([...prev2, assistantMsg].slice(-200)), conversationId,
+    );
+  }
+
   // (h) Send reply
   const referencesChain = [msg.references, msg.rfc822MessageId].filter(Boolean).join(' ');
   const sendResult = await adapter.sendReply({
