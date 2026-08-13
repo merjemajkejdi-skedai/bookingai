@@ -36,10 +36,16 @@ export class ImapSmtpAdapter implements MailboxAdapter {
   private buildSmtp() {
     const enc = this.account.smtp_password_encrypted ?? this.account.imap_password_encrypted;
     const password = enc ? decrypt(enc) : '';
+    const smtpHost   = this.account.smtp_host!;
+    const smtpPort   = this.account.smtp_port ?? 587;
+    const smtpSecure = !!this.account.smtp_secure;
+    // DIAGNOSTIC — remove after SMTP DNS investigation is resolved
+    console.log('[Email] SMTP transport config:', JSON.stringify({ host: smtpHost, port: smtpPort, secure: smtpSecure }));
     return nodemailer.createTransport({
-      host:   this.account.smtp_host!,
-      port:   this.account.smtp_port ?? 587,
-      secure: !!this.account.smtp_secure,
+      // DIAGNOSTIC: hardcoded literal to isolate DB-value corruption — revert to: host: smtpHost
+      host:   'smtp.gmail.com',
+      port:   smtpPort,
+      secure: smtpSecure,
       auth: {
         user: this.account.smtp_username ?? this.account.imap_username ?? this.account.email_address,
         pass: password,
@@ -197,6 +203,15 @@ export class ImapSmtpAdapter implements MailboxAdapter {
       await this.imap.logout();
     } catch (e: any) {
       error = e.message;
+    }
+    // DIAGNOSTIC: manual DNS resolution before SMTP — remove after investigation
+    try {
+      const dns = await import('dns/promises');
+      const smtpHost = this.account.smtp_host ?? 'smtp.gmail.com';
+      const dnsResult = await dns.lookup(smtpHost);
+      console.log('[Email] DNS lookup result:', dnsResult);
+    } catch (dnsErr: any) {
+      console.error('[Email] DNS lookup failed:', dnsErr.message);
     }
     // Test SMTP
     try {
