@@ -969,9 +969,20 @@ hotelRouter.delete('/blocked/:phone', requireAuth, async (req: Request, res: Res
 // ---------------------------------------------------------------------------
 
 // GET /hotel/conversations  — inbox list, most recent first
+// Optional ?channel=whatsapp|instagram|email server-side filter
 hotelRouter.get('/conversations', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
   try {
+    const channelFilter = req.query.channel as string | undefined;
+    // WhatsApp convs may have channel=null (legacy) or channel='whatsapp'
+    const channelClause = channelFilter
+      ? (channelFilter === 'whatsapp'
+          ? ' AND (c.channel IS NULL OR c.channel = ?)'
+          : ' AND c.channel = ?')
+      : '';
+    const params: unknown[] = [tenantId];
+    if (channelFilter) params.push(channelFilter);
+
     // Join on the most recent stay per guest (regardless of status) so we can
     // show survey state for checked-out guests too
     const rows = await dbAll(
@@ -1017,10 +1028,10 @@ hotelRouter.get('/conversations', requireAuth, async (req: Request, res: Respons
          WHERE conversation_id = c.id AND direction = 'inbound'
          ORDER BY created_at ASC LIMIT 1
        )
-       WHERE c.tenant_id = ?
+       WHERE c.tenant_id = ?${channelClause}
        ORDER BY c.updated_at DESC
        LIMIT 100`,
-      tenantId,
+      ...params,
     ) as any[];
 
     // Parse messages — PG returns JSONB as JS array already; SQLite returns a string
@@ -1452,6 +1463,31 @@ hotelRouter.get('/channels', requireAuth, async (req: Request, res: Response) =>
       tenantId,
     );
     ok(res, rows);
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// GET /hotel/tenant/channels — which channels are active (for filter chip rendering)
+// Returns { whatsapp: bool, instagram: bool, email: bool }
+hotelRouter.get('/tenant/channels', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    const channelRows = await dbAll(
+      'SELECT channel, connected FROM hotel_channel_settings WHERE tenant_id = ?',
+      tenantId,
+    ) as any[];
+    const cs: Record<string, boolean> = {};
+    for (const r of channelRows) cs[r.channel] = !!r.connected;
+
+    const emailAccount = await dbGet(
+      'SELECT id FROM tenant_email_accounts WHERE tenant_id = ? AND is_enabled LIMIT 1',
+      tenantId,
+    ) as any;
+
+    ok(res, {
+      whatsapp:  !!cs.whatsapp,
+      instagram: !!cs.instagram,
+      email:     !!emailAccount,
+    });
   } catch (e: any) { err(res, e.message, 500); }
 });
 

@@ -115,7 +115,10 @@ export const api = {
   }>) => req(`/hotel/departments/${deptId}/schedules`, { method: 'PUT', body: JSON.stringify({ schedules }) }),
 
   // Conversations
-  getConversations: () => req<Conversation[]>('/hotel/conversations'),
+  getConversations: (channel?: string) =>
+    req<Conversation[]>(`/hotel/conversations${channel ? `?channel=${encodeURIComponent(channel)}` : ''}`),
+  getActiveChannels: () =>
+    req<{ whatsapp: boolean; instagram: boolean; email: boolean }>('/hotel/tenant/channels'),
   getConversation: (phone: string) =>
     req<Conversation>(`/hotel/conversations/${encodeURIComponent(phone)}`),
   replyToGuest: (id: string, message: string) => {

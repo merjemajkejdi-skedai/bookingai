@@ -213,6 +213,43 @@ function NotificationBanner({ permission, onRequest }: {
   );
 }
 
+// ── Email message card ────────────────────────────────────────────────────────
+
+function EmailMessageBubble({ msg }: { msg: HotelMessage }) {
+  const isGuest = msg.role === 'user';
+  const fromLine = isGuest ? msg.from : 'Via SkedAI';
+
+  return (
+    <div className="w-full">
+      <div className={clsx(
+        'w-full rounded-xl border p-3',
+        isGuest
+          ? 'bg-blue-50/70 border-blue-100 text-slate-800'
+          : 'bg-brand-500 text-white border-transparent',
+      )}>
+        {/* From / Via SkedAI */}
+        {fromLine && (
+          <p className={clsx('text-[11px] mb-0.5', isGuest ? 'text-slate-400' : 'text-brand-100')}>
+            {fromLine}
+          </p>
+        )}
+        {/* Subject */}
+        {msg.subject && (
+          <p className={clsx('text-[13px] font-semibold mb-2', isGuest ? 'text-slate-700' : 'text-white')}>
+            {msg.subject}
+          </p>
+        )}
+        {/* Body */}
+        <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+        {/* Timestamp */}
+        <p className={clsx('text-[10px] text-right mt-2', isGuest ? 'text-slate-400' : 'text-brand-200')}>
+          {formatTime(msg.ts)}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ── Message bubble ────────────────────────────────────────────────────────────
 
 function MessageBubble({ msg, guestName, roomNumber }: {
@@ -220,6 +257,9 @@ function MessageBubble({ msg, guestName, roomNumber }: {
   guestName: string | null;
   roomNumber: string | null;
 }) {
+  // Email messages get a full-width card layout, not a narrow bubble
+  if (msg.channel === 'email') return <EmailMessageBubble msg={msg} />;
+
   const isGuest = msg.role === 'user';
   const isAI    = msg.role === 'assistant';
   const isStaff = msg.role === 'staff';
@@ -243,16 +283,6 @@ function MessageBubble({ msg, guestName, roomNumber }: {
             ? `${guestName ?? 'Guest'}${roomNumber ? ` · Room ${roomNumber}` : ''}`
             : isAI ? 'SkedAI' : 'Front Office'}
         </span>
-
-        {/* Email subject label (shown above bubble when present) */}
-        {msg.subject && (
-          <div className={clsx('px-1', isGuest ? 'text-left' : 'text-right')}>
-            <span className="text-[10px] font-semibold text-slate-500">{msg.subject}</span>
-            {msg.from && (
-              <span className="text-[10px] text-slate-400 ml-1.5">{msg.from}</span>
-            )}
-          </div>
-        )}
 
         {/* Bubble */}
         <div className={clsx(
@@ -532,32 +562,67 @@ function ThreadPanel({
         <div ref={bottomRef} />
       </div>
 
-      {/* Reply box */}
-      <div className="flex-shrink-0 bg-white border-t border-slate-200 p-3">
-        <div className="flex items-end gap-2">
-          <textarea
-            value={reply}
-            onChange={e => setReply(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Reply as Front Office… (Enter to send)"
-            rows={2}
-            className="flex-1 resize-none rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400/40 focus:border-brand-400"
-          />
-          <Button
-            onClick={handleSend}
-            disabled={!reply.trim() || sending}
-            size="sm"
-            className="h-10 px-3"
-          >
-            {sending
-              ? <RefreshCw size={14} className="animate-spin" />
-              : <Send size={14} />}
-          </Button>
+      {/* Reply box — email gets a minimal email-composer UI, others get the chat bar */}
+      {conv.channel === 'email' ? (() => {
+        const lastSubj = [...messages].reverse().find(m => m.subject)?.subject ?? conv.email_subject ?? '';
+        const replySubject = lastSubj.startsWith('Re:') ? lastSubj : lastSubj ? `Re: ${lastSubj}` : '';
+        const toAddress = conv.email_from_address ?? conv.guest_phone;
+        return (
+          <div className="flex-shrink-0 bg-white border-t border-slate-200">
+            <div className="border-b border-slate-100 px-4 py-2 space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-slate-400 w-14 flex-shrink-0">To</span>
+                <span className="text-[11px] text-slate-600 font-medium truncate">{toAddress}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-slate-400 w-14 flex-shrink-0">Subject</span>
+                <span className="text-[11px] text-slate-600 truncate">{replySubject}</span>
+              </div>
+            </div>
+            <div className="p-3">
+              <textarea
+                value={reply}
+                onChange={e => setReply(e.target.value)}
+                placeholder="Type your reply…"
+                rows={4}
+                className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400/40 focus:border-brand-400"
+              />
+              <div className="flex justify-end mt-2">
+                <Button onClick={handleSend} disabled={!reply.trim() || sending} size="sm" className="px-4">
+                  {sending ? <RefreshCw size={14} className="animate-spin mr-1.5" /> : null}
+                  {sending ? 'Sending…' : 'Send via Email'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })() : (
+        <div className="flex-shrink-0 bg-white border-t border-slate-200 p-3">
+          <div className="flex items-end gap-2">
+            <textarea
+              value={reply}
+              onChange={e => setReply(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Reply as Front Office… (Enter to send)"
+              rows={2}
+              className="flex-1 resize-none rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400/40 focus:border-brand-400"
+            />
+            <Button
+              onClick={handleSend}
+              disabled={!reply.trim() || sending}
+              size="sm"
+              className="h-10 px-3"
+            >
+              {sending
+                ? <RefreshCw size={14} className="animate-spin" />
+                : <Send size={14} />}
+            </Button>
+          </div>
+          <p className="text-[10px] text-slate-400 mt-1 ml-1">
+            Message sent via {conv.channel === 'instagram' ? 'Instagram' : 'WhatsApp'} as <span className="font-medium">Front Office</span>
+          </p>
         </div>
-        <p className="text-[10px] text-slate-400 mt-1 ml-1">
-          Message sent via {conv.channel === 'instagram' ? 'Instagram' : conv.channel === 'email' ? 'Email' : 'WhatsApp'} as <span className="font-medium">Front Office</span>
-        </p>
-      </div>
+      )}
     </div>
   );
 }
@@ -749,6 +814,8 @@ export function ConversationsPage({ surveyEnabled = false, addToFaqEnabled = fal
   const [extractingId, setExtractingId]   = useState<string | null>(null);
   const [faqModal, setFaqModal]           = useState<FaqModalState | null>(null);
   const [faqToast, setFaqToast]           = useState(false);
+  const [channelFilter, setChannelFilter] = useState<string | null>(null);
+  const [activeChannels, setActiveChannels] = useState<{ whatsapp: boolean; instagram: boolean; email: boolean } | null>(null);
 
   const { permission, request: requestNotifPermission } = useNotificationPermission();
 
@@ -759,11 +826,16 @@ export function ConversationsPage({ surveyEnabled = false, addToFaqEnabled = fal
   const notifCooldownRef = useRef(new Map<string, number>());   // phone → epoch ms of last notif
   const initializedRef   = useRef(false);
 
+  // Fetch active channels once on mount — drives chip visibility
+  useEffect(() => {
+    api.getActiveChannels().then(setActiveChannels).catch(() => {});
+  }, []);
+
   // ── Load / poll convs ─────────────────────────────────────────────────────
   const loadConvs = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const fresh = await api.getConversations();
+      const fresh = await api.getConversations(channelFilter ?? undefined);
       setConvs(fresh);
       convsRef.current = fresh;
 
@@ -792,7 +864,7 @@ export function ConversationsPage({ surveyEnabled = false, addToFaqEnabled = fal
     } finally {
       if (!silent) setLoading(false);
     }
-  }, []);
+  }, [channelFilter]);
 
   // Initial load
   useEffect(() => { loadConvs(); }, [loadConvs]);
@@ -941,6 +1013,51 @@ export function ConversationsPage({ surveyEnabled = false, addToFaqEnabled = fal
         />
       </div>
 
+      {/* Channel filter chips — only shown when > 1 channel is active */}
+      {activeChannels && Object.values(activeChannels).filter(Boolean).length > 1 && (
+        <div className="flex gap-2 flex-shrink-0 flex-wrap">
+          {activeChannels.whatsapp && (
+            <button
+              onClick={() => setChannelFilter(f => f === 'whatsapp' ? null : 'whatsapp')}
+              className={clsx(
+                'text-xs px-3 py-1.5 rounded-full border font-medium transition-colors',
+                channelFilter === 'whatsapp'
+                  ? 'bg-green-600 text-white border-green-600'
+                  : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300',
+              )}
+            >
+              💬 WhatsApp
+            </button>
+          )}
+          {activeChannels.instagram && (
+            <button
+              onClick={() => setChannelFilter(f => f === 'instagram' ? null : 'instagram')}
+              className={clsx(
+                'text-xs px-3 py-1.5 rounded-full border font-medium transition-colors',
+                channelFilter === 'instagram'
+                  ? 'bg-purple-600 text-white border-purple-600'
+                  : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300',
+              )}
+            >
+              📷 Instagram
+            </button>
+          )}
+          {activeChannels.email && (
+            <button
+              onClick={() => setChannelFilter(f => f === 'email' ? null : 'email')}
+              className={clsx(
+                'text-xs px-3 py-1.5 rounded-full border font-medium transition-colors',
+                channelFilter === 'email'
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300',
+              )}
+            >
+              📧 Email
+            </button>
+          )}
+        </div>
+      )}
+
       {/* List */}
       <div className="flex-1 overflow-y-auto min-h-0">
         {loading ? <Spinner /> : filtered.length === 0 ? (
@@ -992,6 +1109,11 @@ export function ConversationsPage({ surveyEnabled = false, addToFaqEnabled = fal
                                 ? (c.email_from_name ?? c.email_from_address ?? displayPhone(c.guest_phone))
                                 : (c.guest_name ?? displayPhone(c.guest_phone))}
                           </span>
+                          {(!c.channel || c.channel === 'whatsapp') && (
+                            <span className="text-[10px] font-semibold bg-green-50 text-green-700 px-1.5 py-0.5 rounded flex-shrink-0">
+                              💬 WA
+                            </span>
+                          )}
                           {c.channel === 'instagram' && (
                             <span className="text-[10px] font-semibold bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded flex-shrink-0">
                               📷 IG
