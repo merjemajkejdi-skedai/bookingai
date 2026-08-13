@@ -228,7 +228,9 @@ emailAccountsRouter.get('/oauth/microsoft/start', async (req: Request, res: Resp
   const tenantId = (req.query.tenantId as string | undefined)?.trim();
   if (!tenantId) return res.status(400).send('Missing tenantId');
   const nonce = crypto.randomBytes(16).toString('hex');
-  res.redirect(GraphAdapter.authUrl(tenantId, nonce));
+  const url = GraphAdapter.authUrl(tenantId, nonce);
+  console.log(`[Email] Microsoft OAuth URL: ${url}`);
+  res.redirect(url);
 });
 
 // ---------------------------------------------------------------------------
@@ -259,7 +261,9 @@ ${payload.type === 'oauth_success' ? 'Connected! You can close this window.' : '
   }
 
   if (oauthError) {
-    return res.send(postMessageHtml({ type: 'oauth_error', error: oauthError }));
+    console.error(`[Email] Microsoft OAuth error — full query: ${JSON.stringify(req.query)}`);
+    const desc = (req.query.error_description as string | undefined) ?? oauthError;
+    return res.send(postMessageHtml({ type: 'oauth_error', error: desc }));
   }
   if (!code || !state) {
     return res.send(postMessageHtml({ type: 'oauth_error', error: 'Missing code or state' }));

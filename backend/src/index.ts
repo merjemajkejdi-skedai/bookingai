@@ -110,6 +110,8 @@ app.use('/admin/analytics', adminAnalyticsRouter);
 app.use('/hotel', hotelRouter);
 app.use('/hotel', hotelMenusRouter);
 app.use('/hotel/email', emailAccountsRouter);
+// Second mount for the Azure-registered redirect_uri: https://app.skedai.net/settings/email/oauth/callback
+app.use('/settings/email/oauth', emailAccountsRouter);
 app.use('/shop', shopRouter);
 app.use('/api', skedaiRouter);
 app.use('/whatsapp', whatsappRouter);

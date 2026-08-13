@@ -1489,7 +1489,8 @@ export async function runMigrations() {
     await pool.query(`ALTER TABLE tenant_email_accounts ADD COLUMN IF NOT EXISTS microsoft_user_id TEXT`)
       .catch((e: any) => console.warn('email_003 skipped:', e.message));
 
-    // email_004: consolidate duplicate email conversations (one per sender per tenant)
+    // email_004: consolidate duplicate email conversations (one per sender per tenant).
+    // hotel_conversations has no created_at — use updated_at (set to NOW() on INSERT).
     await pool.query(`
       UPDATE email_messages AS em
       SET conversation_id = subq.keeper_id
@@ -1499,7 +1500,7 @@ export async function runMigrations() {
                 WHERE c2.tenant_id = hc.tenant_id
                   AND c2.channel_user_id = hc.channel_user_id
                   AND c2.channel = 'email'
-                ORDER BY c2.created_at ASC LIMIT 1) AS keeper_id
+                ORDER BY c2.updated_at ASC LIMIT 1) AS keeper_id
         FROM hotel_conversations hc
         WHERE hc.channel = 'email'
       ) subq
@@ -1515,7 +1516,7 @@ export async function runMigrations() {
           WHERE c2.tenant_id = hotel_conversations.tenant_id
             AND c2.channel_user_id = hotel_conversations.channel_user_id
             AND c2.channel = 'email'
-          ORDER BY c2.created_at ASC LIMIT 1
+          ORDER BY c2.updated_at ASC LIMIT 1
         )
     `).catch((e: any) => console.warn('email_004 delete dupes skipped:', e.message));
 
@@ -2024,7 +2025,8 @@ export async function runMigrations() {
   if (!emailAccCols3.includes('microsoft_user_id'))
     exec('ALTER TABLE tenant_email_accounts ADD COLUMN microsoft_user_id TEXT');
 
-  // email_004: consolidate duplicate email conversations (SQLite — idempotent)
+  // email_004: consolidate duplicate email conversations (SQLite — idempotent).
+  // hotel_conversations has no created_at — use updated_at (set to CURRENT_TIMESTAMP on INSERT).
   try {
     exec(`
       UPDATE email_messages SET conversation_id = (
@@ -2032,7 +2034,7 @@ export async function runMigrations() {
         WHERE c2.channel = 'email'
           AND c2.tenant_id = (SELECT c3.tenant_id FROM hotel_conversations c3 WHERE c3.id = email_messages.conversation_id AND c3.channel = 'email')
           AND c2.channel_user_id = (SELECT c3.channel_user_id FROM hotel_conversations c3 WHERE c3.id = email_messages.conversation_id AND c3.channel = 'email')
-        ORDER BY c2.created_at ASC LIMIT 1
+        ORDER BY c2.updated_at ASC LIMIT 1
       )
       WHERE conversation_id IN (SELECT id FROM hotel_conversations WHERE channel = 'email')
     `);
@@ -2044,7 +2046,7 @@ export async function runMigrations() {
           WHERE c2.tenant_id = hotel_conversations.tenant_id
             AND c2.channel_user_id = hotel_conversations.channel_user_id
             AND c2.channel = 'email'
-          ORDER BY c2.created_at ASC LIMIT 1
+          ORDER BY c2.updated_at ASC LIMIT 1
         )
     `);
   } catch (e: any) { console.warn('email_004 SQLite skipped:', e.message); }
