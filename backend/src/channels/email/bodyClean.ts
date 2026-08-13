@@ -12,17 +12,25 @@ const QUOTE_PATTERNS = [
   /^[-_]{3,}\s*(Original (Message|Email)|Forwarded Message)\s*[-_]*/im,
   // Outlook-style "-----Original Message-----"
   /^-{5}Original Message-{5}/m,
+  // Outlook underscore separator line
+  /^_{16,}/m,
 ];
 
 const SIGNATURE_PATTERNS = [
-  // "-- " (RFC 3676 signature delimiter)
-  /^--\s*$/m,
+  // RFC 3676 signature delimiter: "-- " (two dashes, space)
+  /^-- $/m,
+  // Variant: "--" (two dashes, no space) on its own line
+  /^--$/m,
   // "Sent from my iPhone / Android / Samsung"
-  /^Sent from my .{3,30}$/m,
+  /^Sent from my .{3,40}$/m,
   // "Get Outlook for iOS"
   /^Get Outlook for /im,
-  // "Regards," / "Best," / "Sincerely," at start of last paragraph
-  /^(Regards|Best regards|Kind regards|Sincerely|Thanks|Cheers|Best),?\s*$/im,
+  // Contact block: lines starting with M:, E:, W:, T:, P: after a blank line
+  /^\n[MEWTP]:\s+\S/m,
+  // Valedictions: "Regards," / "Best," / "Sincerely," etc.
+  /^(Regards|Best regards|Kind regards|Sincerely|Thanks|Cheers|Best|Thank you|Yours sincerely|Yours faithfully),?\s*$/im,
+  // Outlook-style "________________________________" separator
+  /^_{16,}$/m,
 ];
 
 function htmlToText(html: string): string {

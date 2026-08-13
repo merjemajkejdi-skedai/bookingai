@@ -1,5 +1,6 @@
 import { ImapFlow } from 'imapflow';
 import nodemailer from 'nodemailer';
+import { simpleParser } from 'mailparser';
 import { decrypt } from '../../utils/encryption.js';
 import type {
   MailboxAdapter, AdapterCapabilities, InboundMessage,
@@ -84,16 +85,25 @@ export class ImapSmtpAdapter implements MailboxAdapter {
         bodyStructure: true,
         source: true,
       }, { uid: true })) {
-        const raw = msg.source?.toString('utf8') ?? '';
-        const envelope = msg.envelope;
+        const rawSource = msg.source ?? Buffer.alloc(0);
+        const rawStr    = rawSource.toString('utf8');
+        const envelope  = msg.envelope;
 
-        // Split raw into headers + body sections by blank line
-        const headerEnd = raw.indexOf('\r\n\r\n');
-        const rawHeaders = headerEnd >= 0 ? raw.slice(0, headerEnd) : raw;
-        const rawBody    = headerEnd >= 0 ? raw.slice(headerEnd + 4) : '';
+        // Headers string for safety checks and References header
+        const headerEnd  = rawStr.indexOf('\r\n\r\n');
+        const rawHeaders = headerEnd >= 0 ? rawStr.slice(0, headerEnd) : rawStr;
 
-        // Extract plain text part from body (basic MIME extraction)
-        const { text, html } = extractTextParts(rawBody, rawHeaders);
+        // Parse MIME with mailparser — handles multipart, QP, base64, charsets
+        let text: string | undefined;
+        let html: string | undefined;
+        try {
+          const parsed = await simpleParser(rawSource);
+          text = parsed.text || undefined;
+          html = parsed.html || undefined;
+        } catch (parseErr: any) {
+          console.warn(`[Email] mailparser failed uid ${msg.uid}: ${parseErr.message} — using raw fallback`);
+          text = rawStr;
+        }
 
         // Calculate attachment sizes from bodyStructure
         const { attachmentCount, attachmentTotalBytes } = scanAttachments(msg.bodyStructure);
@@ -109,6 +119,7 @@ export class ImapSmtpAdapter implements MailboxAdapter {
           subject:               env.subject ?? '',
           bodyText:              text,
           bodyHtml:              html,
+          rawSource,
           receivedAt:            env.date ? new Date(env.date) : new Date(),
           rawHeaders,
           attachmentCount,
@@ -209,64 +220,6 @@ function getHeader(rawHeaders: string, name: string): string | undefined {
   return m?.[1]?.trim();
 }
 
-function decodeQuotedPrintable(text: string): string {
-  return text
-    .replace(/=\r\n/g, '')
-    .replace(/=\n/g, '')
-    .replace(/=([0-9A-Fa-f]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
-}
-
-function decodeTransferEncoding(body: string, encoding: string): string {
-  const enc = encoding.toLowerCase().trim();
-  if (enc === 'quoted-printable') return decodeQuotedPrintable(body);
-  if (enc === 'base64') {
-    try { return Buffer.from(body.replace(/\s/g, ''), 'base64').toString('utf8'); } catch { return body; }
-  }
-  return body;
-}
-
-function extractTextParts(rawBody: string, rawHeaders: string): { text?: string; html?: string } {
-  const contentType = getHeader(rawHeaders, 'Content-Type') ?? '';
-  const encoding    = getHeader(rawHeaders, 'Content-Transfer-Encoding') ?? '';
-
-  if (!contentType.toLowerCase().includes('multipart')) {
-    const decoded = decodeTransferEncoding(rawBody, encoding);
-    if (contentType.toLowerCase().includes('text/html')) return { html: decoded };
-    return { text: decoded };
-  }
-
-  const boundaryMatch = /boundary="?([^";\r\n]+)"?/i.exec(contentType);
-  if (!boundaryMatch) return { text: rawBody };
-  const boundary = boundaryMatch[1].trim();
-
-  const parts = rawBody.split(`--${boundary}`);
-  let text: string | undefined;
-  let html: string | undefined;
-
-  for (const part of parts) {
-    // Skip preamble, epilogue, and the closing --boundary-- marker
-    if (part.trim() === '' || part.trimStart().startsWith('--')) continue;
-
-    const sep = part.indexOf('\r\n\r\n');
-    if (sep < 0) continue;
-    const partHeaders = part.slice(0, sep);
-    const partBody    = part.slice(sep + 4).replace(/\r\n$/, ''); // strip trailing CRLF
-
-    const partCt  = (getHeader(partHeaders, 'Content-Type') ?? '').toLowerCase();
-    const partEnc = getHeader(partHeaders, 'Content-Transfer-Encoding') ?? '';
-
-    if (partCt.startsWith('multipart/')) {
-      const inner = extractTextParts(partBody, partHeaders);
-      if (!text && inner.text) text = inner.text;
-      if (!html  && inner.html) html = inner.html;
-    } else if (partCt.startsWith('text/plain') && !text) {
-      text = decodeTransferEncoding(partBody, partEnc).trim();
-    } else if (partCt.startsWith('text/html') && !html) {
-      html = decodeTransferEncoding(partBody, partEnc).trim();
-    }
-  }
-  return { text, html };
-}
 
 function scanAttachments(struct: any): { attachmentCount: number; attachmentTotalBytes: number } {
   if (!struct) return { attachmentCount: 0, attachmentTotalBytes: 0 };

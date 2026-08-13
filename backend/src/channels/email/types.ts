@@ -17,6 +17,7 @@ export interface InboundMessage {
   subject: string;
   bodyText?: string;
   bodyHtml?: string;
+  rawSource?: Buffer;           // full raw RFC-822 source (IMAP only); stored as body_raw
   receivedAt: Date;
   rawHeaders: string;           // full raw headers for safety checks
   attachmentCount: number;

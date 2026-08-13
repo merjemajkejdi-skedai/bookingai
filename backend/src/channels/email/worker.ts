@@ -108,18 +108,19 @@ async function processMessage(
 
   // (e) Insert inbound email_messages row (UNIQUE fence — safe to race)
   const inboundId = crypto.randomUUID();
+  const bodyRaw   = msg.rawSource ? msg.rawSource.toString('base64') : null;
   try {
     await dbRun(
       `INSERT INTO email_messages
          (id, tenant_id, account_id, conversation_id, direction, rfc822_message_id,
           in_reply_to, references_header, from_address, from_name, to_address, subject,
-          body_text, provider_ref)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          body_text, body_raw, provider_ref)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       inboundId, account.tenant_id, account.id, conversationId, 'inbound',
       msg.rfc822MessageId, msg.inReplyTo ?? null, msg.references ?? null,
       msg.from.address, msg.from.name ?? null,
       msg.to[0]?.address ?? account.email_address,
-      msg.subject, cleanedBody, msg.providerRef,
+      msg.subject, cleanedBody, bodyRaw, msg.providerRef,
     );
   } catch (dupErr: any) {
     if (dupErr.message?.includes('UNIQUE') || dupErr.code === '23505') {
@@ -129,10 +130,38 @@ async function processMessage(
     throw dupErr;
   }
 
-  await dbRun(
-    `UPDATE hotel_conversations SET updated_at = ? WHERE id = ?`,
-    new Date().toISOString(), conversationId,
-  );
+  // Append inbound message to hotel_conversations.messages JSONB
+  const emailMsg = {
+    role: 'user',
+    content: cleanedBody,
+    subject: msg.subject,
+    ts: msg.receivedAt.toISOString(),
+    channel: 'email',
+    from: msg.from.address,
+  };
+  if (isPg) {
+    await dbRun(
+      `UPDATE hotel_conversations
+       SET messages = messages || ?::jsonb,
+           last_message = CURRENT_TIMESTAMP,
+           updated_at = CURRENT_TIMESTAMP,
+           last_guest_message_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      JSON.stringify([emailMsg]), conversationId,
+    );
+  } else {
+    const convRow = await dbGet('SELECT messages FROM hotel_conversations WHERE id = ?', conversationId) as any;
+    const prev: any[] = (() => { try { return JSON.parse(convRow?.messages ?? '[]'); } catch { return []; } })();
+    await dbRun(
+      `UPDATE hotel_conversations
+       SET messages = ?,
+           last_message = CURRENT_TIMESTAMP,
+           updated_at = CURRENT_TIMESTAMP,
+           last_guest_message_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      JSON.stringify([...prev, emailMsg].slice(-200)), conversationId,
+    );
+  }
 
   // (f) AI disabled → leave in watch folder (shows as pending in dashboard)
   if (!account.ai_enabled) {

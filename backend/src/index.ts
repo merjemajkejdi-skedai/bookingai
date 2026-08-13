@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import { runMigrations } from './db/database.js';
+import { runMigrations, backfillEmailBodies } from './db/database.js';
 import { whatsappRouter } from './whatsapp/webhook.js';
 import metaRouter from './whatsapp/metaWebhook.js';
 import { authRouter } from './routes/auth.js';
@@ -139,6 +139,7 @@ setInterval(cleanupCooldowns, 3_600_000);
 
 async function start() {
   await runMigrations();
+  backfillEmailBodies().catch((e: any) => console.error('[Email] backfill error:', e.message));
   startDigestCron();
   startShopCron();
   startEmailWorker();

@@ -1,10 +1,14 @@
 import { Router, type Request, type Response } from 'express';
+import crypto from 'crypto';
 import { sendWhatsAppMessage } from '../whatsapp/twilio.js';
 import { sendInstagramMessage } from '../channels/instagram.js';
 import * as XLSX from 'xlsx';
 import { requireAuth, resolveTenantId } from '../middleware/auth.js';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { appendStaffMessage } from '../hotel/session.js';
+import { ImapSmtpAdapter } from '../channels/email/ImapSmtpAdapter.js';
+import { GraphAdapter } from '../channels/email/GraphAdapter.js';
+import type { EmailAccountRow } from '../channels/email/types.js';
 
 export const hotelRouter = Router();
 
@@ -1143,6 +1147,98 @@ hotelRouter.post('/conversations/:id/reply', requireAuth, async (req: Request, r
           JSON.stringify([...prev, staffMsg].slice(-30)), tenantId, conv.guest_phone,
         );
       }
+    } else if (conv.channel === 'email') {
+      // Email — send via the tenant's email adapter, thread correctly
+      const emailAccount = await dbGet(
+        `SELECT * FROM tenant_email_accounts WHERE tenant_id = ? AND is_enabled ORDER BY created_at ASC LIMIT 1`,
+        tenantId,
+      ) as EmailAccountRow | undefined;
+      if (!emailAccount) return err(res, 'No enabled email account configured for this tenant');
+
+      const lastInbound = await dbGet(
+        `SELECT rfc822_message_id, references_header, subject
+         FROM email_messages
+         WHERE conversation_id = ? AND direction = 'inbound'
+         ORDER BY created_at DESC LIMIT 1`,
+        convId,
+      ) as any;
+      if (!lastInbound) return err(res, 'No inbound email messages found to reply to');
+
+      const adapter = emailAccount.provider === 'graph'
+        ? new GraphAdapter(emailAccount)
+        : new ImapSmtpAdapter(emailAccount);
+
+      await adapter.connect();
+      try {
+        const referencesChain = [lastInbound.references_header, lastInbound.rfc822_message_id]
+          .filter(Boolean).join(' ');
+        const replySubject = lastInbound.subject.startsWith('Re:')
+          ? lastInbound.subject
+          : `Re: ${lastInbound.subject}`;
+
+        const sendResult = await adapter.sendReply({
+          to:                 { address: conv.guest_phone },
+          from:               { address: emailAccount.email_address, name: emailAccount.display_name },
+          subject:            replySubject,
+          bodyText:           message.trim(),
+          inReplyToMessageId: lastInbound.rfc822_message_id,
+          referencesChain,
+        });
+
+        if (!adapter.capabilities.autoSavesSent && sendResult.rawMime) {
+          try { await adapter.appendToSent(sendResult.rawMime, new Date()); } catch (e: any) {
+            console.warn(`[Email] appendToSent failed (non-fatal): ${e.message}`);
+          }
+        }
+
+        // Write outbound email_messages row
+        await dbRun(
+          `INSERT INTO email_messages
+             (id, tenant_id, account_id, conversation_id, direction, rfc822_message_id,
+              in_reply_to, references_header, from_address, from_name, to_address, subject, body_text, sent_message_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          crypto.randomUUID(), tenantId, emailAccount.id, convId, 'outbound',
+          sendResult.sentMessageId,
+          lastInbound.rfc822_message_id, referencesChain,
+          emailAccount.email_address, emailAccount.display_name,
+          conv.guest_phone, replySubject,
+          message.trim(), sendResult.sentMessageId,
+        );
+
+        // Append staff message to hotel_conversations.messages JSONB
+        const staffEmailMsg = {
+          role: 'staff',
+          content: message.trim(),
+          subject: lastInbound.subject,
+          ts: new Date().toISOString(),
+          channel: 'email',
+          from: emailAccount.email_address,
+        };
+        if (isPg) {
+          await dbRun(
+            `UPDATE hotel_conversations
+             SET messages = messages || ?::jsonb,
+                 last_message = CURRENT_TIMESTAMP,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?`,
+            JSON.stringify([staffEmailMsg]), convId,
+          );
+        } else {
+          const convRow2 = await dbGet('SELECT messages FROM hotel_conversations WHERE id = ?', convId) as any;
+          const prev: any[] = (() => { try { return JSON.parse(convRow2?.messages ?? '[]'); } catch { return []; } })();
+          await dbRun(
+            `UPDATE hotel_conversations
+             SET messages = ?,
+                 last_message = CURRENT_TIMESTAMP,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?`,
+            JSON.stringify([...prev, staffEmailMsg].slice(-200)), convId,
+          );
+        }
+      } finally {
+        await adapter.disconnect().catch(() => {});
+      }
+
     } else {
       // WhatsApp — get full tenant row for per-tenant credentials
       const tenantRow = await dbGet('SELECT * FROM tenants WHERE id = ?', tenantId) as any;

@@ -244,6 +244,16 @@ function MessageBubble({ msg, guestName, roomNumber }: {
             : isAI ? 'SkedAI' : 'Front Office'}
         </span>
 
+        {/* Email subject label (shown above bubble when present) */}
+        {msg.subject && (
+          <div className={clsx('px-1', isGuest ? 'text-left' : 'text-right')}>
+            <span className="text-[10px] font-semibold text-slate-500">{msg.subject}</span>
+            {msg.from && (
+              <span className="text-[10px] text-slate-400 ml-1.5">{msg.from}</span>
+            )}
+          </div>
+        )}
+
         {/* Bubble */}
         <div className={clsx(
           'px-3 py-2 rounded-2xl text-sm leading-relaxed',

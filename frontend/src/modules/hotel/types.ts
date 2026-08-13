@@ -77,6 +77,10 @@ export interface HotelMessage {
   role: 'user' | 'assistant' | 'staff';
   content: string;
   ts: string;
+  // Email-specific (present when channel = 'email')
+  subject?: string;
+  from?: string;
+  channel?: string;
 }
 
 export interface Conversation {

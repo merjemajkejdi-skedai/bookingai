@@ -1485,6 +1485,36 @@ export async function runMigrations() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`).catch((e: any) => console.warn('email_002c skipped:', e.message));
 
+    // email_004: consolidate duplicate email conversations (one per sender per tenant)
+    await pool.query(`
+      UPDATE email_messages AS em
+      SET conversation_id = subq.keeper_id
+      FROM (
+        SELECT hc.id AS dup_id,
+               (SELECT c2.id FROM hotel_conversations c2
+                WHERE c2.tenant_id = hc.tenant_id
+                  AND c2.channel_user_id = hc.channel_user_id
+                  AND c2.channel = 'email'
+                ORDER BY c2.created_at ASC LIMIT 1) AS keeper_id
+        FROM hotel_conversations hc
+        WHERE hc.channel = 'email'
+      ) subq
+      WHERE em.conversation_id = subq.dup_id
+        AND subq.keeper_id IS NOT NULL
+        AND em.conversation_id != subq.keeper_id
+    `).catch((e: any) => console.warn('email_004 consolidate messages skipped:', e.message));
+    await pool.query(`
+      DELETE FROM hotel_conversations
+      WHERE channel = 'email'
+        AND id != (
+          SELECT c2.id FROM hotel_conversations c2
+          WHERE c2.tenant_id = hotel_conversations.tenant_id
+            AND c2.channel_user_id = hotel_conversations.channel_user_id
+            AND c2.channel = 'email'
+          ORDER BY c2.created_at ASC LIMIT 1
+        )
+    `).catch((e: any) => console.warn('email_004 delete dupes skipped:', e.message));
+
     console.log('✅ PostgreSQL migrations complete');
     return;
   }
@@ -1984,5 +2014,159 @@ export async function runMigrations() {
     )`);
   }
 
+  // email_004: consolidate duplicate email conversations (SQLite — idempotent)
+  try {
+    exec(`
+      UPDATE email_messages SET conversation_id = (
+        SELECT c2.id FROM hotel_conversations c2
+        WHERE c2.channel = 'email'
+          AND c2.tenant_id = (SELECT c3.tenant_id FROM hotel_conversations c3 WHERE c3.id = email_messages.conversation_id AND c3.channel = 'email')
+          AND c2.channel_user_id = (SELECT c3.channel_user_id FROM hotel_conversations c3 WHERE c3.id = email_messages.conversation_id AND c3.channel = 'email')
+        ORDER BY c2.created_at ASC LIMIT 1
+      )
+      WHERE conversation_id IN (SELECT id FROM hotel_conversations WHERE channel = 'email')
+    `);
+    exec(`
+      DELETE FROM hotel_conversations
+      WHERE channel = 'email'
+        AND id != (
+          SELECT c2.id FROM hotel_conversations c2
+          WHERE c2.tenant_id = hotel_conversations.tenant_id
+            AND c2.channel_user_id = hotel_conversations.channel_user_id
+            AND c2.channel = 'email'
+          ORDER BY c2.created_at ASC LIMIT 1
+        )
+    `);
+  } catch (e: any) { console.warn('email_004 SQLite skipped:', e.message); }
+
   console.log('✅ SQLite migrations complete');
+}
+
+// ---------------------------------------------------------------------------
+// Post-migration: backfill email_messages rows whose body_text is raw MIME.
+// Called once at startup after runMigrations(). Idempotent.
+// ---------------------------------------------------------------------------
+export async function backfillEmailBodies(): Promise<void> {
+  let rows: any[];
+  try {
+    rows = (await (isPg
+      ? query(`SELECT id, body_text, body_raw FROM email_messages
+               WHERE body_text LIKE '%Content-Type:%'
+               ORDER BY created_at`, [])
+      : Promise.resolve(prepare(
+          `SELECT id, body_text, body_raw FROM email_messages WHERE body_text LIKE '%Content-Type:%' ORDER BY created_at`
+        ).all())
+    )) as any[];
+  } catch (e: any) {
+    console.warn('[Email] backfill: could not query email_messages:', e.message);
+    return;
+  }
+  if (!rows.length) return;
+  console.log(`[Email] backfill: re-parsing ${rows.length} row(s) with raw MIME body_text`);
+
+  const { simpleParser } = await import('mailparser');
+  const { cleanBody } = await import('../channels/email/bodyClean.js');
+
+  for (const row of rows) {
+    try {
+      // body_raw may already be stored (base64), or body_text IS the raw MIME (older rows)
+      let rawBuf: Buffer;
+      if (row.body_raw) {
+        rawBuf = Buffer.from(row.body_raw, 'base64');
+      } else {
+        rawBuf = Buffer.from(row.body_text as string, 'utf8');
+      }
+      const parsed = await simpleParser(rawBuf);
+      const cleaned = cleanBody(parsed.text || undefined, parsed.html || undefined);
+
+      if (cleaned.trim().length < 5) {
+        // Empty body — delete row, it should never have been stored
+        if (isPg) {
+          await queryRun(`DELETE FROM email_messages WHERE id = $1`, [row.id]);
+        } else {
+          prepare(`DELETE FROM email_messages WHERE id = ?`).run(row.id);
+        }
+        console.log(`[Email] backfill: deleted empty-body message ${row.id}`);
+      } else {
+        const newBodyRaw = row.body_raw ?? Buffer.from(row.body_text as string, 'utf8').toString('base64');
+        if (isPg) {
+          await queryRun(
+            `UPDATE email_messages SET body_text = $1, body_raw = $2 WHERE id = $3`,
+            [cleaned, newBodyRaw, row.id],
+          );
+        } else {
+          prepare(`UPDATE email_messages SET body_text = ?, body_raw = ? WHERE id = ?`)
+            .run(cleaned, newBodyRaw, row.id);
+        }
+        console.log(`[Email] backfill: cleaned message ${row.id} (${(cleaned.slice(0, 40))}...)`);
+      }
+    } catch (e: any) {
+      console.warn(`[Email] backfill: failed row ${row.id}: ${e.message}`);
+    }
+  }
+
+  // Delete orphaned email conversations (all their messages were deleted above)
+  try {
+    if (isPg) {
+      await queryRun(
+        `DELETE FROM hotel_conversations
+         WHERE channel = 'email'
+           AND id NOT IN (SELECT DISTINCT conversation_id FROM email_messages WHERE conversation_id IS NOT NULL)`,
+        [],
+      );
+    } else {
+      prepare(
+        `DELETE FROM hotel_conversations
+         WHERE channel = 'email'
+           AND id NOT IN (SELECT DISTINCT conversation_id FROM email_messages WHERE conversation_id IS NOT NULL)`
+      ).run();
+    }
+  } catch (e: any) {
+    console.warn('[Email] backfill: orphan cleanup failed:', e.message);
+  }
+
+  // Rebuild hotel_conversations.messages JSONB from cleaned email_messages
+  // For each email conversation, reconstruct the messages array from email_messages rows
+  try {
+    const emailConvs = (await (isPg
+      ? query(`SELECT id FROM hotel_conversations WHERE channel = 'email'`, [])
+      : Promise.resolve(prepare(`SELECT id FROM hotel_conversations WHERE channel = 'email'`).all())
+    )) as any[];
+
+    for (const conv of emailConvs) {
+      const msgs = (await (isPg
+        ? query(
+            `SELECT from_address, body_text, subject, created_at, direction
+             FROM email_messages WHERE conversation_id = $1 ORDER BY created_at ASC`,
+            [conv.id],
+          )
+        : Promise.resolve(prepare(
+            `SELECT from_address, body_text, subject, created_at, direction
+             FROM email_messages WHERE conversation_id = ? ORDER BY created_at ASC`
+          ).all(conv.id))
+      )) as any[];
+
+      const jsonbArr = msgs.map((m: any) => ({
+        role: m.direction === 'inbound' ? 'user' : 'assistant',
+        content: m.body_text ?? '',
+        subject: m.subject ?? '',
+        ts: m.created_at,
+        channel: 'email',
+        from: m.from_address,
+      }));
+
+      const messagesJson = JSON.stringify(jsonbArr);
+      if (isPg) {
+        await queryRun(
+          `UPDATE hotel_conversations SET messages = $1::jsonb WHERE id = $2`,
+          [messagesJson, conv.id],
+        );
+      } else {
+        prepare(`UPDATE hotel_conversations SET messages = ? WHERE id = ?`).run(messagesJson, conv.id);
+      }
+    }
+    console.log(`[Email] backfill: rebuilt messages JSONB for ${emailConvs.length} email conversation(s)`);
+  } catch (e: any) {
+    console.warn('[Email] backfill: messages rebuild failed:', e.message);
+  }
 }
