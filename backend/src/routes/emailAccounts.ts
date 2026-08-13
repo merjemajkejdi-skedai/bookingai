@@ -222,6 +222,121 @@ emailAccountsRouter.get('/accounts/:id/folders', requireAuth, async (req: Reques
 });
 
 // ---------------------------------------------------------------------------
+// POST /hotel/email/oauth/microsoft/exchange  — frontend relay: exchange code for tokens
+// Called by MicrosoftOAuthCallbackPage after the browser lands on the frontend redirect URI.
+// No auth required — security comes from Microsoft's single-use code tied to our client_id.
+// ---------------------------------------------------------------------------
+emailAccountsRouter.post('/oauth/microsoft/exchange', async (req: Request, res: Response) => {
+  const { code, state } = req.body as { code?: string; state?: string };
+
+  if (!code || !state) {
+    return res.status(400).json({ success: false, error: 'Missing code or state' });
+  }
+
+  let tenantId: string;
+  try {
+    const parsed = JSON.parse(state);
+    tenantId = parsed.tenantId;
+    if (!tenantId) throw new Error('no tenantId');
+  } catch {
+    return res.status(400).json({ success: false, error: 'Invalid state parameter' });
+  }
+
+  console.log(`[Email] OAuth callback received — code present: true, state: ${tenantId}`);
+
+  const credKey = process.env.EMAIL_CRED_KEY;
+  if (!credKey || !/^[0-9a-fA-F]{64}$/.test(credKey)) {
+    return res.status(500).json({ success: false, error: 'EMAIL_CRED_KEY not configured' });
+  }
+
+  try {
+    const tokens = await GraphAdapter.exchangeCode(code);
+
+    const userRes = await fetch('https://graph.microsoft.com/v1.0/me?$select=id,mail,userPrincipalName,displayName', {
+      headers: { Authorization: `Bearer ${tokens.access_token}` },
+    });
+    const user: any = await userRes.json();
+    const emailAddress = (user.mail || user.userPrincipalName || '').toLowerCase().trim();
+    const microsoftUserId = user.id ?? null;
+
+    if (!emailAddress) {
+      console.error('[Email] OAuth token exchange failed — could not determine email from Graph /me');
+      return res.status(400).json({ success: false, error: 'Could not determine email from Microsoft account' });
+    }
+
+    console.log(`[Email] OAuth token exchange success — email: ${emailAddress}`);
+
+    const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
+    const id = crypto.randomUUID();
+
+    if (isPg) {
+      await dbRun(
+        `INSERT INTO tenant_email_accounts
+           (id, tenant_id, provider, email_address, display_name,
+            oauth_access_token_encrypted, oauth_refresh_token_encrypted,
+            oauth_expires_at, microsoft_user_id,
+            watch_folder_path, answered_folder_path, failed_folder_path, sent_folder_path,
+            is_enabled, ai_enabled)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         ON CONFLICT (tenant_id, email_address) DO UPDATE SET
+           provider = 'graph',
+           oauth_access_token_encrypted  = excluded.oauth_access_token_encrypted,
+           oauth_refresh_token_encrypted = excluded.oauth_refresh_token_encrypted,
+           oauth_expires_at              = excluded.oauth_expires_at,
+           microsoft_user_id             = excluded.microsoft_user_id,
+           last_error                    = NULL,
+           updated_at                    = NOW()`,
+        id, tenantId, 'graph', emailAddress, user.displayName ?? emailAddress,
+        encrypt(tokens.access_token), encrypt(tokens.refresh_token),
+        expiresAt, microsoftUserId,
+        'SkedAI', 'SkedAI/Answered', 'SkedAI/Failed', 'Sent',
+        false, false,
+      );
+    } else {
+      const existing = await dbGet(
+        'SELECT id FROM tenant_email_accounts WHERE tenant_id = ? AND email_address = ?',
+        tenantId, emailAddress,
+      ) as any;
+      if (existing) {
+        await dbRun(
+          `UPDATE tenant_email_accounts SET
+             provider = 'graph',
+             oauth_access_token_encrypted  = ?,
+             oauth_refresh_token_encrypted = ?,
+             oauth_expires_at              = ?,
+             microsoft_user_id             = ?,
+             last_error                    = NULL,
+             updated_at                    = CURRENT_TIMESTAMP
+           WHERE tenant_id = ? AND email_address = ?`,
+          encrypt(tokens.access_token), encrypt(tokens.refresh_token),
+          expiresAt, microsoftUserId, tenantId, emailAddress,
+        );
+      } else {
+        await dbRun(
+          `INSERT INTO tenant_email_accounts
+             (id, tenant_id, provider, email_address, display_name,
+              oauth_access_token_encrypted, oauth_refresh_token_encrypted,
+              oauth_expires_at, microsoft_user_id,
+              watch_folder_path, answered_folder_path, failed_folder_path, sent_folder_path,
+              is_enabled, ai_enabled)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          id, tenantId, 'graph', emailAddress, user.displayName ?? emailAddress,
+          encrypt(tokens.access_token), encrypt(tokens.refresh_token),
+          expiresAt, microsoftUserId,
+          'SkedAI', 'SkedAI/Answered', 'SkedAI/Failed', 'Sent',
+          false, false,
+        );
+      }
+    }
+
+    return res.json({ success: true, email: emailAddress });
+  } catch (e: any) {
+    console.error(`[Email] OAuth token exchange failed — ${e.message}`);
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // GET /hotel/email/oauth/microsoft/start  — initiate OAuth (no auth; popup navigation)
 // ---------------------------------------------------------------------------
 emailAccountsRouter.get('/oauth/microsoft/start', async (req: Request, res: Response) => {

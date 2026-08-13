@@ -419,13 +419,13 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
     const popup = window.open(oauthUrl, '_blank', 'width=600,height=700,left=200,top=100');
 
     const handler = (event: MessageEvent) => {
-      if (event.data?.type === 'oauth_success') {
+      if (event.data?.type === 'MICROSOFT_OAUTH_SUCCESS') {
         window.removeEventListener('message', handler);
         setEmailOauthLoading(false);
         setEmailFormOpen(false);
         setEmailProvider('imap');
         adminApi.getEmailAccounts(tenant.id).then(setEmailAccounts).catch(() => {});
-      } else if (event.data?.type === 'oauth_error') {
+      } else if (event.data?.type === 'MICROSOFT_OAUTH_ERROR') {
         window.removeEventListener('message', handler);
         setEmailOauthLoading(false);
         setEmailError(event.data.error ?? 'Microsoft connection failed');
