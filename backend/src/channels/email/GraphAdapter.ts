@@ -112,15 +112,46 @@ export class GraphAdapter implements MailboxAdapter {
     return text ? JSON.parse(text) : null;
   }
 
-  private async resolveFolderId(folderPath: string): Promise<string> {
+  // Walk a path like 'SkedAI' or 'SkedAI/Answered' starting from Inbox.
+  // Uses the Graph well-known folder name 'inbox' as the root so we search
+  // inbox children, not top-level mailFolders (which would miss sub-folders).
+  // Creates any missing level; caches each resolved ID by path segment.
+  private async ensureHierarchy(folderPath: string): Promise<string> {
     if (this.folderIdCache.has(folderPath)) return this.folderIdCache.get(folderPath)!;
-    // Try by displayName first
-    const name = folderPath.split('/').pop()!;
-    const data = await this.gFetch(`/mailFolders?$filter=displayName eq '${encodeURIComponent(name)}'&$select=id,displayName`);
-    const found = data?.value?.[0];
-    if (!found) throw new Error(`Mail folder not found: ${folderPath}`);
-    this.folderIdCache.set(folderPath, found.id);
-    return found.id;
+
+    const parts = folderPath.split('/').filter(Boolean);
+    let parentId = 'inbox'; // Graph well-known folder name
+    let accumulatedPath = '';
+
+    for (const name of parts) {
+      accumulatedPath = accumulatedPath ? `${accumulatedPath}/${name}` : name;
+
+      if (this.folderIdCache.has(accumulatedPath)) {
+        parentId = this.folderIdCache.get(accumulatedPath)!;
+        continue;
+      }
+
+      const children = await this.gFetch(
+        `/mailFolders/${parentId}/childFolders?$select=id,displayName&$top=100`
+      );
+      const existing = (children?.value ?? []).find((f: any) => f.displayName === name);
+
+      let id: string;
+      if (existing) {
+        id = existing.id;
+      } else {
+        const created = await this.gFetch(`/mailFolders/${parentId}/childFolders`, {
+          method: 'POST',
+          body: JSON.stringify({ displayName: name }),
+        });
+        id = created.id;
+      }
+
+      this.folderIdCache.set(accumulatedPath, id);
+      parentId = id;
+    }
+
+    return parentId;
   }
 
   // ---------------------------------------------------------------------------
@@ -129,6 +160,16 @@ export class GraphAdapter implements MailboxAdapter {
 
   async connect(): Promise<void> {
     await this.refreshIfNeeded();
+    // Pre-resolve watch folder via Inbox children (not top-level mailFolders)
+    const watchId = await this.ensureHierarchy(this.account.watch_folder_path);
+    console.log(`[Email] ${this.account.email_address} — SkedAI folder ID: ${watchId}`);
+    // Persist resolved ID so next cycle uses it directly
+    if (this.account.watch_folder_ref !== watchId) {
+      const sql = `UPDATE tenant_email_accounts SET watch_folder_ref = ? WHERE id = ?`;
+      const params = [watchId, this.account.id];
+      if (isPg) queryRun(sql, params); else prepare(sql).run(...params);
+      this.account = { ...this.account, watch_folder_ref: watchId };
+    }
   }
 
   async disconnect(): Promise<void> {
@@ -136,15 +177,7 @@ export class GraphAdapter implements MailboxAdapter {
   }
 
   async ensureFolder(folderPath: string): Promise<void> {
-    const name = folderPath.split('/').pop()!;
-    try {
-      await this.gFetch('/mailFolders', {
-        method: 'POST',
-        body: JSON.stringify({ displayName: name }),
-      });
-    } catch {
-      // folder already exists — ignore
-    }
+    await this.ensureHierarchy(folderPath); // creates all levels as Inbox children
   }
 
   async listFolders(): Promise<FolderInfo[]> {
@@ -153,7 +186,7 @@ export class GraphAdapter implements MailboxAdapter {
   }
 
   async fetchMessages(folderPath: string, limit = 20): Promise<InboundMessage[]> {
-    const folderId = await this.resolveFolderId(folderPath);
+    const folderId = await this.ensureHierarchy(folderPath);
     const fields = 'id,subject,from,toRecipients,receivedDateTime,internetMessageId,conversationId,body,internetMessageHeaders,hasAttachments';
     const data = await this.gFetch(`/mailFolders/${folderId}/messages?$top=${limit}&$select=${fields}`);
     const messages: InboundMessage[] = [];
@@ -206,7 +239,7 @@ export class GraphAdapter implements MailboxAdapter {
   }
 
   async moveMessage(providerRef: string, destFolderPath: string): Promise<void> {
-    const destId = await this.resolveFolderId(destFolderPath);
+    const destId = await this.ensureHierarchy(destFolderPath);
     await this.gFetch(`/messages/${providerRef}/move`, {
       method: 'POST',
       body: JSON.stringify({ destinationId: destId }),
@@ -224,7 +257,7 @@ export class GraphAdapter implements MailboxAdapter {
       readAccess = true;
       sendAccess = true; // Graph Mail.Send scope grants send; we can't test without actually sending
       try {
-        await this.resolveFolderId(this.account.watch_folder_path);
+        await this.ensureHierarchy(this.account.watch_folder_path);
         folderAccess = true;
       } catch { /* folder not created yet */ }
     } catch (e: any) {
