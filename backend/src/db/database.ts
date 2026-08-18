@@ -1490,33 +1490,33 @@ export async function runMigrations() {
       .catch((e: any) => console.warn('email_003 skipped:', e.message));
 
     // email_004: consolidate duplicate email conversations (one per sender per tenant).
-    // hotel_conversations has no created_at — use updated_at (set to NOW() on INSERT).
+    // Uses DISTINCT ON to pick the earliest conversation per (tenant_id, channel_user_id) —
+    // no correlated subqueries, no self-join column-alias ambiguity.
     await pool.query(`
-      UPDATE email_messages AS em
-      SET conversation_id = subq.keeper_id
+      UPDATE email_messages em
+      SET conversation_id = canon.id
       FROM (
-        SELECT hc.id AS dup_id,
-               (SELECT c2.id FROM hotel_conversations c2
-                WHERE c2.tenant_id = hc.tenant_id
-                  AND c2.channel_user_id = hc.channel_user_id
-                  AND c2.channel = 'email'
-                ORDER BY c2.updated_at ASC LIMIT 1) AS keeper_id
-        FROM hotel_conversations hc
-        WHERE hc.channel = 'email'
-      ) subq
-      WHERE em.conversation_id = subq.dup_id
-        AND subq.keeper_id IS NOT NULL
-        AND em.conversation_id != subq.keeper_id
+        SELECT DISTINCT ON (tenant_id, channel_user_id)
+          id, tenant_id, channel_user_id
+        FROM hotel_conversations
+        WHERE channel = 'email'
+        ORDER BY tenant_id, channel_user_id, updated_at ASC
+      ) canon
+      JOIN hotel_conversations dup
+        ON  dup.tenant_id       = canon.tenant_id
+        AND dup.channel_user_id = canon.channel_user_id
+        AND dup.channel         = 'email'
+        AND dup.id             != canon.id
+      WHERE em.conversation_id = dup.id
     `).catch((e: any) => console.warn('email_004 consolidate messages skipped:', e.message));
     await pool.query(`
       DELETE FROM hotel_conversations
       WHERE channel = 'email'
-        AND id != (
-          SELECT c2.id FROM hotel_conversations c2
-          WHERE c2.tenant_id = hotel_conversations.tenant_id
-            AND c2.channel_user_id = hotel_conversations.channel_user_id
-            AND c2.channel = 'email'
-          ORDER BY c2.updated_at ASC LIMIT 1
+        AND id NOT IN (
+          SELECT DISTINCT ON (tenant_id, channel_user_id) id
+          FROM hotel_conversations
+          WHERE channel = 'email'
+          ORDER BY tenant_id, channel_user_id, updated_at ASC
         )
     `).catch((e: any) => console.warn('email_004 delete dupes skipped:', e.message));
 
@@ -2026,27 +2026,27 @@ export async function runMigrations() {
     exec('ALTER TABLE tenant_email_accounts ADD COLUMN microsoft_user_id TEXT');
 
   // email_004: consolidate duplicate email conversations (SQLite — idempotent).
-  // hotel_conversations has no created_at — use updated_at (set to CURRENT_TIMESTAMP on INSERT).
+  // GROUP BY + MIN(id) avoids correlated self-joins and column-alias ambiguity.
   try {
     exec(`
-      UPDATE email_messages SET conversation_id = (
-        SELECT c2.id FROM hotel_conversations c2
-        WHERE c2.channel = 'email'
-          AND c2.tenant_id = (SELECT c3.tenant_id FROM hotel_conversations c3 WHERE c3.id = email_messages.conversation_id AND c3.channel = 'email')
-          AND c2.channel_user_id = (SELECT c3.channel_user_id FROM hotel_conversations c3 WHERE c3.id = email_messages.conversation_id AND c3.channel = 'email')
-        ORDER BY c2.updated_at ASC LIMIT 1
+      UPDATE email_messages
+      SET conversation_id = (
+        SELECT MIN(hk.id)
+        FROM hotel_conversations hk
+        WHERE hk.channel = 'email'
+          AND hk.tenant_id        = (SELECT hd.tenant_id        FROM hotel_conversations hd WHERE hd.id = email_messages.conversation_id)
+          AND hk.channel_user_id  = (SELECT hd.channel_user_id  FROM hotel_conversations hd WHERE hd.id = email_messages.conversation_id)
       )
       WHERE conversation_id IN (SELECT id FROM hotel_conversations WHERE channel = 'email')
     `);
     exec(`
       DELETE FROM hotel_conversations
       WHERE channel = 'email'
-        AND id != (
-          SELECT c2.id FROM hotel_conversations c2
-          WHERE c2.tenant_id = hotel_conversations.tenant_id
-            AND c2.channel_user_id = hotel_conversations.channel_user_id
-            AND c2.channel = 'email'
-          ORDER BY c2.updated_at ASC LIMIT 1
+        AND id NOT IN (
+          SELECT MIN(id)
+          FROM hotel_conversations
+          WHERE channel = 'email'
+          GROUP BY tenant_id, channel_user_id
         )
     `);
   } catch (e: any) { console.warn('email_004 SQLite skipped:', e.message); }
