@@ -188,7 +188,18 @@ export class GraphAdapter implements MailboxAdapter {
   async fetchMessages(folderPath: string, limit = 20): Promise<InboundMessage[]> {
     const folderId = await this.ensureHierarchy(folderPath);
     const fields = 'id,subject,from,toRecipients,ccRecipients,receivedDateTime,body,internetMessageId,conversationId,internetMessageHeaders';
-    const data = await this.gFetch(`/mailFolders/${folderId}/messages?$top=${limit}&$select=${fields}`);
+    const url = `${GRAPH}/mailFolders/${folderId}/messages?$top=${limit}&$select=${fields}`;
+    console.log('[Email] Graph fetch URL:', url);
+    console.log('[Email] Graph token expires:', this.account.oauth_expires_at);
+    console.log('[Email] Graph token expired:', new Date() > new Date(this.account.oauth_expires_at ?? '0'));
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${this.accessToken}`, 'Content-Type': 'application/json' },
+    });
+    console.log('[Email] Graph response status:', response.status);
+    const text = await response.text();
+    const data = text ? JSON.parse(text) : null;
+    console.log('[Email] Graph response body:', JSON.stringify(data).slice(0, 800));
+    if (!response.ok) throw new Error(`Graph GET messages → ${response.status}: ${text}`);
     console.log(`[Email] ${this.account.email_address} — Graph returned ${data?.value?.length ?? 0} messages in folder`);
     const messages: InboundMessage[] = [];
     for (const m of data?.value ?? []) {
