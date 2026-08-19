@@ -21,7 +21,7 @@ export class ImapSmtpAdapter implements MailboxAdapter {
 
   private buildClient(): ImapFlow {
     const password = this.account.imap_password_encrypted ? decrypt(this.account.imap_password_encrypted) : '';
-    return new ImapFlow({
+    const client = new ImapFlow({
       host:    this.account.imap_host!,
       port:    this.account.imap_port ?? 993,
       secure:  !!this.account.imap_secure,
@@ -31,6 +31,13 @@ export class ImapSmtpAdapter implements MailboxAdapter {
       },
       logger: false,
     });
+    // ImapFlow emits 'error' asynchronously when the server closes an idle
+    // connection (common with Gmail). Without a listener this becomes an
+    // unhandledRejection. We handle it here so it logs as a warning only.
+    client.on('error', () => {
+      console.warn(`[Email] ${this.account.email_address} — connection closed unexpectedly (will retry next cycle)`);
+    });
+    return client;
   }
 
   private buildSmtp() {

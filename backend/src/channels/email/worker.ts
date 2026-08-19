@@ -352,30 +352,41 @@ async function processAccount(account: EmailAccountRow): Promise<{ processed: nu
 // Public — called from index.ts after runMigrations()
 // ---------------------------------------------------------------------------
 export function startEmailWorker(): void {
+  let isRunning = false;
+
   cron.schedule('*/2 * * * *', async () => {
-    let accounts: EmailAccountRow[] = [];
-    try {
-      accounts = (await dbAll(
-        `SELECT * FROM tenant_email_accounts WHERE is_enabled ORDER BY last_checked_at ASC NULLS FIRST`,
-      )) as unknown as EmailAccountRow[];
-    } catch (e: any) {
-      console.error('[Email] FATAL — failed to load accounts (schema issue?):', e.message, '\n', e.stack);
+    if (isRunning) {
+      console.log('[Email] Cycle skipped — previous cycle still running');
       return;
     }
+    isRunning = true;
+    try {
+      let accounts: EmailAccountRow[] = [];
+      try {
+        accounts = (await dbAll(
+          `SELECT * FROM tenant_email_accounts WHERE is_enabled ORDER BY last_checked_at ASC NULLS FIRST`,
+        )) as unknown as EmailAccountRow[];
+      } catch (e: any) {
+        console.error('[Email] FATAL — failed to load accounts (schema issue?):', e.message, '\n', e.stack);
+        return;
+      }
 
-    if (accounts.length === 0) return;
+      if (accounts.length === 0) return;
 
-    console.log(`[Email] Cycle start — ${accounts.length} enabled account(s)`);
-    let cycleProcessed = 0, cycleSkipped = 0, cycleFailed = 0;
+      console.log(`[Email] Cycle start — ${accounts.length} enabled account(s)`);
+      let cycleProcessed = 0, cycleSkipped = 0, cycleFailed = 0;
 
-    for (const account of accounts) {
-      const stats = await processAccount(account);
-      cycleProcessed += stats.processed;
-      cycleSkipped   += stats.skipped;
-      cycleFailed    += stats.failed;
+      for (const account of accounts) {
+        const stats = await processAccount(account);
+        cycleProcessed += stats.processed;
+        cycleSkipped   += stats.skipped;
+        cycleFailed    += stats.failed;
+      }
+
+      console.log(`[Email] Cycle complete — ${cycleProcessed} processed, ${cycleSkipped} skipped, ${cycleFailed} failed`);
+    } finally {
+      isRunning = false;
     }
-
-    console.log(`[Email] Cycle complete — ${cycleProcessed} processed, ${cycleSkipped} skipped, ${cycleFailed} failed`);
   });
   console.log('📧 Email worker started (polling every 120s)');
 }
