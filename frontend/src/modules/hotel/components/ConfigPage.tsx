@@ -318,6 +318,8 @@ export function ConfigPage() {
           <p className="text-xs text-slate-400">Info the AI concierge shares with guests</p>
         </div>
 
+        <WhatsAppConnectCard />
+
         <form onSubmit={handleSave} className="space-y-5">
           {/* General */}
           <section className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
@@ -559,5 +561,101 @@ export function ConfigPage() {
 
       </div>
     </div>
+  );
+}
+
+// ── WhatsApp Connect Card ────────────────────────────────────────────────────
+function WhatsAppConnectCard() {
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [result, setResult] = useState('');
+  const [tenantInfo, setTenantInfo] = useState<any>(null);
+
+  useEffect(() => {
+    api.getConfig().then((c: any) => setTenantInfo(c)).catch(() => {});
+  }, []);
+
+  function handleConnect() {
+    const configId = (window as any).__META_SIGNUP_CONFIG_ID;
+    if (!configId) {
+      setStatus('error');
+      setResult('WhatsApp signup is not yet configured. Contact your administrator.');
+      return;
+    }
+    if (!(window as any).FB) {
+      setStatus('error');
+      setResult('Facebook SDK not loaded. Please refresh the page.');
+      return;
+    }
+
+    setStatus('loading');
+    (window as any).FB.login((response: any) => {
+      if (response.authResponse) {
+        const code = response.authResponse.code;
+        const baseUrl = (import.meta as any).env?.VITE_API_URL || '';
+        fetch(`${baseUrl}/api/whatsapp/embedded-signup/callback`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            code,
+            source: 'tenant_settings',
+            tenantId: tenantInfo?.tenant_id || null,
+          }),
+        })
+          .then(res => res.json())
+          .then(data => {
+            if (data.success) {
+              setStatus('success');
+              setResult(`Connected! Phone: ${data.data?.phoneNumber || 'detected'}`);
+            } else {
+              setStatus('error');
+              setResult(data.error || 'Something went wrong');
+            }
+          })
+          .catch(() => {
+            setStatus('error');
+            setResult('Connection failed. Please try again.');
+          });
+      } else {
+        setStatus('idle');
+      }
+    }, {
+      config_id: configId,
+      response_type: 'code',
+      override_default_response_type: true,
+      extras: {
+        setup: {},
+        featureName: 'whatsapp_embedded_signup',
+        sessionInfoVersion: '3',
+      },
+    });
+  }
+
+  return (
+    <section className="bg-white rounded-xl border border-slate-200 p-5 space-y-3 mb-5">
+      <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+        <MessageSquare size={15} className="text-green-500" /> WhatsApp
+      </h2>
+      {status === 'success' ? (
+        <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
+          {result}
+        </div>
+      ) : (
+        <>
+          <p className="text-xs text-slate-500">
+            Connect your WhatsApp Business number so guests can message your AI concierge directly.
+          </p>
+          <button
+            type="button"
+            onClick={handleConnect}
+            disabled={status === 'loading'}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-[#25D366] text-white text-sm font-semibold rounded-lg hover:bg-[#20bd5a] disabled:opacity-50 transition-colors">
+            {status === 'loading' ? 'Connecting…' : 'Connect WhatsApp Number'}
+          </button>
+          {status === 'error' && (
+            <p className="text-xs text-red-500 mt-1">{result}</p>
+          )}
+        </>
+      )}
+    </section>
   );
 }

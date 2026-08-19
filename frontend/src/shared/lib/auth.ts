@@ -178,4 +178,9 @@ export const adminApi = {
     adminFetch<any>(`/hotel/email/accounts/${accountId}/send-mode?tenantId=${encodeURIComponent(tenantId)}`, {
       method: 'PATCH', body: JSON.stringify({ send_mode: sendMode }),
     }),
+  getWhatsAppLeads: () => authFetch<any[]>('/api/whatsapp/signup-leads'),
+  updateWhatsAppLead: (leadId: string, data: { status?: string; notes?: string; tenant_id?: string }) =>
+    authFetch<any>(`/api/whatsapp/signup-leads/${leadId}`, {
+      method: 'PATCH', body: JSON.stringify(data),
+    }),
 };

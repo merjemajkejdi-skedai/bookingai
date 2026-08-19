@@ -1348,6 +1348,22 @@ export async function runMigrations() {
         updated_at TIMESTAMPTZ DEFAULT NOW(),
         UNIQUE(tenant_id, channel)
       )`,
+      // whatsapp_signup_001 — Embedded Signup leads
+      `CREATE TABLE IF NOT EXISTS whatsapp_signup_leads (
+        id TEXT PRIMARY KEY,
+        waba_id VARCHAR(255) NOT NULL,
+        phone_number VARCHAR(50),
+        business_name VARCHAR(255),
+        facebook_user_id VARCHAR(255),
+        access_token_encrypted TEXT,
+        status VARCHAR(20) NOT NULL DEFAULT 'pending',
+        notes TEXT,
+        tenant_id TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`,
+      // whatsapp_signup_002 — tenant columns for connected_at tracking
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS whatsapp_connected_at TIMESTAMPTZ`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -2060,6 +2076,27 @@ export async function runMigrations() {
     .all().map((r: any) => r.name as string);
   if (!emailAccCols5.includes('send_mode'))
     exec("ALTER TABLE tenant_email_accounts ADD COLUMN send_mode TEXT NOT NULL DEFAULT 'resend'");
+
+  // whatsapp_signup_001: leads table
+  exec(`CREATE TABLE IF NOT EXISTS whatsapp_signup_leads (
+    id TEXT PRIMARY KEY,
+    waba_id TEXT NOT NULL,
+    phone_number TEXT,
+    business_name TEXT,
+    facebook_user_id TEXT,
+    access_token_encrypted TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    notes TEXT,
+    tenant_id TEXT,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  )`);
+
+  // whatsapp_signup_002: tenant column
+  const tenantCols2 = prepare("SELECT name FROM pragma_table_info('tenants')")
+    .all().map((r: any) => r.name as string);
+  if (!tenantCols2.includes('whatsapp_connected_at'))
+    exec('ALTER TABLE tenants ADD COLUMN whatsapp_connected_at TEXT');
 
   console.log('✅ SQLite migrations complete');
 }

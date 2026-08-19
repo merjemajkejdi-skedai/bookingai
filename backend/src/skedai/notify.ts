@@ -71,3 +71,23 @@ export async function notifySalesLead(
     context ? `\nContext: ${context}` : '',
   ].filter(Boolean).join('\n'));
 }
+
+// ── WhatsApp Embedded Signup lead ────────────────────────────────────────────
+export async function notifyNewWhatsAppLead(
+  lead: { businessName: string; phoneNumber: string; wabaId: string },
+  overridePhone?: string,
+): Promise<void> {
+  const phone = ownerPhone(overridePhone);
+  if (!phone) return;
+
+  await send(phone, [
+    `🟢 New WhatsApp Signup Lead`,
+    ``,
+    `Business: ${lead.businessName}`,
+    `Phone: ${lead.phoneNumber}`,
+    `WABA ID: ${lead.wabaId}`,
+    `Time: ${new Date().toISOString()}`,
+    ``,
+    `Go to admin panel to create tenant.`,
+  ].join('\n'));
+}

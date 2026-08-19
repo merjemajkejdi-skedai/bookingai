@@ -20,6 +20,7 @@ export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) 
   const [creating, setCreating]   = useState(false);
   const [editing, setEditing]     = useState<any>(null);
   const [resetting, setResetting] = useState<any>(null);
+  const [adminTab, setAdminTab]   = useState<'shops' | 'leads'>('shops');
 
   async function load() {
     setLoading(true);
@@ -71,8 +72,21 @@ export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) 
         </div>
       )}
 
+      {/* Tab buttons */}
+      <div className="flex gap-1 mb-4 border-b border-slate-200">
+        {(['shops', 'leads'] as const).map(tab => (
+          <button key={tab} onClick={() => setAdminTab(tab)}
+            className={clsx('px-3 py-1.5 text-sm font-medium border-b-2 transition-colors capitalize', adminTab === tab ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-600')}>
+            {tab === 'leads' ? 'WA Leads' : tab}
+          </button>
+        ))}
+      </div>
+
+      {/* WhatsApp Leads */}
+      {adminTab === 'leads' && <WhatsAppLeadsView tenants={tenants} onCreateTenant={() => setCreating(true)} onReload={load} />}
+
       {/* Tenant list */}
-      {loading ? <Spinner /> : (
+      {adminTab === 'shops' && (loading ? <Spinner /> : (
         <div className="space-y-2">
           {tenants.map(t => (
             <div key={t.id} className={clsx(
@@ -163,7 +177,7 @@ export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) 
             </div>
           )}
         </div>
-      )}
+      ))}
 
       {/* Create modal */}
       {creating && (
@@ -984,5 +998,119 @@ function ResetPasswordModal({ tenant, onClose, onSaved }: { tenant: any; onClose
         )}
       </div>
     </Modal>
+  );
+}
+
+// --- WhatsApp Signup Leads View -----------------------------------------------
+function WhatsAppLeadsView({ tenants, onCreateTenant, onReload }: { tenants: any[]; onCreateTenant: () => void; onReload: () => void }) {
+  const [leads, setLeads] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editingNotes, setEditingNotes] = useState<string | null>(null);
+  const [notesText, setNotesText] = useState('');
+
+  async function loadLeads() {
+    setLoading(true);
+    try { setLeads(await adminApi.getWhatsAppLeads()); }
+    catch (e: any) { console.error('Failed to load leads:', e.message); }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => { loadLeads(); }, []);
+
+  async function updateStatus(leadId: string, status: string) {
+    try {
+      await adminApi.updateWhatsAppLead(leadId, { status });
+      loadLeads();
+    } catch (e: any) { alert(e.message); }
+  }
+
+  async function saveNotes(leadId: string) {
+    try {
+      await adminApi.updateWhatsAppLead(leadId, { notes: notesText });
+      setEditingNotes(null);
+      loadLeads();
+    } catch (e: any) { alert(e.message); }
+  }
+
+  const statusColor: Record<string, string> = {
+    pending:        'bg-amber-100 text-amber-700',
+    contacted:      'bg-blue-100 text-blue-700',
+    tenant_created: 'bg-green-100 text-green-700',
+    rejected:       'bg-red-100 text-red-700',
+  };
+
+  if (loading) return <Spinner />;
+
+  return (
+    <div className="space-y-3">
+      {leads.length === 0 && (
+        <div className="text-center py-12 text-slate-400">
+          <p className="text-sm">No WhatsApp signup leads yet.</p>
+        </div>
+      )}
+      {leads.map((lead: any) => (
+        <div key={lead.id} className="bg-white rounded-xl border border-slate-200 px-5 py-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="font-medium text-slate-800">{lead.business_name || 'Unknown Business'}</p>
+                <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium', statusColor[lead.status] || statusColor.pending)}>
+                  {lead.status}
+                </span>
+              </div>
+              <div className="flex items-center gap-3 mt-1 text-xs text-slate-400 flex-wrap">
+                {lead.phone_number && <span><Phone size={10} className="inline mr-0.5" /> {lead.phone_number}</span>}
+                <span>WABA: {lead.waba_id}</span>
+                <span>{new Date(lead.created_at).toLocaleString()}</span>
+                {lead.tenant_id && (
+                  <span className="text-green-600 font-medium">
+                    Tenant: {tenants.find(t => t.id === lead.tenant_id)?.name || lead.tenant_id.slice(0, 8)}
+                  </span>
+                )}
+              </div>
+              {lead.notes && !editingNotes && (
+                <p className="mt-1 text-xs text-slate-500 italic">{lead.notes}</p>
+              )}
+              {editingNotes === lead.id && (
+                <div className="mt-2 flex gap-2">
+                  <input type="text" value={notesText} onChange={e => setNotesText(e.target.value)}
+                    className="flex-1 text-xs border border-slate-200 rounded px-2 py-1"
+                    placeholder="Add notes..." />
+                  <Button size="sm" onClick={() => saveNotes(lead.id)}>Save</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setEditingNotes(null)}>Cancel</Button>
+                </div>
+              )}
+            </div>
+            <div className="flex gap-1.5 flex-wrap items-center">
+              {lead.status === 'pending' && (
+                <>
+                  <Button size="sm" variant="outline" onClick={() => updateStatus(lead.id, 'contacted')}>
+                    Mark Contacted
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => updateStatus(lead.id, 'rejected')}>
+                    Reject
+                  </Button>
+                </>
+              )}
+              {lead.status !== 'tenant_created' && lead.status !== 'rejected' && (
+                <Button size="sm" onClick={() => {
+                  onCreateTenant();
+                }}>
+                  Create Tenant
+                </Button>
+              )}
+              {!editingNotes && (
+                <Button size="sm" variant="ghost" onClick={() => {
+                  setEditingNotes(lead.id);
+                  setNotesText(lead.notes || '');
+                }}>
+                  <Pencil size={12} />
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
