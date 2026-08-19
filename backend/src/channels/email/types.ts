@@ -31,11 +31,13 @@ export interface SendReplyInput {
   bodyText: string;
   inReplyToMessageId: string;   // original Message-ID for In-Reply-To header
   referencesChain: string;      // existing References + original Message-ID
+  inReplyToProviderRef?: string; // Graph message ID of the original, for createReply flow
 }
 
 export interface SendReplyResult {
   sentMessageId: string;        // the new Message-ID
   rawMime?: Buffer;             // present when adapter cannot auto-save to Sent
+  providerRef?: string;         // Graph: draftId after createReply+send; IMAP: undefined
 }
 
 export interface AdapterCapabilities {
@@ -111,6 +113,7 @@ export interface EmailAccountRow {
   ai_enabled: boolean;
   consecutive_failures: number;
   last_error?: string;
+  send_mode?: string;           // 'resend' (default) | 'graph' (Graph-only)
   last_checked_at?: string;
   last_success_at?: string;
   created_at: string;

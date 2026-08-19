@@ -174,4 +174,8 @@ export const adminApi = {
     adminFetch<any>(`/hotel/email/accounts/${accountId}/toggle?tenantId=${encodeURIComponent(tenantId)}`, {
       method: 'PUT', body: JSON.stringify({ field }),
     }),
+  patchEmailSendMode: (tenantId: string, accountId: string, sendMode: 'resend' | 'graph') =>
+    adminFetch<any>(`/hotel/email/accounts/${accountId}/send-mode?tenantId=${encodeURIComponent(tenantId)}`, {
+      method: 'PATCH', body: JSON.stringify({ send_mode: sendMode }),
+    }),
 };

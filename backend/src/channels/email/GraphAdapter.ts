@@ -1,3 +1,4 @@
+import { Resend } from 'resend';
 import { decrypt, encrypt } from '../../utils/encryption.js';
 import { isPg, prepare, queryRun } from '../../db/database.js';
 import type {
@@ -5,6 +6,12 @@ import type {
   SendReplyInput, SendReplyResult, FolderInfo, TestConnectionResult,
   EmailAccountRow,
 } from './types.js';
+
+let _resend: Resend | null = null;
+function getResend(): Resend {
+  if (!_resend) _resend = new Resend(process.env.RESEND_API_KEY);
+  return _resend;
+}
 
 const GRAPH = 'https://graph.microsoft.com/v1.0/me';
 const TOKEN_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
@@ -226,23 +233,67 @@ export class GraphAdapter implements MailboxAdapter {
   }
 
   async sendReply(input: SendReplyInput): Promise<SendReplyResult> {
-    // Graph uses the original message ID as the "internetMessageId" to find the message
-    // We'll send a new message with proper headers instead
-    const body = {
-      message: {
-        subject:    input.subject.startsWith('Re:') ? input.subject : `Re: ${input.subject}`,
-        body: { contentType: 'Text', content: input.bodyText },
-        toRecipients: [{ emailAddress: { address: input.to.address, name: input.to.name ?? '' } }],
-        internetMessageHeaders: [
-          { name: 'In-Reply-To',  value: input.inReplyToMessageId },
-          { name: 'References',   value: input.referencesChain },
-        ],
-      },
-      saveToSentItems: true,
-    };
-    await this.gFetch('/sendMail', { method: 'POST', body: JSON.stringify(body) });
-    // Graph doesn't return the sent message ID from sendMail, generate a placeholder
+    if ((this.account.send_mode ?? 'resend') === 'graph') {
+      return this.sendViaGraph(input);
+    }
+    return this.sendViaResend(input);
+  }
+
+  private async sendViaGraph(input: SendReplyInput): Promise<SendReplyResult> {
+    // 1. createReply draft (preserves conversation thread in Outlook)
+    const draftEndpoint = input.inReplyToProviderRef
+      ? `/messages/${input.inReplyToProviderRef}/createReply`
+      : null;
+
+    let draftId: string;
+    if (draftEndpoint) {
+      const draft = await this.gFetch(draftEndpoint, { method: 'POST', body: '{}' });
+      draftId = draft.id;
+      // 2. PATCH body text onto the draft
+      await this.gFetch(`/messages/${draftId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ body: { contentType: 'Text', content: input.bodyText } }),
+      });
+    } else {
+      // Fallback: compose new message (no original to thread from)
+      const created = await this.gFetch('/messages', {
+        method: 'POST',
+        body: JSON.stringify({
+          subject:    input.subject.startsWith('Re:') ? input.subject : `Re: ${input.subject}`,
+          body: { contentType: 'Text', content: input.bodyText },
+          toRecipients: [{ emailAddress: { address: input.to.address, name: input.to.name ?? '' } }],
+          internetMessageHeaders: [
+            { name: 'In-Reply-To', value: input.inReplyToMessageId },
+            { name: 'References',  value: input.referencesChain },
+          ],
+        }),
+      });
+      draftId = created.id;
+    }
+
+    // 3. Send — Graph auto-saves to Sent Items
+    await this.gFetch(`/messages/${draftId}/send`, { method: 'POST', body: '{}' });
+    console.log(`[Email] ${this.account.email_address} — sent via Graph (draftId: ${draftId})`);
     const sentMessageId = `<graph-sent-${Date.now()}@skedai>`;
+    return { sentMessageId, providerRef: draftId };
+  }
+
+  private async sendViaResend(input: SendReplyInput): Promise<SendReplyResult> {
+    const senderName = this.account.display_name?.trim() || 'SkedAI';
+    console.log(`[Email] Sending via Resend (Graph acct) — to: ${input.to.address} reply_to: ${this.account.email_address}`);
+    const result = await getResend().emails.send({
+      from:    `${senderName} <noreply@skedai.net>`,
+      to:      input.to.address,
+      replyTo: this.account.email_address,
+      subject: input.subject.startsWith('Re:') ? input.subject : `Re: ${input.subject}`,
+      text:    input.bodyText,
+      headers: {
+        'In-Reply-To': input.inReplyToMessageId,
+        'References':  input.referencesChain,
+      },
+    });
+    if (result.error || !result.data) throw new Error(`Resend send failed: ${result.error?.message ?? 'unknown error'}`);
+    const sentMessageId = `<${result.data.id}@resend.dev>`;
     return { sentMessageId };
   }
 

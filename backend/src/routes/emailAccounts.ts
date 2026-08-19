@@ -186,6 +186,40 @@ emailAccountsRouter.put('/accounts/:id/toggle', requireAuth, async (req: Request
 });
 
 // ---------------------------------------------------------------------------
+// PATCH /hotel/email/accounts/:id/send-mode
+// ---------------------------------------------------------------------------
+emailAccountsRouter.patch('/accounts/:id/send-mode', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const { send_mode } = req.body as { send_mode: string };
+  if (!['resend', 'graph'].includes(send_mode)) return err(res, "send_mode must be 'resend' or 'graph'");
+  try {
+    const row = await dbGet(
+      'SELECT * FROM tenant_email_accounts WHERE id = ? AND tenant_id = ?',
+      req.params.id, tenantId,
+    ) as EmailAccountRow | undefined;
+    if (!row) return err(res, 'Account not found', 404);
+    if (send_mode === 'graph' && row.provider !== 'graph') {
+      return err(res, "send_mode='graph' is only valid for Microsoft Graph accounts");
+    }
+    if (send_mode === 'graph') {
+      // Verify the token is not expired / missing
+      if (!row.oauth_refresh_token_encrypted) {
+        return err(res, 'Account has no valid OAuth token — reconnect before switching to Graph send');
+      }
+      if (row.last_error === 'oauth_refresh_failed') {
+        return err(res, 'OAuth token refresh failed — reconnect before switching to Graph send');
+      }
+    }
+    await dbRun(
+      'UPDATE tenant_email_accounts SET send_mode = ? WHERE id = ? AND tenant_id = ?',
+      send_mode, req.params.id, tenantId,
+    );
+    const updated = await dbGet('SELECT * FROM tenant_email_accounts WHERE id = ?', req.params.id);
+    ok(res, scrubAccount(updated));
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// ---------------------------------------------------------------------------
 // POST /hotel/email/accounts/:id/test
 // ---------------------------------------------------------------------------
 emailAccountsRouter.post('/accounts/:id/test', requireAuth, async (req: Request, res: Response) => {

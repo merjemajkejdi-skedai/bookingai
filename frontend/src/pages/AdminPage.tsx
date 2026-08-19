@@ -345,6 +345,8 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
   const [emailError, setEmailError]           = useState('');
   const [emailProvider, setEmailProvider]     = useState<'imap' | 'microsoft'>('imap');
   const [emailOauthLoading, setEmailOauthLoading] = useState(false);
+  const [sendModeLoading, setSendModeLoading]     = useState<string | null>(null); // accountId
+  const [sendModeConfirm, setSendModeConfirm]     = useState<{ id: string; mode: 'resend' | 'graph' } | null>(null);
   const [saving, setSaving]                   = useState(false);
   const [error, setError]                     = useState('');
 
@@ -402,6 +404,16 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
       const updated = await adminApi.toggleEmailAccount(tenant.id, accountId, field);
       setEmailAccounts(prev => prev.map((a: any) => a.id === accountId ? { ...a, ...updated } : a));
     } catch (e: any) { setError(e.message); }
+  }
+
+  async function handleSendModeChange(accountId: string, mode: 'resend' | 'graph') {
+    setSendModeConfirm(null);
+    setSendModeLoading(accountId);
+    try {
+      const updated = await adminApi.patchEmailSendMode(tenant.id, accountId, mode);
+      setEmailAccounts(prev => prev.map((a: any) => a.id === accountId ? { ...a, ...updated } : a));
+    } catch (e: any) { setError(e.message); }
+    finally { setSendModeLoading(null); }
   }
 
   async function handleEmailDelete(accountId: string) {
@@ -786,8 +798,49 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
                           </button>
                         </div>
                       )}
+                      {acct.provider === 'graph' && (
+                        <div className="mt-1.5 flex items-center gap-2">
+                          <span className="text-[10px] text-slate-400">Send via:</span>
+                          <button type="button"
+                            title="Send replies via SkedAI Resend (recommended — always works)"
+                            disabled={sendModeLoading === acct.id}
+                            onClick={() => (acct.send_mode ?? 'resend') !== 'resend' && setSendModeConfirm({ id: acct.id, mode: 'resend' })}
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors ${(acct.send_mode ?? 'resend') === 'resend' ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
+                            Resend
+                          </button>
+                          <button type="button"
+                            title="Send replies directly via Microsoft Graph (saves to your Sent Items)"
+                            disabled={sendModeLoading === acct.id || acct.last_error === 'oauth_refresh_failed'}
+                            onClick={() => (acct.send_mode ?? 'resend') !== 'graph' && setSendModeConfirm({ id: acct.id, mode: 'graph' })}
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors ${(acct.send_mode ?? 'resend') === 'graph' ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 disabled:opacity-40'}`}>
+                            {sendModeLoading === acct.id ? '…' : 'Graph'}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
+
+                  {sendModeConfirm && (
+                    <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800 space-y-2">
+                      <p className="font-medium">
+                        {sendModeConfirm.mode === 'graph'
+                          ? 'Switch to Graph send? Replies will be sent via Microsoft Graph and saved to your Sent Items automatically. Requires a valid Microsoft token.'
+                          : 'Switch to Resend? Replies will be sent via SkedAI (noreply@skedai.net). The Reply-To will point to your email address.'}
+                      </p>
+                      <div className="flex gap-2">
+                        <button type="button"
+                          onClick={() => handleSendModeChange(sendModeConfirm.id, sendModeConfirm.mode)}
+                          className="px-2 py-1 bg-amber-600 text-white rounded text-[10px] font-medium hover:bg-amber-700">
+                          Confirm
+                        </button>
+                        <button type="button"
+                          onClick={() => setSendModeConfirm(null)}
+                          className="px-2 py-1 bg-white border border-amber-300 rounded text-[10px] font-medium text-amber-700 hover:bg-amber-50">
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {emailFormOpen && (
                     <div className="mt-2 p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-2">

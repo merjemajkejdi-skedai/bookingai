@@ -136,6 +136,12 @@ export class ImapSmtpAdapter implements MailboxAdapter {
   }
 
   async sendReply(input: SendReplyInput): Promise<SendReplyResult> {
+    // IMAP/SMTP adapters always use Resend (Railway blocks SMTP 587/465).
+    // send_mode='graph' is only valid on Graph accounts; log a warning if misconfigured.
+    // TODO: when Railway unblocks SMTP, replace Resend here with nodemailer SMTP send.
+    if ((this.account as any).send_mode === 'graph') {
+      console.warn(`[Email] ${this.account.email_address} — send_mode=graph is invalid for IMAP; falling back to SMTP`);
+    }
     const transport = this.buildSmtp();
     const info = await transport.sendMail({
       from:       `"${input.from.name ?? ''}" <${input.from.address}>`,

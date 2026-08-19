@@ -1489,6 +1489,10 @@ export async function runMigrations() {
     await pool.query(`ALTER TABLE tenant_email_accounts ADD COLUMN IF NOT EXISTS microsoft_user_id TEXT`)
       .catch((e: any) => console.warn('email_003 skipped:', e.message));
 
+    // email_005: send_mode — 'resend' (default) | 'graph' (Graph-only)
+    await pool.query(`ALTER TABLE tenant_email_accounts ADD COLUMN IF NOT EXISTS send_mode VARCHAR(20) NOT NULL DEFAULT 'resend'`)
+      .catch((e: any) => console.warn('email_005 skipped:', e.message));
+
     // email_004: consolidate duplicate email conversations (one per sender per tenant).
     // Uses DISTINCT ON to pick the earliest conversation per (tenant_id, channel_user_id) —
     // no correlated subqueries, no self-join column-alias ambiguity.
@@ -2050,6 +2054,12 @@ export async function runMigrations() {
         )
     `);
   } catch (e: any) { console.warn('email_004 SQLite skipped:', e.message); }
+
+  // email_005: send_mode column — 'resend' (default) | 'graph' (Graph-only)
+  const emailAccCols5 = prepare("SELECT name FROM pragma_table_info('tenant_email_accounts')")
+    .all().map((r: any) => r.name as string);
+  if (!emailAccCols5.includes('send_mode'))
+    exec("ALTER TABLE tenant_email_accounts ADD COLUMN send_mode TEXT NOT NULL DEFAULT 'resend'");
 
   console.log('✅ SQLite migrations complete');
 }

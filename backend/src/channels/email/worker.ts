@@ -222,46 +222,64 @@ async function processMessage(
     );
   }
 
-  // (h) Send reply via Resend — Railway blocks outbound SMTP on 587 and 465.
-  //     from:     SkedAI sender (verified on Resend); we cannot send as the customer's Gmail.
-  //     reply_to: customer's mailbox so guest replies land back in their inbox.
+  // (h) Send reply.
+  //     Graph accounts: use adapter.sendReply() which gates on send_mode ('graph' or 'resend').
+  //     IMAP accounts:  use Resend directly (Railway blocks SMTP 587/465).
   const referencesChain = [msg.references, msg.rfc822MessageId].filter(Boolean).join(' ');
   const outboundSubject = msg.subject.startsWith('Re:') ? msg.subject : `Re: ${msg.subject}`;
-  const senderName = account.display_name?.trim() || 'SkedAI';
-  console.log(`[Email] Sending via Resend — to: ${msg.from.address} reply_to: ${account.email_address}`);
-  const resendResult = await getResend().emails.send({
-    from:    `${senderName} <noreply@skedai.net>`,
-    to:      msg.from.address,
-    replyTo: account.email_address,
-    subject:  outboundSubject,
-    text:     reply,
-    headers: {
-      'In-Reply-To': msg.rfc822MessageId,
-      'References':  referencesChain,
-    },
-  });
-  if (resendResult.error || !resendResult.data) {
-    throw new Error(`Resend send failed: ${resendResult.error?.message ?? 'unknown error'}`);
-  }
-  const sentMessageId = `<${resendResult.data.id}@resend.dev>`;
 
-  // (i) appendToSent is not available — Resend has no access to the account's Sent folder.
-  //     Phase 1 known limitation: sent replies are visible in the Resend dashboard only.
-  console.log(`[Email] ${account.email_address} — reply sent via Resend (${sentMessageId})`);
+  let sentMessageId: string;
+  let outboundProviderRef: string | null = null;
+
+  if (account.provider === 'graph') {
+    const sendResult = await (adapter as GraphAdapter).sendReply({
+      to:                    msg.from,
+      from:                  { address: account.email_address, name: account.display_name ?? 'SkedAI' },
+      subject:               outboundSubject,
+      bodyText:              reply,
+      inReplyToMessageId:    msg.rfc822MessageId,
+      referencesChain,
+      inReplyToProviderRef:  msg.providerRef,
+    });
+    sentMessageId = sendResult.sentMessageId;
+    outboundProviderRef = sendResult.providerRef ?? null;
+    console.log(`[Email] ${account.email_address} — reply sent via Graph (${sentMessageId})`);
+  } else {
+    // IMAP: Railway blocks outbound SMTP — use Resend instead.
+    const senderName = account.display_name?.trim() || 'SkedAI';
+    console.log(`[Email] Sending via Resend — to: ${msg.from.address} reply_to: ${account.email_address}`);
+    const resendResult = await getResend().emails.send({
+      from:    `${senderName} <noreply@skedai.net>`,
+      to:      msg.from.address,
+      replyTo: account.email_address,
+      subject:  outboundSubject,
+      text:     reply,
+      headers: {
+        'In-Reply-To': msg.rfc822MessageId,
+        'References':  referencesChain,
+      },
+    });
+    if (resendResult.error || !resendResult.data) {
+      throw new Error(`Resend send failed: ${resendResult.error?.message ?? 'unknown error'}`);
+    }
+    sentMessageId = `<${resendResult.data.id}@resend.dev>`;
+    console.log(`[Email] ${account.email_address} — reply sent via Resend (${sentMessageId})`);
+  }
 
   // (j) Insert outbound email_messages row
   await dbRun(
     `INSERT INTO email_messages
        (id, tenant_id, account_id, conversation_id, direction, rfc822_message_id,
-        in_reply_to, references_header, from_address, from_name, to_address, subject, body_text, sent_message_id)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        in_reply_to, references_header, from_address, from_name, to_address, subject, body_text, sent_message_id, provider_ref)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     crypto.randomUUID(), account.tenant_id, account.id, conversationId, 'outbound',
     sentMessageId,
     msg.rfc822MessageId, referencesChain,
-    'noreply@skedai.net', 'SkedAI',
+    account.provider === 'graph' ? account.email_address : 'noreply@skedai.net',
+    account.display_name ?? 'SkedAI',
     msg.from.address,
     outboundSubject,
-    reply, sentMessageId,
+    reply, sentMessageId, outboundProviderRef,
   );
 
   // (k) Move original to Answered
