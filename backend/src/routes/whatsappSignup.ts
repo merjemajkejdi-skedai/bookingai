@@ -14,6 +14,12 @@ const ok  = <T>(res: Response, data: T) => res.json({ success: true, data });
 const err = (res: Response, msg: string, code = 400) =>
   res.status(code).json({ success: false, error: msg });
 
+function normaliseWhatsapp(raw: string | undefined | null): string {
+  if (!raw) return '';
+  const cleaned = raw.replace(/[\s\-()]/g, '').trim();
+  return cleaned.startsWith('whatsapp:') ? cleaned : `whatsapp:${cleaned}`;
+}
+
 const META_APP_ID     = () => process.env.META_APP_ID || '1507114490265475';
 const META_APP_SECRET = () => process.env.META_APP_SECRET!;
 
@@ -173,7 +179,7 @@ whatsappSignupRouter.post('/whatsapp/embedded-signup/callback', async (req: Requ
            whatsapp_connected_at = ${isPg ? 'NOW()' : 'CURRENT_TIMESTAMP'}
          WHERE id = ?`,
         wabaId, phoneNumberId ?? null, accessToken,
-        phoneNumber ?? '', tenantId,
+        normaliseWhatsapp(phoneNumber), tenantId,
       );
       console.log(`[WhatsApp Signup] Tenant ${tenantId} updated with WABA ${wabaId}`);
 

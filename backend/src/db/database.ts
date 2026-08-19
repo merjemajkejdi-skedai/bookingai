@@ -1364,6 +1364,8 @@ export async function runMigrations() {
       )`,
       // whatsapp_signup_002 — tenant columns for connected_at tracking
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS whatsapp_connected_at TIMESTAMPTZ`,
+      // whatsapp_number_normalise — ensure all stored numbers use whatsapp: prefix
+      `UPDATE tenants SET whatsapp_number = 'whatsapp:' || whatsapp_number WHERE whatsapp_number != '' AND whatsapp_number NOT LIKE 'whatsapp:%'`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -2097,6 +2099,9 @@ export async function runMigrations() {
     .all().map((r: any) => r.name as string);
   if (!tenantCols2.includes('whatsapp_connected_at'))
     exec('ALTER TABLE tenants ADD COLUMN whatsapp_connected_at TEXT');
+
+  // whatsapp_number_normalise: ensure all stored numbers use whatsapp: prefix
+  exec(`UPDATE tenants SET whatsapp_number = 'whatsapp:' || whatsapp_number WHERE whatsapp_number != '' AND whatsapp_number NOT LIKE 'whatsapp:%'`);
 
   console.log('✅ SQLite migrations complete');
 }
