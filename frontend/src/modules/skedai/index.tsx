@@ -1,16 +1,18 @@
 import { useState, useEffect } from 'react';
-import { LogOut, Settings, HelpCircle, Building2, Bot } from 'lucide-react';
+import { LogOut, Settings, HelpCircle, Building2, Bot, MessageSquare } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from './api';
 import type { SkedAIConfig } from './types';
 import { AdminTab }   from './components/AdminTab';
 import { SupportTab } from './components/SupportTab';
 import { SalesTab }   from './components/SalesTab';
+import { ConversationsPage } from '../hotel/components/ConversationsPage';
 import { clearAuth }  from '../../shared/lib/auth';
 
-type Tab = 'admin' | 'support' | 'sales';
+type Tab = 'conversations' | 'admin' | 'support' | 'sales';
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
+  { id: 'conversations', label: 'Conversations', icon: <MessageSquare size={16} /> },
   { id: 'admin',   label: 'Admin',   icon: <Settings   size={16} /> },
   { id: 'support', label: 'Support', icon: <HelpCircle size={16} /> },
   { id: 'sales',   label: 'Sales',   icon: <Building2  size={16} /> },
@@ -79,6 +81,7 @@ export function SkedAIModule({ onLogout }: { onLogout: () => void }) {
             </div>
           ) : (
             <>
+              {tab === 'conversations' && <ConversationsPage />}
               {tab === 'admin'   && <AdminTab   config={config} onSaved={patchConfig} />}
               {tab === 'support' && <SupportTab config={config} onSaved={patchConfig} />}
               {tab === 'sales'   && <SalesTab   config={config} onSaved={patchConfig} />}

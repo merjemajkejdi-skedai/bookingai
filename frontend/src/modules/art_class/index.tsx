@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Users, Shield, LogOut, BookTemplate, BarChart2, CreditCard, Star, Settings } from 'lucide-react';
+import { Calendar, Users, Shield, LogOut, BookTemplate, BarChart2, CreditCard, Star, Settings, MessageSquare } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from './api';
 import type { Specialist } from './types';
@@ -10,10 +10,11 @@ import { AnalyticsPage } from './components/AnalyticsPage';
 import { SubscriptionPlansPage } from './components/SubscriptionPlansPage';
 import { SpecialEventsPage } from './components/SpecialEventsPage';
 import { ConfigPage } from './components/ConfigPage';
+import { ConversationsPage } from '../hotel/components/ConversationsPage';
 import { AdminPage } from '../../pages/AdminPage';
 import { isAdmin, getStoredUser, clearAuth } from '../../shared/lib/auth';
 
-type Page = 'classes' | 'templates' | 'specialists' | 'plans' | 'special-events' | 'analytics' | 'config' | 'admin';
+type Page = 'conversations' | 'classes' | 'templates' | 'specialists' | 'plans' | 'special-events' | 'analytics' | 'config' | 'admin';
 interface Props { onLogout: () => void; }
 
 export function ArtClassModule({ onLogout }: Props) {
@@ -37,6 +38,7 @@ export function ArtClassModule({ onLogout }: Props) {
   }
 
   const nav: { id: Page; label: string; icon: React.ReactNode }[] = [
+    { id: 'conversations',  label: 'Conversations',  icon: <MessageSquare size={16} /> },
     { id: 'classes',        label: 'Classes',        icon: <Calendar size={16} /> },
     { id: 'templates',      label: 'Templates',      icon: <BookTemplate size={16} /> },
     { id: 'specialists',    label: 'Teachers',       icon: <Users size={16} /> },
@@ -95,6 +97,7 @@ export function ArtClassModule({ onLogout }: Props) {
 
       {/* Main content */}
       <main className="flex-1 min-w-0 overflow-hidden flex flex-col p-2 md:p-4">
+        {page === 'conversations' && <ConversationsPage />}
         {page === 'classes' && <EventsPage specialists={specialists} />}
         {page === 'templates' && <TemplatesPage />}
         {page === 'specialists' && (
