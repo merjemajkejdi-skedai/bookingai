@@ -575,12 +575,7 @@ function WhatsAppConnectCard() {
   }, []);
 
   function handleConnect() {
-    const configId = (window as any).__META_SIGNUP_CONFIG_ID;
-    if (!configId) {
-      setStatus('error');
-      setResult('WhatsApp signup is not yet configured. Contact your administrator.');
-      return;
-    }
+    const configId = (window as any).__META_SIGNUP_CONFIG_ID || '1757192855330030';
     if (!(window as any).FB) {
       setStatus('error');
       setResult('Facebook SDK not loaded. Please refresh the page.');

@@ -859,11 +859,7 @@ window.fbAsyncInit = function() {
 };
 
 function launchWhatsAppSignup(source, tenantId) {
-  var configId = window.__META_SIGNUP_CONFIG_ID;
-  if (!configId) {
-    alert('WhatsApp signup is not yet configured. Please contact support@skedai.net');
-    return;
-  }
+  var configId = window.__META_SIGNUP_CONFIG_ID || '1757192855330030';
   var btn = document.getElementById('wa-signup-btn');
   var result = document.getElementById('wa-signup-result');
   if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
