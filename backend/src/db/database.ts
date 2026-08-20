@@ -1366,6 +1366,65 @@ export async function runMigrations() {
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS whatsapp_connected_at TIMESTAMPTZ`,
       // whatsapp_number_normalise — ensure all stored numbers use whatsapp: prefix
       `UPDATE tenants SET whatsapp_number = 'whatsapp:' || whatsapp_number WHERE whatsapp_number != '' AND whatsapp_number NOT LIKE 'whatsapp:%'`,
+
+      // skedai_conversations_001 — per-tenant-type conversations table for skedai
+      `CREATE TABLE IF NOT EXISTS skedai_conversations (
+        id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        guest_phone TEXT NOT NULL,
+        guest_name TEXT,
+        guest_username VARCHAR(255),
+        messages JSONB NOT NULL DEFAULT '[]',
+        last_message TEXT,
+        channel TEXT NOT NULL DEFAULT 'whatsapp',
+        channel_user_id TEXT,
+        ai_paused_until TEXT,
+        ai_paused_by TEXT,
+        updated_at TEXT,
+        last_guest_message_at TEXT,
+        UNIQUE(tenant_id, guest_phone)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_skedai_conversations_tenant ON skedai_conversations(tenant_id, updated_at DESC)`,
+
+      // art_class_conversations_001 — per-tenant-type conversations table for art_class
+      `CREATE TABLE IF NOT EXISTS art_class_conversations (
+        id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        guest_phone TEXT NOT NULL,
+        guest_name TEXT,
+        guest_username VARCHAR(255),
+        messages JSONB NOT NULL DEFAULT '[]',
+        last_message TEXT,
+        channel TEXT NOT NULL DEFAULT 'whatsapp',
+        channel_user_id TEXT,
+        ai_paused_until TEXT,
+        ai_paused_by TEXT,
+        updated_at TEXT,
+        last_guest_message_at TEXT,
+        UNIQUE(tenant_id, guest_phone)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_art_class_conversations_tenant ON art_class_conversations(tenant_id, updated_at DESC)`,
+
+      // skedai_conversations_migrate — move accidental skedai rows from hotel_conversations
+      `INSERT INTO skedai_conversations (
+        id, tenant_id, guest_phone, guest_name, guest_username,
+        messages, last_message, channel, channel_user_id,
+        ai_paused_until, ai_paused_by, updated_at, last_guest_message_at
+      )
+      SELECT id, tenant_id, guest_phone, guest_name, guest_username,
+             messages, last_message, channel, channel_user_id,
+             ai_paused_until, ai_paused_by, updated_at, last_guest_message_at
+      FROM hotel_conversations
+      WHERE tenant_id IN (SELECT id FROM tenants WHERE type = 'skedai')
+      ON CONFLICT (tenant_id, guest_phone) DO NOTHING`,
+
+      `DELETE FROM hotel_conversations
+       WHERE tenant_id IN (SELECT id FROM tenants WHERE type = 'skedai')
+         AND EXISTS (
+           SELECT 1 FROM skedai_conversations sc
+           WHERE sc.tenant_id = hotel_conversations.tenant_id
+             AND sc.guest_phone = hotel_conversations.guest_phone
+         )`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -2102,6 +2161,42 @@ export async function runMigrations() {
 
   // whatsapp_number_normalise: ensure all stored numbers use whatsapp: prefix
   exec(`UPDATE tenants SET whatsapp_number = 'whatsapp:' || whatsapp_number WHERE whatsapp_number != '' AND whatsapp_number NOT LIKE 'whatsapp:%'`);
+
+  // skedai_conversations
+  exec(`CREATE TABLE IF NOT EXISTS skedai_conversations (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    guest_phone TEXT NOT NULL,
+    guest_name TEXT,
+    guest_username TEXT,
+    messages TEXT NOT NULL DEFAULT '[]',
+    last_message TEXT,
+    channel TEXT NOT NULL DEFAULT 'whatsapp',
+    channel_user_id TEXT,
+    ai_paused_until TEXT,
+    ai_paused_by TEXT,
+    updated_at TEXT,
+    last_guest_message_at TEXT,
+    UNIQUE(tenant_id, guest_phone)
+  )`);
+
+  // art_class_conversations
+  exec(`CREATE TABLE IF NOT EXISTS art_class_conversations (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    guest_phone TEXT NOT NULL,
+    guest_name TEXT,
+    guest_username TEXT,
+    messages TEXT NOT NULL DEFAULT '[]',
+    last_message TEXT,
+    channel TEXT NOT NULL DEFAULT 'whatsapp',
+    channel_user_id TEXT,
+    ai_paused_until TEXT,
+    ai_paused_by TEXT,
+    updated_at TEXT,
+    last_guest_message_at TEXT,
+    UNIQUE(tenant_id, guest_phone)
+  )`);
 
   console.log('✅ SQLite migrations complete');
 }

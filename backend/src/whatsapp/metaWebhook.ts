@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from 'express';
+import crypto from 'crypto';
 import { isPg, prepare, queryOne, queryRun } from '../db/database.js';
 import { getSession, updateSession } from './sessions.js';
 import { bufferMessage, cancelOrderReminder, scheduleOrderReminder, REMINDER_PROMPT } from './webhook.js';
@@ -24,6 +25,47 @@ async function dbGet(sql: string, ...p: unknown[]) {
 async function dbRun(sql: string, ...p: unknown[]) {
   if (isPg) return queryRun(sql, p);
   prepare(sql).run(...p);
+}
+
+async function persistConversation(
+  table: string, tenantId: string, phone: string,
+  userMessage: string, assistantReply: string, guestName?: string,
+): Promise<void> {
+  const now = new Date().toISOString();
+  try {
+    const existing = await dbGet(
+      `SELECT id, messages FROM ${table} WHERE tenant_id = ? AND guest_phone = ?`,
+      tenantId, phone,
+    ) as any;
+    const parse = (raw: any): any[] => {
+      if (Array.isArray(raw)) return raw;
+      try { return JSON.parse(raw || '[]'); } catch { return []; }
+    };
+    const prev = parse(existing?.messages);
+    const updated = [
+      ...prev,
+      { role: 'user',      content: userMessage,    ts: now },
+      { role: 'assistant', content: assistantReply, ts: now },
+    ].slice(-30);
+
+    if (existing) {
+      await dbRun(
+        `UPDATE ${table} SET messages = ?, last_message = ?, updated_at = ?, last_guest_message_at = ?,
+             guest_name = COALESCE(?, guest_name)
+         WHERE tenant_id = ? AND guest_phone = ?`,
+        JSON.stringify(updated), now, now, now, guestName ?? null, tenantId, phone,
+      );
+    } else {
+      await dbRun(
+        `INSERT INTO ${table}
+           (id, tenant_id, guest_phone, guest_name, messages, last_message, channel, updated_at, last_guest_message_at)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+        crypto.randomUUID(), tenantId, phone, guestName ?? null, JSON.stringify(updated), now, 'whatsapp', now, now,
+      );
+    }
+  } catch (e: any) {
+    console.warn(`[Conversations] Meta DB persist failed for ${table}:`, e.message);
+  }
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -198,6 +240,29 @@ metaRouter.post('/meta/webhook', async (req: Request, res: Response) => {
           }
 
           // ── All other tenant types ────────────────────────────────────────────
+
+          // Pause check for skedai / art_class
+          if (tenantType === 'skedai' || tenantType === 'art_class') {
+            const ptable = tenantType === 'skedai' ? 'skedai_conversations' : 'art_class_conversations';
+            const pausedRow = await dbGet(
+              `SELECT ai_paused_until, messages FROM ${ptable} WHERE tenant_id = ? AND guest_phone = ? LIMIT 1`,
+              tenant.id, customerPhone,
+            ) as any;
+            if (pausedRow?.ai_paused_until && new Date(pausedRow.ai_paused_until) > new Date()) {
+              console.log(`[Meta] ⏸ AI paused for ${customerPhone} — saving guest message only`);
+              const now = new Date().toISOString();
+              const parse = (raw: any): any[] => { if (Array.isArray(raw)) return raw; try { return JSON.parse(raw || '[]'); } catch { return []; } };
+              const prev = parse(pausedRow.messages);
+              const updated = [...prev, { role: 'user', content: textToAgent, ts: now }].slice(-30);
+              await dbRun(
+                `UPDATE ${ptable} SET messages = ?, last_message = ?, updated_at = ?, last_guest_message_at = ?
+                 WHERE tenant_id = ? AND guest_phone = ?`,
+                JSON.stringify(updated), now, now, now, tenant.id, customerPhone,
+              );
+              continue;
+            }
+          }
+
           const history = getSession(customerPhone);
           let reply = '';
           let shopToolsUsed: string[] = [];
@@ -233,6 +298,12 @@ metaRouter.post('/meta/webhook', async (req: Request, res: Response) => {
 
           if (tenantType !== 'skedai' && tenantType !== 'shop') {
             updateSession(customerPhone, textToAgent, reply);
+          }
+
+          if (tenantType === 'skedai') {
+            persistConversation('skedai_conversations', tenant.id, customerPhone, textToAgent, reply, guestName || undefined);
+          } else if (tenantType === 'art_class') {
+            persistConversation('art_class_conversations', tenant.id, customerPhone, textToAgent, reply, guestName || undefined);
           }
 
           let waDelivered = true;

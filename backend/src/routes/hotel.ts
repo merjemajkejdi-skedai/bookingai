@@ -9,6 +9,7 @@ import { appendStaffMessage } from '../hotel/session.js';
 import { ImapSmtpAdapter } from '../channels/email/ImapSmtpAdapter.js';
 import { GraphAdapter } from '../channels/email/GraphAdapter.js';
 import type { EmailAccountRow } from '../channels/email/types.js';
+import { getConversationsTable } from '../utils/conversationsTable.js';
 
 export const hotelRouter = Router();
 
@@ -22,6 +23,11 @@ async function dbRun(sql: string, ...p: unknown[]) { if (isPg) return queryRun(s
 const ok = <T>(res: Response, data: T) => res.json({ success: true, data });
 const err = (res: Response, msg: string, status = 400) =>
   res.status(status).json({ success: false, error: msg });
+
+async function getTenantType(tenantId: string): Promise<string> {
+  const row = await dbGet('SELECT type FROM tenants WHERE id = ?', tenantId) as any;
+  return (row?.type || 'hotel').toLowerCase();
+}
 
 // ---------------------------------------------------------------------------
 // Requests
@@ -973,8 +979,10 @@ hotelRouter.delete('/blocked/:phone', requireAuth, async (req: Request, res: Res
 hotelRouter.get('/conversations', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
   try {
+    const tenantType = await getTenantType(tenantId);
+    const table = getConversationsTable(tenantType);
+
     const channelFilter = req.query.channel as string | undefined;
-    // WhatsApp convs may have channel=null (legacy) or channel='whatsapp'
     const channelClause = channelFilter
       ? (channelFilter === 'whatsapp'
           ? ' AND (c.channel IS NULL OR c.channel = ?)'
@@ -983,58 +991,80 @@ hotelRouter.get('/conversations', requireAuth, async (req: Request, res: Respons
     const params: unknown[] = [tenantId];
     if (channelFilter) params.push(channelFilter);
 
-    // Join on the most recent stay per guest (regardless of status) so we can
-    // show survey state for checked-out guests too
-    const rows = await dbAll(
-      `SELECT
-         c.id,
-         c.guest_phone,
-         c.room_number,
-         c.messages,
-         c.last_message,
-         c.updated_at,
-         c.last_guest_message_at,
-         c.ai_paused_until,
-         c.ai_paused_by,
-         c.channel,
-         c.channel_user_id,
-         c.guest_username,
-         g.id           AS stay_id,
-         COALESCE(g.guest_name, c.guest_name) AS guest_name,
-         g.check_in,
-         g.check_out,
-         g.status       AS guest_status,
-         g.survey_sent,
-         g.survey_score,
-         em.subject      AS email_subject,
-         em.from_address AS email_from_address,
-         em.from_name    AS email_from_name
-       FROM hotel_conversations c
-       LEFT JOIN hotel_guest_stays g
-         ON g.id = (
-           SELECT id FROM hotel_guest_stays
-           WHERE tenant_id = c.tenant_id
-             AND (
-               (guest_phone != '' AND guest_phone = c.guest_phone)
-               OR (guest_phone = '' AND c.room_number IS NOT NULL AND c.room_number != '' AND room_number = c.room_number)
-             )
-           ORDER BY
-             CASE WHEN guest_phone != '' AND guest_phone = c.guest_phone THEN 0 ELSE 1 END,
-             created_at DESC
-           LIMIT 1
-         )
-       LEFT JOIN email_messages em ON c.channel = 'email' AND em.id = (
-         SELECT id FROM email_messages
-         WHERE conversation_id = c.id AND direction = 'inbound'
-         ORDER BY created_at ASC LIMIT 1
-       )
-       WHERE c.tenant_id = ?${channelClause}
-       ORDER BY c.updated_at DESC
-       LIMIT 100`,
-      ...params,
-    ) as any[];
+    let rows: any[];
 
-    // Parse messages — PG returns JSONB as JS array already; SQLite returns a string
+    if (table === 'hotel_conversations') {
+      rows = await dbAll(
+        `SELECT
+           c.id,
+           c.guest_phone,
+           c.room_number,
+           c.messages,
+           c.last_message,
+           c.updated_at,
+           c.last_guest_message_at,
+           c.ai_paused_until,
+           c.ai_paused_by,
+           c.channel,
+           c.channel_user_id,
+           c.guest_username,
+           g.id           AS stay_id,
+           COALESCE(g.guest_name, c.guest_name) AS guest_name,
+           g.check_in,
+           g.check_out,
+           g.status       AS guest_status,
+           g.survey_sent,
+           g.survey_score,
+           em.subject      AS email_subject,
+           em.from_address AS email_from_address,
+           em.from_name    AS email_from_name
+         FROM hotel_conversations c
+         LEFT JOIN hotel_guest_stays g
+           ON g.id = (
+             SELECT id FROM hotel_guest_stays
+             WHERE tenant_id = c.tenant_id
+               AND (
+                 (guest_phone != '' AND guest_phone = c.guest_phone)
+                 OR (guest_phone = '' AND c.room_number IS NOT NULL AND c.room_number != '' AND room_number = c.room_number)
+               )
+             ORDER BY
+               CASE WHEN guest_phone != '' AND guest_phone = c.guest_phone THEN 0 ELSE 1 END,
+               created_at DESC
+             LIMIT 1
+           )
+         LEFT JOIN email_messages em ON c.channel = 'email' AND em.id = (
+           SELECT id FROM email_messages
+           WHERE conversation_id = c.id AND direction = 'inbound'
+           ORDER BY created_at ASC LIMIT 1
+         )
+         WHERE c.tenant_id = ?${channelClause}
+         ORDER BY c.updated_at DESC
+         LIMIT 100`,
+        ...params,
+      ) as any[];
+    } else {
+      rows = await dbAll(
+        `SELECT
+           c.id,
+           c.guest_phone,
+           c.messages,
+           c.last_message,
+           c.updated_at,
+           c.last_guest_message_at,
+           c.ai_paused_until,
+           c.ai_paused_by,
+           c.channel,
+           c.channel_user_id,
+           c.guest_username,
+           c.guest_name
+         FROM ${table} c
+         WHERE c.tenant_id = ?${channelClause}
+         ORDER BY c.updated_at DESC
+         LIMIT 100`,
+        ...params,
+      ) as any[];
+    }
+
     const parseMessages = (raw: any): any[] => {
       if (Array.isArray(raw)) return raw;
       try { return JSON.parse(raw || '[]'); } catch { return []; }
@@ -1052,7 +1082,7 @@ hotelRouter.get('/conversations', requireAuth, async (req: Request, res: Respons
       };
     });
 
-    console.log(`[Hotel Conversations] Found ${result.length} conversations for tenant ${tenantId} (includes all channels)`);
+    console.log(`[Conversations] Found ${result.length} for tenant ${tenantId} (type: ${tenantType}, table: ${table})`);
     ok(res, result);
   } catch (e: any) { err(res, e.message, 500); }
 });
@@ -1062,33 +1092,44 @@ hotelRouter.get('/conversations/:phone', requireAuth, async (req: Request, res: 
   const tenantId = resolveTenantId(req);
   const phone = decodeURIComponent(req.params.phone);
   try {
-    const row = await dbGet(
-      `SELECT
-         c.*,
-         g.id           AS stay_id,
-         COALESCE(g.guest_name, c.guest_name) AS guest_name,
-         g.check_in,
-         g.check_out,
-         g.status       AS guest_status,
-         g.survey_sent,
-         g.survey_score
-       FROM hotel_conversations c
-       LEFT JOIN hotel_guest_stays g
-         ON g.id = (
-           SELECT id FROM hotel_guest_stays
-           WHERE tenant_id = c.tenant_id
-             AND (
-               (guest_phone != '' AND guest_phone = c.guest_phone)
-               OR (guest_phone = '' AND c.room_number IS NOT NULL AND c.room_number != '' AND room_number = c.room_number)
-             )
-           ORDER BY
-             CASE WHEN guest_phone != '' AND guest_phone = c.guest_phone THEN 0 ELSE 1 END,
-             created_at DESC
-           LIMIT 1
-         )
-       WHERE c.tenant_id = ? AND c.guest_phone = ?`,
-      tenantId, phone,
-    ) as any;
+    const tenantType = await getTenantType(tenantId);
+    const table = getConversationsTable(tenantType);
+
+    let row: any;
+    if (table === 'hotel_conversations') {
+      row = await dbGet(
+        `SELECT
+           c.*,
+           g.id           AS stay_id,
+           COALESCE(g.guest_name, c.guest_name) AS guest_name,
+           g.check_in,
+           g.check_out,
+           g.status       AS guest_status,
+           g.survey_sent,
+           g.survey_score
+         FROM hotel_conversations c
+         LEFT JOIN hotel_guest_stays g
+           ON g.id = (
+             SELECT id FROM hotel_guest_stays
+             WHERE tenant_id = c.tenant_id
+               AND (
+                 (guest_phone != '' AND guest_phone = c.guest_phone)
+                 OR (guest_phone = '' AND c.room_number IS NOT NULL AND c.room_number != '' AND room_number = c.room_number)
+               )
+             ORDER BY
+               CASE WHEN guest_phone != '' AND guest_phone = c.guest_phone THEN 0 ELSE 1 END,
+               created_at DESC
+             LIMIT 1
+           )
+         WHERE c.tenant_id = ? AND c.guest_phone = ?`,
+        tenantId, phone,
+      ) as any;
+    } else {
+      row = await dbGet(
+        `SELECT * FROM ${table} WHERE tenant_id = ? AND guest_phone = ?`,
+        tenantId, phone,
+      ) as any;
+    }
 
     if (!row) return ok(res, null);
     const parseMessages = (raw: any): any[] => {
@@ -1113,10 +1154,11 @@ hotelRouter.post('/conversations/:id/reply', requireAuth, async (req: Request, r
   if (!message?.trim()) return err(res, 'message is required');
 
   try {
-    // Accept both the UUID id and the legacy guest_phone as identifier
-    // (some existing rows have id = guest_phone instead of a real UUID)
+    const tenantType = await getTenantType(tenantId);
+    const table = getConversationsTable(tenantType);
+
     const conv = await dbGet(
-      'SELECT channel, channel_user_id, guest_phone FROM hotel_conversations WHERE tenant_id = ? AND (id = ? OR guest_phone = ?) LIMIT 1',
+      `SELECT channel, channel_user_id, guest_phone FROM ${table} WHERE tenant_id = ? AND (id = ? OR guest_phone = ?) LIMIT 1`,
       tenantId, convId, convId,
     ) as any;
 
@@ -1255,7 +1297,36 @@ hotelRouter.post('/conversations/:id/reply', requireAuth, async (req: Request, r
       const tenantRow = await dbGet('SELECT * FROM tenants WHERE id = ?', tenantId) as any;
       if (!tenantRow) return err(res, 'Tenant not found', 404);
       await sendWhatsAppMessage(conv.guest_phone, message.trim(), tenantRow);
-      await appendStaffMessage(tenantId, conv.guest_phone, message.trim());
+
+      if (table === 'hotel_conversations') {
+        await appendStaffMessage(tenantId, conv.guest_phone, message.trim());
+      } else {
+        const staffMsg = { role: 'staff', content: message.trim(), ts: new Date().toISOString() };
+        if (isPg) {
+          await dbRun(
+            `UPDATE ${table}
+             SET messages     = messages || ?::jsonb,
+                 last_message = CURRENT_TIMESTAMP,
+                 updated_at   = CURRENT_TIMESTAMP
+             WHERE tenant_id = ? AND guest_phone = ?`,
+            JSON.stringify([staffMsg]), tenantId, conv.guest_phone,
+          );
+        } else {
+          const convRow = await dbGet(
+            `SELECT messages FROM ${table} WHERE tenant_id = ? AND guest_phone = ?`,
+            tenantId, conv.guest_phone,
+          ) as any;
+          const prev: any[] = (() => { try { return JSON.parse(convRow?.messages ?? '[]'); } catch { return []; } })();
+          await dbRun(
+            `UPDATE ${table}
+             SET messages     = ?,
+                 last_message = CURRENT_TIMESTAMP,
+                 updated_at   = CURRENT_TIMESTAMP
+             WHERE tenant_id = ? AND guest_phone = ?`,
+            JSON.stringify([...prev, staffMsg].slice(-30)), tenantId, conv.guest_phone,
+          );
+        }
+      }
     }
     ok(res, { sent: true });
   } catch (e: any) {
@@ -1273,13 +1344,14 @@ hotelRouter.post('/conversations/:phone/pause', requireAuth, async (req: Request
   const pausedUntil = new Date(Date.now() + minutes * 60 * 1000).toISOString();
 
   try {
+    const table = getConversationsTable(await getTenantType(tenantId));
     await dbRun(
-      `UPDATE hotel_conversations
+      `UPDATE ${table}
        SET ai_paused_until = ?, ai_paused_by = 'staff'
        WHERE tenant_id = ? AND guest_phone = ?`,
       pausedUntil, tenantId, phone,
     );
-    console.log(`[Hotel] ⏸ AI paused for ${phone} until ${pausedUntil}`);
+    console.log(`[Conversations] ⏸ AI paused for ${phone} until ${pausedUntil}`);
     ok(res, { paused: true, paused_until: pausedUntil, minutes_remaining: minutes });
   } catch (e: any) { err(res, e.message, 500); }
 });
@@ -1290,13 +1362,14 @@ hotelRouter.post('/conversations/:phone/resume', requireAuth, async (req: Reques
   const phone    = decodeURIComponent(req.params.phone);
 
   try {
+    const table = getConversationsTable(await getTenantType(tenantId));
     await dbRun(
-      `UPDATE hotel_conversations
+      `UPDATE ${table}
        SET ai_paused_until = NULL, ai_paused_by = NULL
        WHERE tenant_id = ? AND guest_phone = ?`,
       tenantId, phone,
     );
-    console.log(`[Hotel] ▶ AI resumed for ${phone}`);
+    console.log(`[Conversations] ▶ AI resumed for ${phone}`);
     ok(res, { paused: false });
   } catch (e: any) { err(res, e.message, 500); }
 });
@@ -1307,9 +1380,10 @@ hotelRouter.get('/conversations/:phone/pause-status', requireAuth, async (req: R
   const phone    = decodeURIComponent(req.params.phone);
 
   try {
+    const table = getConversationsTable(await getTenantType(tenantId));
     const row = await dbGet(
       `SELECT ai_paused_until, ai_paused_by
-       FROM hotel_conversations
+       FROM ${table}
        WHERE tenant_id = ? AND guest_phone = ?`,
       tenantId, phone,
     ) as any;
