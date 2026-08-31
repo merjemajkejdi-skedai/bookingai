@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BellRing, Users, BookOpen, Settings, Shield, LogOut, Building2, MessageSquare, ShieldOff, Star, UtensilsCrossed, Mail } from 'lucide-react';
+import { BellRing, Users, BookOpen, Settings, Shield, LogOut, Building2, MessageSquare, ShieldOff, Star, UtensilsCrossed } from 'lucide-react';
 import clsx from 'clsx';
 import { isAdmin, getStoredUser, clearAuth } from '../../shared/lib/auth';
 import { AdminPage }           from '../../pages/AdminPage';
@@ -12,10 +12,9 @@ import { ConversationsPage }   from './components/ConversationsPage';
 import { BlockedPage }         from './components/BlockedPage';
 import { ReviewsPage }         from './components/ReviewsPage';
 import { MenusPage }           from './components/MenusPage';
-import { EmailPage }          from './components/EmailPage';
 import { api }                from './api';
 
-type Page = 'requests' | 'guests' | 'faq' | 'config' | 'departments' | 'conversations' | 'blocked' | 'reviews' | 'menus' | 'email' | 'admin';
+type Page = 'requests' | 'guests' | 'faq' | 'config' | 'departments' | 'conversations' | 'blocked' | 'reviews' | 'menus' | 'admin';
 
 interface Props { onLogout: () => void; }
 
@@ -49,7 +48,6 @@ export function HotelModule({ onLogout }: Props) {
     { id: 'config',        label: 'Hotel Config',    icon: <Settings size={16} /> },
     { id: 'departments',   label: 'Departments',     icon: <Building2 size={16} /> },
     ...(reviewsEnabled ? [{ id: 'reviews' as Page, label: 'Reviews', icon: <Star size={16} /> }] : []),
-    { id: 'email',         label: 'Email',           icon: <Mail size={16} /> },
     { id: 'blocked',       label: 'Blocked Numbers', icon: <ShieldOff size={16} /> },
     ...(isAdmin() ? [{ id: 'admin' as Page, label: 'Admin', icon: <Shield size={16} /> }] : []),
   ];
@@ -121,7 +119,6 @@ export function HotelModule({ onLogout }: Props) {
         {page === 'blocked'       && <BlockedPage />}
         {page === 'reviews'       && <ReviewsPage />}
         {page === 'menus'         && <MenusPage />}
-        {page === 'email'         && <EmailPage />}
         {page === 'admin'         && <AdminPage />}
       </main>
 
