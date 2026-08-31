@@ -414,23 +414,27 @@ adminRouter.post('/tenants/:tenantId/channels/facebook/connect', async (req: Req
 
   if (!page_id?.trim() || !access_token?.trim())
     return err(res, 'Page ID and Page Token are required');
+  if (!/^\d+$/.test(page_id.trim()))
+    return err(res, 'Page ID must be numeric');
 
-  // Verify token by fetching page info from Graph API
-  let pageName: string;
+  // Verify token by calling GET /me as the Page (no extra permissions needed)
+  let pageName = '';
   try {
     const verifyRes = await fetch(
-      `https://graph.facebook.com/v21.0/${encodeURIComponent(page_id.trim())}?fields=name,id&access_token=${encodeURIComponent(access_token.trim())}`,
+      `https://graph.facebook.com/v21.0/me?fields=id,name&access_token=${encodeURIComponent(access_token.trim())}`,
     );
-    if (!verifyRes.ok) {
+    if (verifyRes.ok) {
+      const pageData = await verifyRes.json() as any;
+      if (pageData.id && pageData.id !== page_id.trim()) {
+        return err(res, `Token belongs to page ${pageData.id}, not ${page_id.trim()}`);
+      }
+      pageName = pageData.name || '';
+    } else {
       const body = await verifyRes.json().catch(() => ({})) as any;
-      console.error(`[Admin] Messenger token verify failed:`, body?.error?.message || verifyRes.status);
-      return err(res, 'Invalid Page ID or token');
+      console.warn(`[Admin] Messenger token verify failed (non-blocking):`, body?.error?.message || verifyRes.status);
     }
-    const pageData = await verifyRes.json() as any;
-    pageName = pageData.name || '';
   } catch (e: any) {
-    console.error(`[Admin] Messenger token verify error:`, e.message);
-    return err(res, 'Could not verify token — check Page ID and token');
+    console.warn(`[Admin] Messenger token verify error (non-blocking):`, e.message);
   }
 
   const conflict = await dbGet(
