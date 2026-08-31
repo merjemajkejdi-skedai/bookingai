@@ -601,13 +601,16 @@ hotelRouter.get('/config', requireAuth, async (req: Request, res: Response) => {
   try {
     const [row, tenantRow] = await Promise.all([
       dbGet('SELECT * FROM hotel_config WHERE tenant_id = ?', tenantId),
-      dbGet('SELECT reviews_enabled, survey_enabled, menus_enabled FROM tenants WHERE id = ?', tenantId),
+      dbGet('SELECT reviews_enabled, survey_enabled, menus_enabled, whatsapp_number, whatsapp_connected_at FROM tenants WHERE id = ?', tenantId),
     ]);
     ok(res, {
       ...(row || {}),
+      tenant_id:       tenantId,
       reviews_enabled: (tenantRow as any)?.reviews_enabled ?? 0,
       survey_enabled:  (tenantRow as any)?.survey_enabled  ?? 0,
       menus_enabled:   (tenantRow as any)?.menus_enabled   ?? 0,
+      whatsapp_number: (tenantRow as any)?.whatsapp_number || null,
+      whatsapp_connected_at: (tenantRow as any)?.whatsapp_connected_at || null,
     });
   } catch (e: any) { err(res, e.message, 500); }
 });

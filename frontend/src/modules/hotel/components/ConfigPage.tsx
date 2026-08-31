@@ -225,31 +225,38 @@ export function ConfigPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(false);
   const [saved, setSaved]     = useState(false);
+  const [tenantId, setTenantId] = useState<string | null>(null);
+  const [whatsappNumber, setWhatsappNumber] = useState<string | null>(null);
+
+  function applyConfig(c: any) {
+    if (c && Object.keys(c).length > 0) {
+      setConfig({
+        ...EMPTY,
+        ...c,
+        ask_guest_identity: c.ask_guest_identity !== 0,
+        message_forward:    c.message_forward    !== 0,
+        review_platform_url:         c.review_platform_url         ?? '',
+        review_platform_name:        c.review_platform_name        ?? 'Booking.com',
+        survey_positive_threshold:   Number(c.survey_positive_threshold) || 8,
+        survey_positive_message:     c.survey_positive_message     ?? DEFAULT_POSITIVE_MSG,
+        survey_negative_message:     c.survey_negative_message     ?? DEFAULT_NEGATIVE_MSG,
+        front_office_phone:          c.front_office_phone          ?? '',
+        fallback_message:            c.fallback_message            ?? '',
+        ask_maintenance_photo:       c.ask_maintenance_photo       !== 0,
+        add_conversation_to_faq_enabled: c.add_conversation_to_faq_enabled !== 0,
+      });
+      setTenantId(c.tenant_id || null);
+      setWhatsappNumber(c.whatsapp_number || null);
+    }
+  }
+
+  function reloadConfig() {
+    api.getConfig().then((c: any) => applyConfig(c)).catch(() => {});
+  }
 
   useEffect(() => {
     api.getConfig()
-      .then((c: any) => {
-        if (c && Object.keys(c).length > 0) {
-          setConfig({
-            ...EMPTY,
-            ...c,
-            // Backend stores as INTEGER (1/0); convert to boolean for local state.
-            // Default to true when column is absent (null/undefined).
-            ask_guest_identity: c.ask_guest_identity !== 0,
-            message_forward:    c.message_forward    !== 0,
-            // Survey fields — use defaults if not yet configured
-            review_platform_url:         c.review_platform_url         ?? '',
-            review_platform_name:        c.review_platform_name        ?? 'Booking.com',
-            survey_positive_threshold:   Number(c.survey_positive_threshold) || 8,
-            survey_positive_message:     c.survey_positive_message     ?? DEFAULT_POSITIVE_MSG,
-            survey_negative_message:     c.survey_negative_message     ?? DEFAULT_NEGATIVE_MSG,
-            front_office_phone:          c.front_office_phone          ?? '',
-            fallback_message:            c.fallback_message            ?? '',
-            ask_maintenance_photo:       c.ask_maintenance_photo       !== 0,
-            add_conversation_to_faq_enabled: c.add_conversation_to_faq_enabled !== 0,
-          });
-        }
-      })
+      .then((c: any) => applyConfig(c))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -280,25 +287,8 @@ export function ConfigPage() {
         ask_maintenance_photo:      config.ask_maintenance_photo      ? 1 : 0,
         add_conversation_to_faq_enabled: config.add_conversation_to_faq_enabled ? 1 : 0,
       } as any);
-      // Reload from server to confirm what was actually persisted
       const fresh = await api.getConfig() as any;
-      if (fresh && Object.keys(fresh).length > 0) {
-        setConfig(prev => ({
-          ...prev,
-          ...fresh,
-          ask_guest_identity: fresh.ask_guest_identity !== 0,
-          message_forward:    fresh.message_forward    !== 0,
-          review_platform_url:        fresh.review_platform_url         ?? '',
-          review_platform_name:       fresh.review_platform_name        ?? 'Booking.com',
-          survey_positive_threshold:  Number(fresh.survey_positive_threshold) || 8,
-          survey_positive_message:    fresh.survey_positive_message     ?? DEFAULT_POSITIVE_MSG,
-          survey_negative_message:    fresh.survey_negative_message     ?? DEFAULT_NEGATIVE_MSG,
-          front_office_phone:         fresh.front_office_phone          ?? '',
-          fallback_message:           fresh.fallback_message            ?? '',
-          ask_maintenance_photo:      fresh.ask_maintenance_photo       !== 0,
-          add_conversation_to_faq_enabled: fresh.add_conversation_to_faq_enabled !== 0,
-        }));
-      }
+      applyConfig(fresh);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (e: any) {
@@ -318,7 +308,7 @@ export function ConfigPage() {
           <p className="text-xs text-slate-400">Info the AI concierge shares with guests</p>
         </div>
 
-        <WhatsAppConnectCard />
+        <WhatsAppConnectCard tenantId={tenantId} whatsappNumber={whatsappNumber} onConnected={reloadConfig} />
 
         <form onSubmit={handleSave} className="space-y-5">
           {/* General */}
@@ -565,14 +555,13 @@ export function ConfigPage() {
 }
 
 // ── WhatsApp Connect Card ────────────────────────────────────────────────────
-function WhatsAppConnectCard() {
+function WhatsAppConnectCard({ tenantId, whatsappNumber, onConnected }: {
+  tenantId: string | null;
+  whatsappNumber: string | null;
+  onConnected: () => void;
+}) {
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [result, setResult] = useState('');
-  const [tenantInfo, setTenantInfo] = useState<any>(null);
-
-  useEffect(() => {
-    api.getConfig().then((c: any) => setTenantInfo(c)).catch(() => {});
-  }, []);
 
   function handleConnect() {
     const configId = '1757192855330030';
@@ -580,7 +569,7 @@ function WhatsAppConnectCard() {
     const redirectUri = window.location.origin + window.location.pathname;
     const state = JSON.stringify({
       source: 'tenant_settings',
-      tenantId: tenantInfo?.tenant_id || null,
+      tenantId: tenantId,
     });
 
     const url = 'https://www.facebook.com/v26.0/dialog/oauth'
@@ -629,6 +618,7 @@ function WhatsAppConnectCard() {
         if (data.success) {
           setStatus('success');
           setResult(`Connected! Phone: ${data.data?.phoneNumber || 'detected'}`);
+          onConnected();
         } else {
           setStatus('error');
           setResult(data.error || 'Something went wrong');
@@ -639,6 +629,20 @@ function WhatsAppConnectCard() {
         setResult('Connection failed. Please try again.');
       });
   }, []);
+
+  if (whatsappNumber) {
+    const display = whatsappNumber.replace(/^whatsapp:/, '');
+    return (
+      <section className="bg-white rounded-xl border border-slate-200 p-5 space-y-3 mb-5">
+        <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+          <MessageSquare size={15} className="text-green-500" /> WhatsApp
+        </h2>
+        <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700 flex items-center gap-2">
+          Connected: {display}
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="bg-white rounded-xl border border-slate-200 p-5 space-y-3 mb-5">
@@ -659,7 +663,7 @@ function WhatsAppConnectCard() {
             onClick={handleConnect}
             disabled={status === 'loading'}
             className="inline-flex items-center gap-2 px-4 py-2 bg-[#25D366] text-white text-sm font-semibold rounded-lg hover:bg-[#20bd5a] disabled:opacity-50 transition-colors">
-            {status === 'loading' ? 'Connecting…' : 'Connect WhatsApp Number'}
+            {status === 'loading' ? 'Connecting...' : 'Connect WhatsApp Number'}
           </button>
           {status === 'error' && (
             <p className="text-xs text-red-500 mt-1">{result}</p>
