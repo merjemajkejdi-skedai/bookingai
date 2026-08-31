@@ -281,6 +281,52 @@
     .pricing-cta { display: flex; align-items: center; justify-content: center; text-decoration: none; width: 100%; }
     .pricing-note { font-size: 13px; color: var(--slate-400); margin-top: 18px; }
 
+    /* ── UNIFIED INBOX ───────────────────────────────────── */
+    .channel-cards {
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: 16px; max-width: 760px; margin: 0 auto 52px;
+    }
+    .channel-card {
+      background: #fff; border: 1.5px solid var(--slate-200);
+      border-radius: 16px; padding: 26px 20px; text-align: center;
+      transition: all .2s;
+    }
+    .channel-card:hover { border-color: var(--teal-light); box-shadow: 0 8px 28px rgba(11,94,82,.1); transform: translateY(-2px); }
+    .channel-card-icon {
+      width: 48px; height: 48px; border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 12px; font-size: 22px;
+    }
+    .channel-card h3 {
+      font-family: 'Bricolage Grotesque', sans-serif;
+      font-size: 15px; font-weight: 700; color: var(--slate-800); margin-bottom: 10px;
+    }
+    .channel-toggle {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 12px; font-weight: 600; letter-spacing: .3px;
+    }
+    .channel-toggle-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+    }
+    .toggle-on .channel-toggle-dot { background: #22c55e; }
+    .toggle-on { color: #16a34a; }
+    .toggle-off .channel-toggle-dot { background: var(--slate-400); }
+    .toggle-off { color: var(--slate-400); }
+    .inbox-features {
+      list-style: none; max-width: 560px; margin: 0 auto 48px;
+      display: flex; flex-direction: column; gap: 18px;
+    }
+    .inbox-features li {
+      display: flex; align-items: flex-start; gap: 12px;
+      font-size: 15px; color: var(--slate-700); line-height: 1.55;
+    }
+    .inbox-features .check {
+      color: var(--teal-light); font-weight: 700; flex-shrink: 0;
+      margin-top: 2px; font-size: 16px;
+    }
+    .inbox-cta { text-align: center; }
+    .inbox-cta-note { font-size: 14px; color: var(--slate-500); margin-bottom: 16px; }
+
     /* ── CONTACT ─────────────────────────────────────────── */
     .contact-section { background: #f0faf6; border-top: 1px solid #d4ede5; }
     .contact-inner { max-width: 560px; margin: 0 auto; }
@@ -376,6 +422,7 @@
       .section { padding: 72px 5%; }
       .industries-grid { grid-template-columns: 1fr; }
       .industry-card.wide { flex-direction: column; }
+      .channel-cards { grid-template-columns: repeat(2, 1fr); }
       .form-grid { grid-template-columns: 1fr; }
       .form-grid .full { grid-column: 1; }
       .pricing-card { padding: 36px 24px; }
@@ -615,6 +662,78 @@
       Connect WhatsApp — Get Started Free
     </button>
     <div id="wa-signup-result" style="margin-top:1rem;display:none"></div>
+  </div>
+</section>
+
+<!-- ════ UNIFIED INBOX ══════════════════════════════════════ -->
+<section class="section bg-tint" id="inbox">
+  <div class="section-inner">
+    <p class="section-label reveal">Unified Inbox</p>
+    <h2 class="reveal d1">One inbox. Every channel.<br/>AI that never sleeps.</h2>
+    <p class="section-sub reveal d2">Connect WhatsApp, Instagram, Messenger, and Email. Turn the AI on or off per channel. Your whole team replies from one screen — or lets the AI handle it.</p>
+
+    <div class="channel-cards">
+      <!-- WhatsApp -->
+      <div class="channel-card reveal">
+        <div class="channel-card-icon" style="background: #e8faf3;">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="#25D366"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>
+        </div>
+        <h3>WhatsApp</h3>
+        <span class="channel-toggle toggle-on"><span class="channel-toggle-dot"></span> AI On</span>
+      </div>
+
+      <!-- Instagram -->
+      <div class="channel-card reveal d1">
+        <div class="channel-card-icon" style="background: linear-gradient(135deg, rgba(131,58,180,.12), rgba(253,29,29,.12), rgba(247,119,55,.12));">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="url(#ig-grad)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <defs><linearGradient id="ig-grad" x1="0%" y1="100%" x2="100%" y2="0%"><stop offset="0%" stop-color="#F77737"/><stop offset="50%" stop-color="#FD1D1D"/><stop offset="100%" stop-color="#833AB4"/></linearGradient></defs>
+            <rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="5"/><circle cx="17.5" cy="6.5" r="1.5" fill="url(#ig-grad)" stroke="none"/>
+          </svg>
+        </div>
+        <h3>Instagram</h3>
+        <span class="channel-toggle toggle-on"><span class="channel-toggle-dot"></span> AI On</span>
+      </div>
+
+      <!-- Messenger -->
+      <div class="channel-card reveal d1">
+        <div class="channel-card-icon" style="background: #e6f4ff;">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="#0099FF"><path d="M12 2C6.36 2 2 6.13 2 11.7c0 2.91 1.2 5.42 3.15 7.15.16.14.26.34.27.56l.05 1.74c.02.58.62.96 1.15.73l1.94-.86c.16-.07.34-.09.52-.05.94.26 1.94.4 2.97.4 5.64 0 10-4.13 10-9.7S17.64 2 12 2zm5.99 7.56l-2.76 4.38c-.44.7-1.38.88-2.04.38l-2.19-1.65a.6.6 0 00-.72 0l-2.96 2.25c-.4.3-.91-.18-.65-.6l2.76-4.38c.44-.7 1.38-.88 2.04-.38l2.19 1.65a.6.6 0 00.72 0l2.96-2.25c.4-.3.91.18.65.6z"/></svg>
+        </div>
+        <h3>Messenger</h3>
+        <span class="channel-toggle toggle-off"><span class="channel-toggle-dot"></span> AI Off</span>
+      </div>
+
+      <!-- Email -->
+      <div class="channel-card reveal d2">
+        <div class="channel-card-icon" style="background: var(--slate-100);">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--slate-500)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+          </svg>
+        </div>
+        <h3>Email</h3>
+        <span class="channel-toggle toggle-on"><span class="channel-toggle-dot"></span> AI On</span>
+      </div>
+    </div>
+
+    <ul class="inbox-features">
+      <li class="reveal">
+        <span class="check">✓</span>
+        <span>One conversation view — WhatsApp, Instagram, Messenger, and Email side by side</span>
+      </li>
+      <li class="reveal d1">
+        <span class="check">✓</span>
+        <span>Per-channel AI — let the AI handle WhatsApp while your team manages Instagram manually</span>
+      </li>
+      <li class="reveal d2">
+        <span class="check">✓</span>
+        <span>Any business, any size — hospitality, retail, services, clinics, agencies, and more</span>
+      </li>
+    </ul>
+
+    <div class="inbox-cta reveal d3">
+      <p class="inbox-cta-note">Pricing varies by channels and volume.</p>
+      <a href="mailto:support@skedai.net" class="btn-primary">Contact us for pricing →</a>
+    </div>
   </div>
 </section>
 
