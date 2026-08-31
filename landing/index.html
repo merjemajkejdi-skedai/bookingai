@@ -848,83 +848,80 @@ async function handleSubmit(e) {
   }
 }
 
-/* ── Meta Embedded Signup ─────────────────────────────────── */
-window.fbAsyncInit = function() {
-  FB.init({
-    appId: '1507114490265475',
-    autoLogAppEvents: true,
-    xfbml: true,
-    version: 'v26.0'
-  });
-};
-
+/* ── Meta Embedded Signup (redirect-based — no FB.login / JSSDK needed) ── */
 function launchWhatsAppSignup(source, tenantId) {
-  var configId = window.__META_SIGNUP_CONFIG_ID || '1757192855330030';
-  var btn = document.getElementById('wa-signup-btn');
-  var result = document.getElementById('wa-signup-result');
-  if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
+  var configId = '1757192855330030';
+  var appId    = '1507114490265475';
+  var redirectUri = window.location.origin + window.location.pathname;
+  var state = JSON.stringify({ source: source || 'landing', tenantId: tenantId || null });
 
-  FB.login(function(response) {
-    if (response.authResponse) {
-      var code = response.authResponse.code;
-      fetch('https://bookingai-production-8d5d.up.railway.app/api/whatsapp/embedded-signup/callback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code: code,
-          source: source || 'landing',
-          tenantId: tenantId || null
-        })
-      })
-      .then(function(res) { return res.json(); })
-      .then(function(data) {
-        if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
-        if (result) {
-          result.style.display = 'block';
-          if (data.success) {
-            if (source === 'landing') {
-              result.innerHTML = '<div style="background:#d1f5e8;color:#0b5e52;padding:1rem 1.5rem;border-radius:10px;font-size:.95rem">' +
-                '<strong>✅ Connected!</strong> We\'ll be in touch within 24 hours to complete your setup.<br>' +
-                '<span style="font-size:.85rem;opacity:.8">Questions? WhatsApp us: +355 69 803 8120</span></div>';
-            } else {
-              result.innerHTML = '<div style="background:#d1f5e8;color:#0b5e52;padding:1rem 1.5rem;border-radius:10px;font-size:.95rem">' +
-                '<strong>✅ WhatsApp connected!</strong> Phone: ' + (data.data.phoneNumber || 'detected') + '</div>';
-            }
-          } else {
-            result.innerHTML = '<div style="background:#fee2e2;color:#991b1b;padding:1rem 1.5rem;border-radius:10px;font-size:.95rem">' +
-              '❌ ' + (data.error || 'Something went wrong. Please try again.') + '</div>';
-          }
-        }
-      })
-      .catch(function() {
-        if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
-        if (result) {
-          result.style.display = 'block';
-          result.innerHTML = '<div style="background:#fee2e2;color:#991b1b;padding:1rem 1.5rem;border-radius:10px">Something went wrong. Please try again or email support@skedai.net</div>';
-        }
-      });
-    } else {
-      if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+  var url = 'https://www.facebook.com/v26.0/dialog/oauth'
+    + '?client_id=' + appId
+    + '&config_id=' + configId
+    + '&response_type=code'
+    + '&override_default_response_type=true'
+    + '&redirect_uri=' + encodeURIComponent(redirectUri)
+    + '&state=' + encodeURIComponent(state)
+    + '&extras=' + encodeURIComponent(JSON.stringify({
+        setup: {},
+        featureName: 'whatsapp_embedded_signup',
+        sessionInfoVersion: '3'
+      }));
+
+  window.location.href = url;
+}
+
+(function handleOAuthCallback() {
+  var params = new URLSearchParams(window.location.search);
+  var code = params.get('code');
+  if (!code) return;
+
+  var state = {};
+  try { state = JSON.parse(params.get('state') || '{}'); } catch(e) {}
+
+  window.history.replaceState({}, '', window.location.pathname);
+
+  var result = document.getElementById('wa-signup-result');
+  var btn    = document.getElementById('wa-signup-btn');
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
+  if (result) {
+    result.style.display = 'block';
+    result.innerHTML = '<div style="padding:1rem 1.5rem;border-radius:10px;font-size:.95rem;background:#e0f2fe;color:#0c4a6e">Connecting your WhatsApp&hellip;</div>';
+  }
+
+  var redirectUri = window.location.origin + window.location.pathname;
+  fetch('https://bookingai-production-8d5d.up.railway.app/api/whatsapp/embedded-signup/callback', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      code: code,
+      source: state.source || 'landing',
+      tenantId: state.tenantId || null,
+      redirect_uri: redirectUri
+    })
+  })
+  .then(function(res) { return res.json(); })
+  .then(function(data) {
+    if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+    if (result) {
+      if (data.success) {
+        result.innerHTML = '<div style="background:#d1f5e8;color:#0b5e52;padding:1rem 1.5rem;border-radius:10px;font-size:.95rem">' +
+          '<strong>✅ Connected!</strong> We\'ll be in touch within 24 hours to complete your setup.<br>' +
+          '<span style="font-size:.85rem;opacity:.8">Questions? WhatsApp us: +355 69 803 8120</span></div>';
+      } else {
+        result.innerHTML = '<div style="background:#fee2e2;color:#991b1b;padding:1rem 1.5rem;border-radius:10px;font-size:.95rem">' +
+          '❌ ' + (data.error || 'Something went wrong. Please try again.') + '</div>';
+      }
     }
-  }, {
-    config_id: configId,
-    response_type: 'code',
-    override_default_response_type: true,
-    extras: {
-      setup: {},
-      featureName: 'whatsapp_embedded_signup',
-      sessionInfoVersion: '3'
+  })
+  .catch(function() {
+    if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+    if (result) {
+      result.style.display = 'block';
+      result.innerHTML = '<div style="background:#fee2e2;color:#991b1b;padding:1rem 1.5rem;border-radius:10px">Something went wrong. Please try again or email support@skedai.net</div>';
     }
   });
-}
-</script>
-
-<!-- Meta SDK -->
-<script async defer crossorigin="anonymous" src="https://connect.facebook.net/en_US/sdk.js"></script>
-<script>
-  // Config ID is loaded from the backend at page load — not hardcoded.
-  // For now, set it directly; once available, fetch from /api/config.
-  window.__META_SIGNUP_CONFIG_ID = '1757192855330030';
+})();
 </script>
 
 </body>

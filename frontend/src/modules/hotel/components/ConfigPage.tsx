@@ -575,55 +575,70 @@ function WhatsAppConnectCard() {
   }, []);
 
   function handleConnect() {
-    const configId = (window as any).__META_SIGNUP_CONFIG_ID || '1757192855330030';
-    if (!(window as any).FB) {
-      setStatus('error');
-      setResult('Facebook SDK not loaded. Please refresh the page.');
-      return;
-    }
+    const configId = '1757192855330030';
+    const appId = '1507114490265475';
+    const redirectUri = window.location.origin + window.location.pathname;
+    const state = JSON.stringify({
+      source: 'tenant_settings',
+      tenantId: tenantInfo?.tenant_id || null,
+    });
+
+    const url = 'https://www.facebook.com/v26.0/dialog/oauth'
+      + '?client_id=' + appId
+      + '&config_id=' + configId
+      + '&response_type=code'
+      + '&override_default_response_type=true'
+      + '&redirect_uri=' + encodeURIComponent(redirectUri)
+      + '&state=' + encodeURIComponent(state)
+      + '&extras=' + encodeURIComponent(JSON.stringify({
+          setup: {},
+          featureName: 'whatsapp_embedded_signup',
+          sessionInfoVersion: '3',
+        }));
+
+    window.location.href = url;
+  }
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    if (!code) return;
+
+    let state: any = {};
+    try { state = JSON.parse(params.get('state') || '{}'); } catch {}
+
+    window.history.replaceState({}, '', window.location.pathname);
+
+    if (state.source !== 'tenant_settings') return;
 
     setStatus('loading');
-    (window as any).FB.login((response: any) => {
-      if (response.authResponse) {
-        const code = response.authResponse.code;
-        const baseUrl = (import.meta as any).env?.VITE_API_URL || '';
-        fetch(`${baseUrl}/api/whatsapp/embedded-signup/callback`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            code,
-            source: 'tenant_settings',
-            tenantId: tenantInfo?.tenant_id || null,
-          }),
-        })
-          .then(res => res.json())
-          .then(data => {
-            if (data.success) {
-              setStatus('success');
-              setResult(`Connected! Phone: ${data.data?.phoneNumber || 'detected'}`);
-            } else {
-              setStatus('error');
-              setResult(data.error || 'Something went wrong');
-            }
-          })
-          .catch(() => {
-            setStatus('error');
-            setResult('Connection failed. Please try again.');
-          });
-      } else {
-        setStatus('idle');
-      }
-    }, {
-      config_id: configId,
-      response_type: 'code',
-      override_default_response_type: true,
-      extras: {
-        setup: {},
-        featureName: 'whatsapp_embedded_signup',
-        sessionInfoVersion: '3',
-      },
-    });
-  }
+    const baseUrl = (import.meta as any).env?.VITE_API_URL || '';
+    const redirectUri = window.location.origin + window.location.pathname;
+    fetch(`${baseUrl}/api/whatsapp/embedded-signup/callback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code,
+        source: 'tenant_settings',
+        tenantId: state.tenantId || null,
+        redirect_uri: redirectUri,
+      }),
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          setStatus('success');
+          setResult(`Connected! Phone: ${data.data?.phoneNumber || 'detected'}`);
+        } else {
+          setStatus('error');
+          setResult(data.error || 'Something went wrong');
+        }
+      })
+      .catch(() => {
+        setStatus('error');
+        setResult('Connection failed. Please try again.');
+      });
+  }, []);
 
   return (
     <section className="bg-white rounded-xl border border-slate-200 p-5 space-y-3 mb-5">

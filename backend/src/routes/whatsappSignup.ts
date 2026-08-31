@@ -28,10 +28,11 @@ const META_APP_SECRET = () => process.env.META_APP_SECRET!;
 // Receives the auth code from the frontend Embedded Signup popup.
 // ---------------------------------------------------------------------------
 whatsappSignupRouter.post('/whatsapp/embedded-signup/callback', async (req: Request, res: Response) => {
-  const { code, source, tenantId } = req.body as {
+  const { code, source, tenantId, redirect_uri } = req.body as {
     code: string;
     source: 'landing' | 'tenant_settings';
     tenantId?: string;
+    redirect_uri?: string;
   };
 
   if (!code) return err(res, 'code is required');
@@ -44,11 +45,15 @@ whatsappSignupRouter.post('/whatsapp/embedded-signup/callback', async (req: Requ
   try {
     // 1. Exchange code for short-lived user token
     console.log('[WhatsApp Signup] Exchanging code for token...');
+    const defaultRedirect = process.env.META_EMBEDDED_SIGNUP_REDIRECT_URI || 'https://app.skedai.net/onboarding/whatsapp/callback';
+    const isSkedaiOrigin = redirect_uri && /^https:\/\/([a-z0-9-]+\.)*skedai\.net(\/|$)/.test(redirect_uri);
+    const resolvedRedirect = isSkedaiOrigin ? redirect_uri : defaultRedirect;
+
     const tokenRes = await fetch('https://graph.facebook.com/v21.0/oauth/access_token?' + new URLSearchParams({
       client_id:     META_APP_ID(),
       client_secret: appSecret,
       code,
-      redirect_uri:  process.env.META_EMBEDDED_SIGNUP_REDIRECT_URI || 'https://app.skedai.net/onboarding/whatsapp/callback',
+      redirect_uri:  resolvedRedirect,
     }));
     if (!tokenRes.ok) {
       const errBody = await tokenRes.text();
