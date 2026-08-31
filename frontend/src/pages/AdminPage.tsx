@@ -46,7 +46,7 @@ export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) 
     if (state.source !== 'tenant_settings') return;
 
     const baseUrl = (import.meta as any).env?.VITE_API_URL || '';
-    const redirectUri = window.location.origin + window.location.pathname;
+    const redirectUri = window.location.origin + '/';
     fetch(`${baseUrl}/api/whatsapp/embedded-signup/callback`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -566,7 +566,7 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
                 onClick={() => {
                   const configId = '1757192855330030';
                   const appId = '1507114490265475';
-                  const redirectUri = window.location.origin + window.location.pathname;
+                  const redirectUri = window.location.origin + '/';
                   const state = JSON.stringify({ source: 'tenant_settings', tenantId: tenant.id });
                   window.location.href = 'https://www.facebook.com/v26.0/dialog/oauth'
                     + '?client_id=' + appId
