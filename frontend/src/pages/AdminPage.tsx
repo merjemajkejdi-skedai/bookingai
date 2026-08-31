@@ -385,7 +385,6 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
   // Messenger connect form
   const [fbFormOpen, setFbFormOpen]               = useState(false);
   const [fbPageId, setFbPageId]                   = useState('');
-  const [fbPageName, setFbPageName]               = useState('');
   const [fbToken, setFbToken]                     = useState('');
   const [fbConnecting, setFbConnecting]           = useState(false);
   const [fbConnectError, setFbConnectError]       = useState('');
@@ -517,21 +516,20 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
 
   async function handleMessengerConnect() {
     if (!fbPageId.trim() || !fbToken.trim()) {
-      setFbConnectError('Page ID and Access Token are required');
+      setFbConnectError('Page ID and Page Token are required');
       return;
     }
     setFbConnecting(true); setFbConnectError('');
     try {
-      await adminApi.connectMessenger(tenant.id, {
+      const result = await adminApi.connectMessenger(tenant.id, {
         page_id: fbPageId.trim(),
-        page_name: fbPageName.trim(),
         access_token: fbToken.trim(),
       });
       setChannels(prev => ({
         ...prev,
-        facebook: { connected: true, ai_enabled: true, page_name: fbPageName.trim() },
+        facebook: { connected: true, ai_enabled: true, page_name: result?.page_name },
       }));
-      setFbFormOpen(false); setFbPageId(''); setFbPageName(''); setFbToken('');
+      setFbFormOpen(false); setFbPageId(''); setFbToken('');
     } catch (e: any) { setFbConnectError(e.message); }
     finally { setFbConnecting(false); }
   }
@@ -905,13 +903,7 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
                         placeholder="123456789012345"
                       />
                       <Input
-                        label="Page Name (optional)"
-                        value={fbPageName}
-                        onChange={(e: any) => setFbPageName(e.target.value)}
-                        placeholder="My Business Page"
-                      />
-                      <Input
-                        label="Page Access Token"
+                        label="Page Token"
                         value={fbToken}
                         onChange={(e: any) => setFbToken(e.target.value)}
                         placeholder="EAAxxxxxxxxx…"

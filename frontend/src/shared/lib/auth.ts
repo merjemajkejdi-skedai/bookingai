@@ -160,8 +160,8 @@ export const adminApi = {
     }),
   disconnectInstagram: (tenantId: string) =>
     authFetch(`/admin/tenants/${tenantId}/channels/instagram/disconnect`, { method: 'DELETE' }),
-  connectMessenger: (tenantId: string, data: { page_id: string; page_name: string; access_token: string }) =>
-    authFetch(`/admin/tenants/${tenantId}/channels/facebook/connect`, {
+  connectMessenger: (tenantId: string, data: { page_id: string; access_token: string }) =>
+    authFetch<{ connected: boolean; page_name: string }>(`/admin/tenants/${tenantId}/channels/facebook/connect`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),

@@ -408,12 +408,30 @@ adminRouter.delete('/tenants/:tenantId/channels/instagram/disconnect', async (re
 // POST /admin/tenants/:tenantId/channels/facebook/connect
 adminRouter.post('/tenants/:tenantId/channels/facebook/connect', async (req: Request, res: Response) => {
   const { tenantId } = req.params;
-  const { page_id, page_name, access_token } = req.body as {
-    page_id: string; page_name: string; access_token: string;
+  const { page_id, access_token } = req.body as {
+    page_id: string; access_token: string;
   };
 
   if (!page_id?.trim() || !access_token?.trim())
-    return err(res, 'page_id and access_token are required');
+    return err(res, 'Page ID and Page Token are required');
+
+  // Verify token by fetching page info from Graph API
+  let pageName: string;
+  try {
+    const verifyRes = await fetch(
+      `https://graph.facebook.com/v21.0/${encodeURIComponent(page_id.trim())}?fields=name,id&access_token=${encodeURIComponent(access_token.trim())}`,
+    );
+    if (!verifyRes.ok) {
+      const body = await verifyRes.json().catch(() => ({})) as any;
+      console.error(`[Admin] Messenger token verify failed:`, body?.error?.message || verifyRes.status);
+      return err(res, 'Invalid Page ID or token');
+    }
+    const pageData = await verifyRes.json() as any;
+    pageName = pageData.name || '';
+  } catch (e: any) {
+    console.error(`[Admin] Messenger token verify error:`, e.message);
+    return err(res, 'Could not verify token — check Page ID and token');
+  }
 
   const conflict = await dbGet(
     'SELECT id, name FROM tenants WHERE messenger_page_id = ? AND id != ?',
@@ -431,11 +449,11 @@ adminRouter.post('/tenants/:tenantId/channels/facebook/connect', async (req: Req
          messenger_connected_at = CURRENT_TIMESTAMP,
          messenger_ai_enabled = true
      WHERE id = ?`,
-    page_id.trim(), (page_name || '').trim(), encryptedToken, tenantId,
+    page_id.trim(), pageName, encryptedToken, tenantId,
   );
 
-  console.log(`[Admin] Messenger connected to ${tenantId} (page ${page_id.trim()})`);
-  ok(res, { connected: true, page_name: (page_name || '').trim() });
+  console.log(`[Admin] Messenger connected to ${tenantId} (page ${page_id.trim()} — ${pageName})`);
+  ok(res, { connected: true, page_name: pageName });
 });
 
 // DELETE /admin/tenants/:tenantId/channels/facebook/disconnect
