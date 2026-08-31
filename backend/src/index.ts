@@ -24,6 +24,7 @@ import { adminAnalyticsRouter } from './routes/adminAnalytics.js';
 import { whatsappSignupRouter } from './routes/whatsappSignup.js';
 import { alertError, cleanupCooldowns } from './utils/errorMonitor.js';
 import instagramRouter from './routes/instagramWebhook.js';
+import messengerRouter from './routes/messengerWebhook.js';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 
@@ -119,6 +120,7 @@ app.use('/api', whatsappSignupRouter);
 app.use('/whatsapp', whatsappRouter);
 app.use('/', metaRouter);
 app.use('/', instagramRouter);
+app.use('/', messengerRouter);
 app.use('/', emailWebhookRouter);
 
 app.get('/test-alert', (_req, res) => {

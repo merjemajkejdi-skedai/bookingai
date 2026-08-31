@@ -118,7 +118,7 @@ export const api = {
   getConversations: (channel?: string) =>
     req<Conversation[]>(`/hotel/conversations${channel ? `?channel=${encodeURIComponent(channel)}` : ''}`),
   getActiveChannels: () =>
-    req<{ whatsapp: boolean; instagram: boolean; email: boolean }>('/hotel/tenant/channels'),
+    req<{ whatsapp: boolean; instagram: boolean; messenger: boolean; email: boolean }>('/hotel/tenant/channels'),
   getConversation: (phone: string) =>
     req<Conversation>(`/hotel/conversations/${encodeURIComponent(phone)}`),
   replyToGuest: (id: string, message: string) => {

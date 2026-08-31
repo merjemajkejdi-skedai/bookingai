@@ -1425,6 +1425,13 @@ export async function runMigrations() {
            WHERE sc.tenant_id = hotel_conversations.tenant_id
              AND sc.guest_phone = hotel_conversations.guest_phone
          )`,
+
+      // messenger_001 — Facebook Messenger channel on tenants
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS messenger_page_id VARCHAR(255)`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS messenger_page_name VARCHAR(255)`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS messenger_access_token_encrypted TEXT`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS messenger_connected_at TIMESTAMPTZ`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS messenger_ai_enabled BOOLEAN NOT NULL DEFAULT true`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));

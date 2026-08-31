@@ -1,7 +1,9 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
+import { encrypt } from '../utils/encryption.js';
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth, requireAdmin);
@@ -317,7 +319,11 @@ adminRouter.get('/tenants/:id', async (req: Request, res: Response) => {
       connected:  isTrue(find('instagram')?.connected),
       ai_enabled: isTrue(find('instagram')?.ai_enabled),
     },
-    facebook:  { connected: false, ai_enabled: false },
+    facebook:  {
+      connected:  !!tenant.messenger_page_id,
+      ai_enabled: !!tenant.messenger_page_id && (tenant.messenger_ai_enabled === true || tenant.messenger_ai_enabled === 1),
+      page_name:  tenant.messenger_page_name || null,
+    },
     email:     { connected: false, ai_enabled: false },
   };
 
@@ -399,6 +405,58 @@ adminRouter.delete('/tenants/:tenantId/channels/instagram/disconnect', async (re
   ok(res, { connected: false });
 });
 
+// POST /admin/tenants/:tenantId/channels/facebook/connect
+adminRouter.post('/tenants/:tenantId/channels/facebook/connect', async (req: Request, res: Response) => {
+  const { tenantId } = req.params;
+  const { page_id, page_name, access_token } = req.body as {
+    page_id: string; page_name: string; access_token: string;
+  };
+
+  if (!page_id?.trim() || !access_token?.trim())
+    return err(res, 'page_id and access_token are required');
+
+  const conflict = await dbGet(
+    'SELECT id, name FROM tenants WHERE messenger_page_id = ? AND id != ?',
+    page_id.trim(), tenantId,
+  ) as any;
+  if (conflict)
+    return err(res, `This Facebook page is already connected to ${conflict.name}`);
+
+  const encryptedToken = encrypt(access_token.trim());
+  await dbRun(
+    `UPDATE tenants
+     SET messenger_page_id = ?,
+         messenger_page_name = ?,
+         messenger_access_token_encrypted = ?,
+         messenger_connected_at = CURRENT_TIMESTAMP,
+         messenger_ai_enabled = true
+     WHERE id = ?`,
+    page_id.trim(), (page_name || '').trim(), encryptedToken, tenantId,
+  );
+
+  console.log(`[Admin] Messenger connected to ${tenantId} (page ${page_id.trim()})`);
+  ok(res, { connected: true, page_name: (page_name || '').trim() });
+});
+
+// DELETE /admin/tenants/:tenantId/channels/facebook/disconnect
+adminRouter.delete('/tenants/:tenantId/channels/facebook/disconnect', async (req: Request, res: Response) => {
+  const { tenantId } = req.params;
+
+  await dbRun(
+    `UPDATE tenants
+     SET messenger_page_id = NULL,
+         messenger_page_name = NULL,
+         messenger_access_token_encrypted = NULL,
+         messenger_connected_at = NULL,
+         messenger_ai_enabled = false
+     WHERE id = ?`,
+    tenantId,
+  );
+
+  console.log(`[Admin] Messenger disconnected from ${tenantId}`);
+  ok(res, { connected: false });
+});
+
 // PUT /admin/tenants/:tenantId/channels/:channel/ai-toggle
 adminRouter.put('/tenants/:tenantId/channels/:channel/ai-toggle', async (req: Request, res: Response) => {
   const { tenantId, channel } = req.params;
@@ -408,12 +466,20 @@ adminRouter.put('/tenants/:tenantId/channels/:channel/ai-toggle', async (req: Re
   if (!valid.includes(channel)) return err(res, 'Invalid channel');
 
   console.log('[Admin] AI toggle - only updating ai_enabled, nothing else');
-  await dbRun(
-    `UPDATE hotel_channel_settings
-     SET ai_enabled = ?, updated_at = CURRENT_TIMESTAMP
-     WHERE tenant_id = ? AND channel = ?`,
-    ai_enabled, tenantId, channel,
-  );
+
+  if (channel === 'facebook') {
+    await dbRun(
+      `UPDATE tenants SET messenger_ai_enabled = ? WHERE id = ?`,
+      ai_enabled, tenantId,
+    );
+  } else {
+    await dbRun(
+      `UPDATE hotel_channel_settings
+       SET ai_enabled = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE tenant_id = ? AND channel = ?`,
+      ai_enabled, tenantId, channel,
+    );
+  }
   console.log(`[Admin] ${channel} AI → ${ai_enabled} for tenant ${tenantId}`);
   ok(res, { channel, ai_enabled });
 });

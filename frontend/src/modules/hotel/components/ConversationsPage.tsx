@@ -29,7 +29,7 @@ function formatTime(iso: string) {
 }
 
 function displayPhone(phone: string) {
-  return phone.replace('whatsapp:', '').replace('instagram:', 'IG:');
+  return phone.replace('whatsapp:', '').replace('instagram:', 'IG:').replace('messenger:', 'FB:');
 }
 
 function igDisplayName(c: { guest_name?: string | null; guest_username?: string | null; channel_user_id?: string | null }) {
@@ -815,7 +815,7 @@ export function ConversationsPage({ surveyEnabled = false, addToFaqEnabled = fal
   const [faqModal, setFaqModal]           = useState<FaqModalState | null>(null);
   const [faqToast, setFaqToast]           = useState(false);
   const [channelFilter, setChannelFilter] = useState<string | null>(null);
-  const [activeChannels, setActiveChannels] = useState<{ whatsapp: boolean; instagram: boolean; email: boolean } | null>(null);
+  const [activeChannels, setActiveChannels] = useState<{ whatsapp: boolean; instagram: boolean; messenger: boolean; email: boolean } | null>(null);
 
   const { permission, request: requestNotifPermission } = useNotificationPermission();
 
@@ -1042,6 +1042,19 @@ export function ConversationsPage({ surveyEnabled = false, addToFaqEnabled = fal
               📷 Instagram
             </button>
           )}
+          {activeChannels.messenger && (
+            <button
+              onClick={() => setChannelFilter(f => f === 'messenger' ? null : 'messenger')}
+              className={clsx(
+                'text-xs px-3 py-1.5 rounded-full border font-medium transition-colors',
+                channelFilter === 'messenger'
+                  ? 'bg-blue-500 text-white border-blue-500'
+                  : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300',
+              )}
+            >
+              💙 Messenger
+            </button>
+          )}
           {activeChannels.email && (
             <button
               onClick={() => setChannelFilter(f => f === 'email' ? null : 'email')}
@@ -1107,7 +1120,9 @@ export function ConversationsPage({ surveyEnabled = false, addToFaqEnabled = fal
                               ? igDisplayName(c)
                               : c.channel === 'email'
                                 ? (c.email_from_name ?? c.email_from_address ?? displayPhone(c.guest_phone))
-                                : (c.guest_name ?? displayPhone(c.guest_phone))}
+                                : c.channel === 'messenger'
+                                  ? (c.guest_name ?? displayPhone(c.guest_phone))
+                                  : (c.guest_name ?? displayPhone(c.guest_phone))}
                           </span>
                           {(!c.channel || c.channel === 'whatsapp') && (
                             <span className="text-[10px] font-semibold bg-green-50 text-green-700 px-1.5 py-0.5 rounded flex-shrink-0">
@@ -1117,6 +1132,11 @@ export function ConversationsPage({ surveyEnabled = false, addToFaqEnabled = fal
                           {c.channel === 'instagram' && (
                             <span className="text-[10px] font-semibold bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded flex-shrink-0">
                               📷 IG
+                            </span>
+                          )}
+                          {c.channel === 'messenger' && (
+                            <span className="text-[10px] font-semibold bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded flex-shrink-0">
+                              💙 FB
                             </span>
                           )}
                           {c.channel === 'email' && (

@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import crypto from 'crypto';
 import { sendWhatsAppMessage } from '../whatsapp/twilio.js';
 import { sendInstagramMessage } from '../channels/instagram.js';
+import { sendMessengerMessage } from '../channels/messenger.js';
 import * as XLSX from 'xlsx';
 import { requireAuth, resolveTenantId } from '../middleware/auth.js';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
@@ -1203,6 +1204,44 @@ hotelRouter.post('/conversations/:id/reply', requireAuth, async (req: Request, r
           JSON.stringify([...prev, staffMsg].slice(-30)), tenantId, conv.guest_phone,
         );
       }
+    } else if (conv.channel === 'messenger') {
+      const tenantRow = await dbGet('SELECT * FROM tenants WHERE id = ?', tenantId) as any;
+      if (!tenantRow?.messenger_access_token_encrypted)
+        return err(res, 'No Messenger access token configured');
+
+      await sendMessengerMessage(
+        tenantRow.messenger_page_id,
+        conv.channel_user_id,
+        message.trim(),
+        tenantRow.messenger_access_token_encrypted,
+      );
+
+      const staffMsg = { role: 'staff', content: message.trim(), ts: new Date().toISOString() };
+      if (isPg) {
+        await dbRun(
+          `UPDATE ${table}
+           SET messages     = messages || ?::jsonb,
+               last_message = CURRENT_TIMESTAMP,
+               updated_at   = CURRENT_TIMESTAMP
+           WHERE tenant_id = ? AND guest_phone = ?`,
+          JSON.stringify([staffMsg]), tenantId, conv.guest_phone,
+        );
+      } else {
+        const convRow = await dbGet(
+          `SELECT messages FROM ${table} WHERE tenant_id = ? AND guest_phone = ?`,
+          tenantId, conv.guest_phone,
+        ) as any;
+        const prev: any[] = (() => { try { return JSON.parse(convRow?.messages ?? '[]'); } catch { return []; } })();
+        await dbRun(
+          `UPDATE ${table}
+           SET messages     = ?,
+               last_message = CURRENT_TIMESTAMP,
+               updated_at   = CURRENT_TIMESTAMP
+           WHERE tenant_id = ? AND guest_phone = ?`,
+          JSON.stringify([...prev, staffMsg].slice(-30)), tenantId, conv.guest_phone,
+        );
+      }
+
     } else if (conv.channel === 'email') {
       // Email — send via the tenant's email adapter, thread correctly
       const emailAccount = await dbGet(
@@ -1560,9 +1599,15 @@ hotelRouter.get('/tenant/channels', requireAuth, async (req: Request, res: Respo
       tenantId,
     ) as any;
 
+    const tenantRow = await dbGet(
+      'SELECT messenger_page_id FROM tenants WHERE id = ?',
+      tenantId,
+    ) as any;
+
     ok(res, {
       whatsapp:  !!cs.whatsapp,
       instagram: !!cs.instagram,
+      messenger: !!tenantRow?.messenger_page_id,
       email:     !!emailAccount,
     });
   } catch (e: any) { err(res, e.message, 500); }
@@ -1574,16 +1619,23 @@ hotelRouter.put('/channels/:channel/ai-toggle', requireAuth, async (req: Request
   const { channel } = req.params;
   const { ai_enabled } = req.body as { ai_enabled: boolean };
 
-  const valid = ['whatsapp', 'instagram', 'facebook', 'email'];
+  const valid = ['whatsapp', 'instagram', 'facebook', 'messenger', 'email'];
   if (!valid.includes(channel)) return err(res, 'Invalid channel');
 
   try {
-    await dbRun(
-      `UPDATE hotel_channel_settings
-       SET ai_enabled = ?, updated_at = CURRENT_TIMESTAMP
-       WHERE tenant_id = ? AND channel = ?`,
-      ai_enabled ? 1 : 0, tenantId, channel,
-    );
+    if (channel === 'facebook' || channel === 'messenger') {
+      await dbRun(
+        `UPDATE tenants SET messenger_ai_enabled = ? WHERE id = ?`,
+        ai_enabled, tenantId,
+      );
+    } else {
+      await dbRun(
+        `UPDATE hotel_channel_settings
+         SET ai_enabled = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE tenant_id = ? AND channel = ?`,
+        ai_enabled ? 1 : 0, tenantId, channel,
+      );
+    }
     ok(res, { channel, ai_enabled });
   } catch (e: any) { err(res, e.message, 500); }
 });

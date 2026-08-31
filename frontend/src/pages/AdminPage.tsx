@@ -371,7 +371,7 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
   const [shopPhotosEnabled, setShopPhotosEnabled] = useState(!!tenant.shop_photos_enabled);
   const [notificationEmail, setNotificationEmail] = useState(tenant.notification_email || '');
   const [emailFallbackEnabled, setEmailFallbackEnabled] = useState(!!tenant.email_fallback_enabled);
-  const [channels, setChannels]               = useState<Record<string, { connected: boolean; ai_enabled: boolean }>>({});
+  const [channels, setChannels]               = useState<Record<string, { connected: boolean; ai_enabled: boolean; page_name?: string | null }>>({});
   const [togglingChannel, setTogglingChannel] = useState<string | null>(null);
   // Instagram connect form
   const [igFormOpen, setIgFormOpen]           = useState(false);
@@ -382,6 +382,15 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
   // Instagram disconnect confirm
   const [igDisconnectOpen, setIgDisconnectOpen]   = useState(false);
   const [igDisconnecting, setIgDisconnecting]     = useState(false);
+  // Messenger connect form
+  const [fbFormOpen, setFbFormOpen]               = useState(false);
+  const [fbPageId, setFbPageId]                   = useState('');
+  const [fbPageName, setFbPageName]               = useState('');
+  const [fbToken, setFbToken]                     = useState('');
+  const [fbConnecting, setFbConnecting]           = useState(false);
+  const [fbConnectError, setFbConnectError]       = useState('');
+  const [fbDisconnectOpen, setFbDisconnectOpen]   = useState(false);
+  const [fbDisconnecting, setFbDisconnecting]     = useState(false);
   // Email accounts
   const [emailAccounts, setEmailAccounts]     = useState<any[]>([]);
   const [emailFormOpen, setEmailFormOpen]     = useState(false);
@@ -504,6 +513,37 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
       setIgDisconnectOpen(false);
     } catch (e: any) { setError(e.message); }
     finally { setIgDisconnecting(false); }
+  }
+
+  async function handleMessengerConnect() {
+    if (!fbPageId.trim() || !fbToken.trim()) {
+      setFbConnectError('Page ID and Access Token are required');
+      return;
+    }
+    setFbConnecting(true); setFbConnectError('');
+    try {
+      await adminApi.connectMessenger(tenant.id, {
+        page_id: fbPageId.trim(),
+        page_name: fbPageName.trim(),
+        access_token: fbToken.trim(),
+      });
+      setChannels(prev => ({
+        ...prev,
+        facebook: { connected: true, ai_enabled: true, page_name: fbPageName.trim() },
+      }));
+      setFbFormOpen(false); setFbPageId(''); setFbPageName(''); setFbToken('');
+    } catch (e: any) { setFbConnectError(e.message); }
+    finally { setFbConnecting(false); }
+  }
+
+  async function handleMessengerDisconnect() {
+    setFbDisconnecting(true);
+    try {
+      await adminApi.disconnectMessenger(tenant.id);
+      setChannels(prev => ({ ...prev, facebook: { connected: false, ai_enabled: false } }));
+      setFbDisconnectOpen(false);
+    } catch (e: any) { setError(e.message); }
+    finally { setFbDisconnecting(false); }
   }
 
   async function save() {
@@ -803,6 +843,107 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
                           className="px-3 py-1 text-xs bg-red-500 text-white rounded-md hover:bg-red-600 disabled:opacity-50 transition-colors"
                         >
                           {igDisconnecting ? 'Disconnecting…' : 'Disconnect'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            // ── Facebook Messenger: connect / disconnect UI ─────────────────
+            if (key === 'facebook') {
+              return (
+                <div key={key} className="border-b border-slate-100 last:border-0 pb-2">
+                  <div className="flex items-center justify-between py-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] font-bold ${connected ? 'text-green-500' : 'text-slate-300'}`}>●</span>
+                      <span className="text-sm text-slate-700">{icon} {label}</span>
+                      <span className="text-xs text-slate-400">
+                        {connected ? (ch?.page_name || 'Connected') : 'Not connected'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {connected ? (
+                        <>
+                          <span className="text-xs text-slate-500">AI</span>
+                          <button
+                            type="button"
+                            disabled={isToggling}
+                            onClick={() => handleChannelToggle(key, !aiEnabled)}
+                            className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors ${aiEnabled ? 'bg-green-500' : 'bg-slate-200'} disabled:opacity-50`}
+                          >
+                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ${aiEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
+                          </button>
+                          <span className="text-xs">{aiEnabled ? '✅' : '❌'}</span>
+                          <button
+                            type="button"
+                            onClick={() => setFbDisconnectOpen(true)}
+                            className="ml-2 text-xs text-red-500 hover:text-red-700 underline"
+                          >
+                            Disconnect
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => { setFbFormOpen(v => !v); setFbConnectError(''); }}
+                          className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                        >
+                          {fbFormOpen ? 'Cancel ▲' : 'Connect ▼'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {!connected && fbFormOpen && (
+                    <div className="mt-1 p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
+                      <Input
+                        label="Page ID"
+                        value={fbPageId}
+                        onChange={(e: any) => setFbPageId(e.target.value)}
+                        placeholder="123456789012345"
+                      />
+                      <Input
+                        label="Page Name (optional)"
+                        value={fbPageName}
+                        onChange={(e: any) => setFbPageName(e.target.value)}
+                        placeholder="My Business Page"
+                      />
+                      <Input
+                        label="Page Access Token"
+                        value={fbToken}
+                        onChange={(e: any) => setFbToken(e.target.value)}
+                        placeholder="EAAxxxxxxxxx…"
+                      />
+                      {fbConnectError && <p className="text-xs text-red-500">{fbConnectError}</p>}
+                      <div className="flex justify-end gap-2 pt-1">
+                        <Button variant="ghost" size="sm" onClick={() => { setFbFormOpen(false); setFbConnectError(''); }}>
+                          Cancel
+                        </Button>
+                        <Button size="sm" onClick={handleMessengerConnect} disabled={fbConnecting}>
+                          {fbConnecting ? 'Saving…' : 'Save & Connect'}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {connected && fbDisconnectOpen && (
+                    <div className="mt-1 p-3 bg-red-50 rounded-lg border border-red-200 space-y-2">
+                      <p className="text-xs text-red-700 font-medium">
+                        Are you sure? This will stop receiving Messenger messages immediately.
+                      </p>
+                      <div className="flex justify-end gap-2">
+                        <Button variant="ghost" size="sm" onClick={() => setFbDisconnectOpen(false)}>
+                          Cancel
+                        </Button>
+                        <button
+                          type="button"
+                          onClick={handleMessengerDisconnect}
+                          disabled={fbDisconnecting}
+                          className="px-3 py-1 text-xs bg-red-500 text-white rounded-md hover:bg-red-600 disabled:opacity-50 transition-colors"
+                        >
+                          {fbDisconnecting ? 'Disconnecting…' : 'Disconnect'}
                         </button>
                       </div>
                     </div>

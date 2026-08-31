@@ -160,6 +160,13 @@ export const adminApi = {
     }),
   disconnectInstagram: (tenantId: string) =>
     authFetch(`/admin/tenants/${tenantId}/channels/instagram/disconnect`, { method: 'DELETE' }),
+  connectMessenger: (tenantId: string, data: { page_id: string; page_name: string; access_token: string }) =>
+    authFetch(`/admin/tenants/${tenantId}/channels/facebook/connect`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  disconnectMessenger: (tenantId: string) =>
+    authFetch(`/admin/tenants/${tenantId}/channels/facebook/disconnect`, { method: 'DELETE' }),
   getEmailAccounts: (tenantId: string) =>
     adminFetch<any[]>(`/hotel/email/accounts?tenantId=${encodeURIComponent(tenantId)}`),
   createEmailAccount: (tenantId: string, data: Record<string, any>) =>
