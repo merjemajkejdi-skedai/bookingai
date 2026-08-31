@@ -33,6 +33,37 @@ export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) 
 
   useEffect(() => { load(); }, []);
 
+  // Handle Meta Embedded Signup OAuth callback
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    if (!code) return;
+
+    let state: any = {};
+    try { state = JSON.parse(params.get('state') || '{}'); } catch {}
+    window.history.replaceState({}, '', window.location.pathname);
+
+    if (state.source !== 'tenant_settings') return;
+
+    const baseUrl = (import.meta as any).env?.VITE_API_URL || '';
+    const redirectUri = window.location.origin + window.location.pathname;
+    fetch(`${baseUrl}/api/whatsapp/embedded-signup/callback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, source: 'tenant_settings', tenantId: state.tenantId, redirect_uri: redirectUri }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          alert(`WhatsApp connected! Phone: ${data.data?.phoneNumber || 'detected'}`);
+          load();
+        } else {
+          alert(`Connection failed: ${data.error || 'Unknown error'}`);
+        }
+      })
+      .catch(() => alert('Connection failed. Please try again.'));
+  }, []);
+
   async function toggleActive(tenant: any) {
     await adminApi.updateTenant(tenant.id, { isActive: !tenant.is_active });
     load();
@@ -525,6 +556,35 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
             <p className="text-xs font-medium text-green-700">
               Meta Cloud API credentials — get these from Meta Developer Portal
             </p>
+            {whatsapp ? (
+              <div className="p-2 bg-white rounded border border-green-300 text-xs text-green-700 flex items-center gap-2">
+                <Phone size={12} /> Connected: {whatsapp.replace(/^whatsapp:/, '')}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  const configId = '1757192855330030';
+                  const appId = '1507114490265475';
+                  const redirectUri = window.location.origin + window.location.pathname;
+                  const state = JSON.stringify({ source: 'tenant_settings', tenantId: tenant.id });
+                  window.location.href = 'https://www.facebook.com/v26.0/dialog/oauth'
+                    + '?client_id=' + appId
+                    + '&config_id=' + configId
+                    + '&response_type=code'
+                    + '&override_default_response_type=true'
+                    + '&redirect_uri=' + encodeURIComponent(redirectUri)
+                    + '&state=' + encodeURIComponent(state)
+                    + '&extras=' + encodeURIComponent(JSON.stringify({
+                        setup: {},
+                        featureName: 'whatsapp_embedded_signup',
+                        sessionInfoVersion: '3',
+                      }));
+                }}
+                className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#25D366] text-white text-xs font-semibold rounded-lg hover:bg-[#20bd5a] transition-colors">
+                Connect via Embedded Signup
+              </button>
+            )}
             <Input label="Phone Number ID" value={metaPhoneNumberId} onChange={(e: any) => setMetaPhoneId(e.target.value)} placeholder="e.g. 123456789012345" />
             <Input label="Access Token" value={metaAccessToken} onChange={(e: any) => setMetaToken(e.target.value)} placeholder="EAAxxxxxxxxx…" />
             <Input label="WABA ID (optional)" value={metaWabaId} onChange={(e: any) => setMetaWabaId(e.target.value)} placeholder="WhatsApp Business Account ID" />

@@ -225,9 +225,6 @@ export function ConfigPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(false);
   const [saved, setSaved]     = useState(false);
-  const [tenantId, setTenantId] = useState<string | null>(null);
-  const [whatsappNumber, setWhatsappNumber] = useState<string | null>(null);
-
   function applyConfig(c: any) {
     if (c && Object.keys(c).length > 0) {
       setConfig({
@@ -245,13 +242,7 @@ export function ConfigPage() {
         ask_maintenance_photo:       c.ask_maintenance_photo       !== 0,
         add_conversation_to_faq_enabled: c.add_conversation_to_faq_enabled !== 0,
       });
-      setTenantId(c.tenant_id || null);
-      setWhatsappNumber(c.whatsapp_number || null);
     }
-  }
-
-  function reloadConfig() {
-    api.getConfig().then((c: any) => applyConfig(c)).catch(() => {});
   }
 
   useEffect(() => {
@@ -308,7 +299,6 @@ export function ConfigPage() {
           <p className="text-xs text-slate-400">Info the AI concierge shares with guests</p>
         </div>
 
-        <WhatsAppConnectCard tenantId={tenantId} whatsappNumber={whatsappNumber} onConnected={reloadConfig} />
 
         <form onSubmit={handleSave} className="space-y-5">
           {/* General */}
@@ -554,122 +544,3 @@ export function ConfigPage() {
   );
 }
 
-// ── WhatsApp Connect Card ────────────────────────────────────────────────────
-function WhatsAppConnectCard({ tenantId, whatsappNumber, onConnected }: {
-  tenantId: string | null;
-  whatsappNumber: string | null;
-  onConnected: () => void;
-}) {
-  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-  const [result, setResult] = useState('');
-
-  function handleConnect() {
-    const configId = '1757192855330030';
-    const appId = '1507114490265475';
-    const redirectUri = window.location.origin + window.location.pathname;
-    const state = JSON.stringify({
-      source: 'tenant_settings',
-      tenantId: tenantId,
-    });
-
-    const url = 'https://www.facebook.com/v26.0/dialog/oauth'
-      + '?client_id=' + appId
-      + '&config_id=' + configId
-      + '&response_type=code'
-      + '&override_default_response_type=true'
-      + '&redirect_uri=' + encodeURIComponent(redirectUri)
-      + '&state=' + encodeURIComponent(state)
-      + '&extras=' + encodeURIComponent(JSON.stringify({
-          setup: {},
-          featureName: 'whatsapp_embedded_signup',
-          sessionInfoVersion: '3',
-        }));
-
-    window.location.href = url;
-  }
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get('code');
-    if (!code) return;
-
-    let state: any = {};
-    try { state = JSON.parse(params.get('state') || '{}'); } catch {}
-
-    window.history.replaceState({}, '', window.location.pathname);
-
-    if (state.source !== 'tenant_settings') return;
-
-    setStatus('loading');
-    const baseUrl = (import.meta as any).env?.VITE_API_URL || '';
-    const redirectUri = window.location.origin + window.location.pathname;
-    fetch(`${baseUrl}/api/whatsapp/embedded-signup/callback`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        code,
-        source: 'tenant_settings',
-        tenantId: state.tenantId || null,
-        redirect_uri: redirectUri,
-      }),
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) {
-          setStatus('success');
-          setResult(`Connected! Phone: ${data.data?.phoneNumber || 'detected'}`);
-          onConnected();
-        } else {
-          setStatus('error');
-          setResult(data.error || 'Something went wrong');
-        }
-      })
-      .catch(() => {
-        setStatus('error');
-        setResult('Connection failed. Please try again.');
-      });
-  }, []);
-
-  if (whatsappNumber) {
-    const display = whatsappNumber.replace(/^whatsapp:/, '');
-    return (
-      <section className="bg-white rounded-xl border border-slate-200 p-5 space-y-3 mb-5">
-        <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-          <MessageSquare size={15} className="text-green-500" /> WhatsApp
-        </h2>
-        <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700 flex items-center gap-2">
-          Connected: {display}
-        </div>
-      </section>
-    );
-  }
-
-  return (
-    <section className="bg-white rounded-xl border border-slate-200 p-5 space-y-3 mb-5">
-      <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-        <MessageSquare size={15} className="text-green-500" /> WhatsApp
-      </h2>
-      {status === 'success' ? (
-        <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
-          {result}
-        </div>
-      ) : (
-        <>
-          <p className="text-xs text-slate-500">
-            Connect your WhatsApp Business number so guests can message your AI concierge directly.
-          </p>
-          <button
-            type="button"
-            onClick={handleConnect}
-            disabled={status === 'loading'}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-[#25D366] text-white text-sm font-semibold rounded-lg hover:bg-[#20bd5a] disabled:opacity-50 transition-colors">
-            {status === 'loading' ? 'Connecting...' : 'Connect WhatsApp Number'}
-          </button>
-          {status === 'error' && (
-            <p className="text-xs text-red-500 mt-1">{result}</p>
-          )}
-        </>
-      )}
-    </section>
-  );
-}
