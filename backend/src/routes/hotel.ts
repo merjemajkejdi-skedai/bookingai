@@ -1570,6 +1570,33 @@ If there is no FAQ-worthy general question, set found_faq_worthy_question to fal
 // CHANNEL SETTINGS
 // ─────────────────────────────────────────
 
+// GET /hotel/instagram/status — tenant-facing Instagram connection status
+hotelRouter.get('/instagram/status', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    const tenant = await dbGet(
+      'SELECT instagram_account_id, instagram_connection_type, instagram_oauth_expires_at FROM tenants WHERE id = ?',
+      tenantId,
+    ) as any;
+    const cs = await dbGet(
+      'SELECT ai_enabled, connected FROM hotel_channel_settings WHERE tenant_id = ? AND channel = ?',
+      tenantId, 'instagram',
+    ) as any;
+
+    if (!tenant?.instagram_account_id) {
+      return ok(res, { connected: false });
+    }
+
+    ok(res, {
+      connected: true,
+      instagram_account_id: tenant.instagram_account_id,
+      connection_type: tenant.instagram_connection_type || 'manual',
+      ai_enabled: !!(cs?.ai_enabled),
+      expires_at: tenant.instagram_oauth_expires_at || null,
+    });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
 // GET /hotel/channels — list channel settings for this tenant
 hotelRouter.get('/channels', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);

@@ -1,7 +1,158 @@
-import { useState, useEffect } from 'react';
-import { Save, Wifi, Coffee, Waves, UtensilsCrossed, Clock, Phone, MapPin, BookOpen, UserCheck, Star, MessageSquare, SmilePlus, AlertTriangle } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Save, Wifi, Coffee, Waves, UtensilsCrossed, Clock, Phone, MapPin, BookOpen, UserCheck, Star, MessageSquare, SmilePlus, AlertTriangle, Instagram } from 'lucide-react';
 import { api } from '../api';
 import { Button, Input, Spinner } from '../ui';
+
+const META_APP_ID = '1507114490265475';
+const IG_SCOPES = 'instagram_business_basic,instagram_business_manage_messages,pages_show_list';
+
+// ── Instagram Connection section ──────────────────────────────────────────────
+
+interface IgStatus {
+  connected: boolean;
+  instagram_account_id?: string;
+  connection_type?: string;
+  ai_enabled?: boolean;
+  expires_at?: string | null;
+}
+
+function InstagramConnection() {
+  const [status, setStatus] = useState<IgStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [connecting, setConnecting] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+  const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
+
+  const loadStatus = useCallback(() => {
+    api.getInstagramStatus()
+      .then(s => setStatus(s))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { loadStatus(); }, [loadStatus]);
+
+  function handleConnect() {
+    setError('');
+    setConnecting(true);
+    const redirectUri = window.location.origin + '/';
+    const authUrl = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${META_APP_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(IG_SCOPES)}&response_type=code`;
+    const popup = window.open(authUrl, 'ig_oauth', 'width=600,height=700');
+    if (!popup) {
+      setError('Popup blocked — please allow popups for this site');
+      setConnecting(false);
+      return;
+    }
+
+    const timer = setInterval(() => {
+      try {
+        if (popup.closed) {
+          clearInterval(timer);
+          setConnecting(false);
+          return;
+        }
+        const popupUrl = popup.location.href;
+        if (popupUrl.startsWith(redirectUri) || popupUrl.startsWith(window.location.origin)) {
+          const url = new URL(popupUrl);
+          const code = url.searchParams.get('code');
+          popup.close();
+          clearInterval(timer);
+          if (code) {
+            api.connectInstagramOAuth(code, redirectUri)
+              .then(r => {
+                setSuccessMsg(r.username ? `Connected @${r.username}` : 'Connected');
+                loadStatus();
+              })
+              .catch(e => setError(e.message))
+              .finally(() => setConnecting(false));
+          } else {
+            const errMsg = url.searchParams.get('error_description') || 'Authorization cancelled';
+            setError(errMsg);
+            setConnecting(false);
+          }
+        }
+      } catch {
+        // cross-origin — popup is still on Facebook domain
+      }
+    }, 500);
+  }
+
+  async function handleDisconnect() {
+    if (!confirm('Disconnect Instagram? The AI will stop replying to DMs.')) return;
+    setDisconnecting(true);
+    try {
+      await api.disconnectInstagramOAuth();
+      setStatus({ connected: false });
+      setSuccessMsg('');
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setDisconnecting(false);
+    }
+  }
+
+  if (loading) return <Spinner />;
+
+  return (
+    <section className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+      <div className="flex items-center gap-2">
+        <Instagram size={15} className="text-slate-400" />
+        <h2 className="text-sm font-semibold text-slate-700">Instagram</h2>
+      </div>
+
+      {status?.connected ? (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-green-700 font-medium">Connected</p>
+              <p className="text-xs text-slate-400">
+                Account ID: {status.instagram_account_id}
+                {status.connection_type === 'oauth' && ' — OAuth (auto-renews)'}
+                {status.connection_type === 'manual' && ' — Manual token'}
+              </p>
+              {status.expires_at && (
+                <p className="text-xs text-slate-400">
+                  Token expires: {new Date(status.expires_at).toLocaleDateString()}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={handleDisconnect}
+              disabled={disconnecting}
+              className="text-xs text-red-500 hover:text-red-700 underline disabled:opacity-50"
+            >
+              {disconnecting ? 'Disconnecting…' : 'Disconnect'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="bg-slate-50 rounded-lg border border-slate-200 p-3 space-y-1.5">
+            <p className="text-xs font-semibold text-slate-700">Before connecting, make sure:</p>
+            <ul className="text-xs text-slate-500 space-y-1 list-disc list-inside">
+              <li>Your Instagram account is set to <strong>Business</strong> or <strong>Creator</strong></li>
+              <li>It's linked to a <strong>Facebook Page</strong></li>
+              <li>You can log in to the Facebook account that manages that Page</li>
+            </ul>
+          </div>
+          <button
+            type="button"
+            onClick={handleConnect}
+            disabled={connecting}
+            className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-sm font-medium text-white hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 transition-all"
+          >
+            <Instagram size={16} />
+            {connecting ? 'Connecting…' : 'Connect Instagram'}
+          </button>
+          {error && <p className="text-xs text-red-600">{error}</p>}
+          {successMsg && <p className="text-xs text-green-600">{successMsg}</p>}
+        </div>
+      )}
+    </section>
+  );
+}
 
 // ── Review Management section ─────────────────────────────────────────────────
 
@@ -533,6 +684,11 @@ export function ConfigPage() {
             {saving ? 'Saving…' : saved ? '✓ Saved!' : 'Save Configuration'}
           </Button>
         </form>
+
+        {/* Instagram — own state, outside main form */}
+        <div className="mt-5">
+          <InstagramConnection />
+        </div>
 
         {/* Review Management — own form/state, outside main form */}
         <div className="mt-5">

@@ -190,4 +190,9 @@ export const adminApi = {
     authFetch<any>(`/api/whatsapp/signup-leads/${leadId}`, {
       method: 'PATCH', body: JSON.stringify(data),
     }),
+  getInstagramLeads: () => authFetch<any[]>('/api/instagram/signup-leads'),
+  updateInstagramLead: (leadId: string, data: { status?: string; notes?: string; tenant_id?: string }) =>
+    authFetch<any>(`/api/instagram/signup-leads/${leadId}`, {
+      method: 'PATCH', body: JSON.stringify(data),
+    }),
 };

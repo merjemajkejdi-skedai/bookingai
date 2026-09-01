@@ -737,6 +737,28 @@
   </div>
 </section>
 
+<!-- ════ CONNECT INSTAGRAM ═════════════════════════════════ -->
+<section class="section" style="padding:2rem 0 3rem;background:var(--slate-50)">
+  <div class="section-inner" style="text-align:center">
+    <h2 class="reveal d1" style="font-size:1.6rem;margin-bottom:.5rem">Or connect Instagram</h2>
+    <p class="section-sub reveal d2" style="max-width:520px;margin:0 auto 1rem">
+      Let SkedAI handle your Instagram DMs too — answer enquiries, book appointments, and reply in any language, 24/7.
+    </p>
+    <p class="section-sub reveal d2" style="max-width:520px;margin:0 auto 1.5rem;font-size:.85rem;opacity:.8">
+      Requires a Business or Creator Instagram account linked to a Facebook Page.
+    </p>
+    <button onclick="launchInstagramSignup()" id="ig-signup-btn"
+      class="reveal d3"
+      style="display:inline-flex;align-items:center;gap:.5rem;padding:.85rem 2rem;font-size:1rem;font-weight:600;color:#fff;background:linear-gradient(135deg,#833AB4,#FD1D1D,#F77737);border:none;border-radius:12px;cursor:pointer;transition:transform .15s,box-shadow .15s;box-shadow:0 4px 14px rgba(131,58,180,.35)"
+      onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 20px rgba(131,58,180,.45)'"
+      onmouseout="this.style.transform='none';this.style.boxShadow='0 4px 14px rgba(131,58,180,.35)'">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="5"/><circle cx="17.5" cy="6.5" r="1.5" fill="white" stroke="none"/></svg>
+      Connect Instagram — Get Started Free
+    </button>
+    <div id="ig-signup-result" style="margin-top:1rem;display:none"></div>
+  </div>
+</section>
+
 <!-- ════ FOOTER ═════════════════════════════════════════════ -->
 <footer>
   <a href="#" class="footer-logo">
@@ -902,6 +924,8 @@ function launchWhatsAppSignup(source, tenantId) {
   var state = {};
   try { state = JSON.parse(params.get('state') || '{}'); } catch(e) {}
 
+  if (state.channel === 'instagram') return;
+
   window.history.replaceState({}, '', window.location.pathname);
 
   var result = document.getElementById('wa-signup-result');
@@ -920,6 +944,74 @@ function launchWhatsAppSignup(source, tenantId) {
       code: code,
       source: state.source || 'landing',
       tenantId: state.tenantId || null,
+      redirect_uri: redirectUri
+    })
+  })
+  .then(function(res) { return res.json(); })
+  .then(function(data) {
+    if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+    if (result) {
+      if (data.success) {
+        result.innerHTML = '<div style="background:#d1f5e8;color:#0b5e52;padding:1rem 1.5rem;border-radius:10px;font-size:.95rem">' +
+          '<strong>✅ Connected!</strong> We\'ll be in touch within 24 hours to complete your setup.<br>' +
+          '<span style="font-size:.85rem;opacity:.8">Questions? WhatsApp us: +355 69 803 8120</span></div>';
+      } else {
+        result.innerHTML = '<div style="background:#fee2e2;color:#991b1b;padding:1rem 1.5rem;border-radius:10px;font-size:.95rem">' +
+          '❌ ' + (data.error || 'Something went wrong. Please try again.') + '</div>';
+      }
+    }
+  })
+  .catch(function() {
+    if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+    if (result) {
+      result.style.display = 'block';
+      result.innerHTML = '<div style="background:#fee2e2;color:#991b1b;padding:1rem 1.5rem;border-radius:10px">Something went wrong. Please try again or email support@skedai.net</div>';
+    }
+  });
+})();
+
+/* ── Instagram OAuth (redirect-based) ─────────────────────── */
+function launchInstagramSignup() {
+  var appId = '1507114490265475';
+  var redirectUri = 'https://www.skedai.net/';
+  var scopes = 'instagram_business_basic,instagram_business_manage_messages,pages_show_list';
+
+  var url = 'https://www.facebook.com/v21.0/dialog/oauth'
+    + '?client_id=' + appId
+    + '&redirect_uri=' + encodeURIComponent(redirectUri)
+    + '&scope=' + encodeURIComponent(scopes)
+    + '&response_type=code'
+    + '&state=' + encodeURIComponent(JSON.stringify({ source: 'landing', channel: 'instagram' }));
+
+  window.location.href = url;
+}
+
+(function handleInstagramOAuthCallback() {
+  var params = new URLSearchParams(window.location.search);
+  var code = params.get('code');
+  if (!code) return;
+
+  var state = {};
+  try { state = JSON.parse(params.get('state') || '{}'); } catch(e) {}
+  if (state.channel !== 'instagram') return;
+
+  window.history.replaceState({}, '', window.location.pathname);
+
+  var result = document.getElementById('ig-signup-result');
+  var btn    = document.getElementById('ig-signup-btn');
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
+  if (result) {
+    result.style.display = 'block';
+    result.innerHTML = '<div style="padding:1rem 1.5rem;border-radius:10px;font-size:.95rem;background:#fae8ff;color:#6b21a8">Connecting your Instagram&hellip;</div>';
+  }
+
+  var redirectUri = 'https://www.skedai.net/';
+  fetch('https://bookingai-production-8d5d.up.railway.app/api/instagram/oauth/callback', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      code: code,
+      source: 'landing',
       redirect_uri: redirectUri
     })
   })

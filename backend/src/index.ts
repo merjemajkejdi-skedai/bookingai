@@ -20,8 +20,10 @@ import { startDigestCron } from './reviews/digestCron.js';
 import { startShopCron } from './shop/cron.js';
 import { emailAccountsRouter } from './routes/emailAccounts.js';
 import { startEmailWorker } from './channels/email/worker.js';
+import { startInstagramTokenRefresh } from './channels/instagramTokenRefresh.js';
 import { adminAnalyticsRouter } from './routes/adminAnalytics.js';
 import { whatsappSignupRouter } from './routes/whatsappSignup.js';
+import { instagramSignupRouter } from './routes/instagramSignup.js';
 import { alertError, cleanupCooldowns } from './utils/errorMonitor.js';
 import instagramRouter from './routes/instagramWebhook.js';
 import messengerRouter from './routes/messengerWebhook.js';
@@ -117,6 +119,7 @@ app.use('/settings/email/oauth', emailAccountsRouter);
 app.use('/shop', shopRouter);
 app.use('/api', skedaiRouter);
 app.use('/api', whatsappSignupRouter);
+app.use('/api', instagramSignupRouter);
 app.use('/whatsapp', whatsappRouter);
 app.use('/', metaRouter);
 app.use('/', instagramRouter);
@@ -149,6 +152,7 @@ async function start() {
   startDigestCron();
   startShopCron();
   startEmailWorker();
+  startInstagramTokenRefresh();
   app.listen(Number(PORT), '0.0.0.0', () => {
     console.log(`\n🚀 BookingAI backend running at http://localhost:${PORT}`);
     console.log(`   API:       http://localhost:${PORT}/api`);

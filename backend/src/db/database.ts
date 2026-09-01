@@ -1432,6 +1432,25 @@ export async function runMigrations() {
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS messenger_access_token_encrypted TEXT`,
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS messenger_connected_at TIMESTAMPTZ`,
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS messenger_ai_enabled BOOLEAN NOT NULL DEFAULT true`,
+
+      // instagram_oauth_001 — OAuth connection fields on tenants
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS instagram_oauth_token_encrypted TEXT`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS instagram_oauth_expires_at TIMESTAMPTZ`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS instagram_connection_type VARCHAR(20) DEFAULT 'manual'`,
+
+      // instagram_oauth_002 — Instagram signup leads table
+      `CREATE TABLE IF NOT EXISTS instagram_signup_leads (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        instagram_account_id VARCHAR(255) NOT NULL,
+        instagram_username VARCHAR(255),
+        facebook_page_name VARCHAR(255),
+        access_token_encrypted TEXT,
+        status VARCHAR(20) NOT NULL DEFAULT 'pending',
+        notes TEXT,
+        tenant_id TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -2203,6 +2222,30 @@ export async function runMigrations() {
     updated_at TEXT,
     last_guest_message_at TEXT,
     UNIQUE(tenant_id, guest_phone)
+  )`);
+
+  // instagram_oauth_001: OAuth fields on tenants
+  const tenantCols3 = prepare("SELECT name FROM pragma_table_info('tenants')")
+    .all().map((r: any) => r.name as string);
+  if (!tenantCols3.includes('instagram_oauth_token_encrypted'))
+    exec('ALTER TABLE tenants ADD COLUMN instagram_oauth_token_encrypted TEXT');
+  if (!tenantCols3.includes('instagram_oauth_expires_at'))
+    exec('ALTER TABLE tenants ADD COLUMN instagram_oauth_expires_at TEXT');
+  if (!tenantCols3.includes('instagram_connection_type'))
+    exec("ALTER TABLE tenants ADD COLUMN instagram_connection_type TEXT DEFAULT 'manual'");
+
+  // instagram_oauth_002: Instagram signup leads
+  exec(`CREATE TABLE IF NOT EXISTS instagram_signup_leads (
+    id TEXT PRIMARY KEY,
+    instagram_account_id TEXT NOT NULL,
+    instagram_username TEXT,
+    facebook_page_name TEXT,
+    access_token_encrypted TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    notes TEXT,
+    tenant_id TEXT,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
   )`);
 
   console.log('✅ SQLite migrations complete');

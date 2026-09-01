@@ -91,3 +91,22 @@ export async function notifyNewWhatsAppLead(
     `Go to admin panel to create tenant.`,
   ].join('\n'));
 }
+
+// ── Instagram Signup lead ───────────────────────────────────────────────
+export async function notifyNewInstagramLead(
+  lead: { username: string; pageName: string },
+  overridePhone?: string,
+): Promise<void> {
+  const phone = ownerPhone(overridePhone);
+  if (!phone) return;
+
+  await send(phone, [
+    `📷 New Instagram Signup Lead`,
+    ``,
+    `Instagram: @${lead.username}`,
+    `Facebook Page: ${lead.pageName}`,
+    `Time: ${new Date().toISOString()}`,
+    ``,
+    `Go to admin panel → Instagram Leads to create tenant.`,
+  ].join('\n'));
+}

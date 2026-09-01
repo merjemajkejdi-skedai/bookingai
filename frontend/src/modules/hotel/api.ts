@@ -252,4 +252,30 @@ export const api = {
   getEmailConversations: () => req<EmailConversation[]>('/hotel/email/conversations'),
   getEmailMessages: (convId: string) => req<EmailMessage[]>('/hotel/email/conversations/' + convId + '/messages'),
   getOAuthUrl: () => `${BASE}/hotel/email/oauth/microsoft`,
+
+  // Instagram OAuth
+  getInstagramStatus: () =>
+    req<{ connected: boolean; instagram_account_id?: string; connection_type?: string; ai_enabled?: boolean; expires_at?: string | null }>('/hotel/instagram/status'),
+  connectInstagramOAuth: (code: string, redirect_uri: string) => {
+    const user = JSON.parse(localStorage.getItem('bookingai_user') || 'null');
+    const adminTenant = localStorage.getItem('bookingai_admin_tenant');
+    const tenantId = (user?.role === 'super_admin' && adminTenant)
+      ? JSON.parse(adminTenant).id
+      : user?.tenantId;
+    return req<{ message: string; username?: string; instagram_account_id?: string }>('/api/instagram/oauth/callback', {
+      method: 'POST',
+      body: JSON.stringify({ code, source: 'tenant_settings', tenantId, redirect_uri }),
+    });
+  },
+  disconnectInstagramOAuth: () => {
+    const user = JSON.parse(localStorage.getItem('bookingai_user') || 'null');
+    const adminTenant = localStorage.getItem('bookingai_admin_tenant');
+    const tenantId = (user?.role === 'super_admin' && adminTenant)
+      ? JSON.parse(adminTenant).id
+      : user?.tenantId;
+    return req('/api/instagram/oauth/disconnect', {
+      method: 'POST',
+      body: JSON.stringify({ tenantId }),
+    });
+  },
 };

@@ -316,8 +316,9 @@ adminRouter.get('/tenants/:id', async (req: Request, res: Response) => {
       ai_enabled: whatsappConnected ? (find('whatsapp') ? isTrue(find('whatsapp').ai_enabled) : true) : false,
     },
     instagram: {
-      connected:  isTrue(find('instagram')?.connected),
-      ai_enabled: isTrue(find('instagram')?.ai_enabled),
+      connected:       isTrue(find('instagram')?.connected),
+      ai_enabled:      isTrue(find('instagram')?.ai_enabled),
+      connection_type: tenant.instagram_connection_type || 'manual',
     },
     facebook:  {
       connected:  !!tenant.messenger_page_id,
