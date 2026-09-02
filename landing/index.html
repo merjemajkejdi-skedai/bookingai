@@ -767,8 +767,8 @@
   </a>
   <span class="footer-copy">© <span id="yr"></span> SkedAI. All rights reserved.</span>
   <div class="footer-links">
-    <a href="/privacy-policy">Privacy</a>
-    <a href="#">Terms</a>
+    <a href="/privacy">Privacy</a>
+    <a href="/terms">Terms</a>
     <a href="mailto:support@skedai.net">Contact</a>
   </div>
 </footer>
@@ -983,6 +983,13 @@ function launchInstagramSignup() {
     + '&response_type=code'
     + '&state=' + encodeURIComponent(JSON.stringify({ source: 'landing', channel: 'instagram' }));
 
+  console.log('Instagram login config:', JSON.stringify({
+    scope: scopes,
+    response_type: 'code',
+    client_id: appId,
+    redirect_uri: redirectUri,
+    url: url
+  }));
   window.location.href = url;
 }
 

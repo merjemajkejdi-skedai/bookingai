@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Terms of Service — SkedAI</title>
+  <link rel="icon" href="logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --teal-dark:  #0b5e52;
+      --teal-mid:   #0f7a6a;
+      --teal-light: #1aa882;
+      --green:      #25c07a;
+      --green-soft: #d1f5e8;
+      --slate-50:   #f8fafc;
+      --slate-100:  #f1f5f9;
+      --slate-200:  #e2e8f0;
+      --slate-400:  #94a3b8;
+      --slate-500:  #64748b;
+      --slate-600:  #475569;
+      --slate-700:  #334155;
+      --slate-800:  #1e293b;
+      --slate-900:  #0f172a;
+    }
+    html { scroll-behavior: smooth; }
+    body { font-family: 'DM Sans', sans-serif; background: #fff; color: var(--slate-800); line-height: 1.6; }
+
+    /* ── NAV ─────────────────────────────────────── */
+    nav {
+      position: sticky; top: 0; z-index: 50;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 6%; height: 68px;
+      background: rgba(255,255,255,0.92);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--slate-200);
+    }
+    .nav-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+    .nav-logo img { height: 40px; width: auto; }
+    .nav-logo-text { font-size: 20px; font-weight: 800; color: var(--slate-900); letter-spacing: -0.5px; }
+    .nav-logo-text span { color: var(--teal-light); }
+    .nav-links { display: flex; align-items: center; gap: 26px; }
+    .nav-links a { text-decoration: none; font-size: 14px; font-weight: 500; color: var(--slate-600); transition: color .2s; }
+    .nav-links a:hover { color: var(--teal-mid); }
+    .btn-nav {
+      background: var(--teal-mid); color: #fff;
+      padding: 8px 20px; border-radius: 8px;
+      font-size: 14px; font-weight: 600;
+      text-decoration: none; transition: background .2s;
+    }
+    .btn-nav:hover { background: var(--teal-dark); }
+
+    /* ── HERO STRIP ──────────────────────────────── */
+    .page-header {
+      background: linear-gradient(170deg, #e8faf3 0%, #fff 60%);
+      padding: 64px 6% 48px;
+      border-bottom: 1px solid var(--slate-200);
+    }
+    .page-header-inner { max-width: 760px; margin: 0 auto; }
+    .page-label {
+      font-size: 12px; font-weight: 700;
+      color: var(--teal-light); letter-spacing: 2.5px;
+      text-transform: uppercase; margin-bottom: 12px;
+    }
+    .page-header h1 {
+      font-size: clamp(28px, 4vw, 42px);
+      font-weight: 800; letter-spacing: -1.5px;
+      color: var(--slate-900); margin-bottom: 10px;
+      text-align: left;
+    }
+    .page-header .effective {
+      font-size: 14px; color: var(--slate-500);
+    }
+
+    /* ── PROSE BODY ──────────────────────────────── */
+    .prose-wrap {
+      max-width: 760px; margin: 0 auto;
+      padding: 56px 6% 80px;
+    }
+    .prose-wrap section { margin-bottom: 44px; }
+
+    .prose-wrap h2 {
+      font-size: 18px; font-weight: 700;
+      color: var(--slate-900); letter-spacing: -0.4px;
+      margin-bottom: 12px; text-align: left;
+      padding-bottom: 8px;
+      border-bottom: 1.5px solid var(--slate-200);
+    }
+    .prose-wrap h2 .sec-num {
+      display: inline-block;
+      width: 26px; height: 26px; line-height: 26px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--teal-mid), var(--teal-dark));
+      color: #fff; font-size: 12px; font-weight: 800;
+      text-align: center; margin-right: 10px;
+      vertical-align: middle; flex-shrink: 0;
+    }
+    .prose-wrap p {
+      font-size: 15px; color: var(--slate-600);
+      line-height: 1.75; margin-bottom: 12px;
+    }
+    .prose-wrap p:last-child { margin-bottom: 0; }
+    .prose-wrap ul {
+      list-style: none; margin: 10px 0 12px;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .prose-wrap ul li {
+      display: flex; align-items: flex-start; gap: 10px;
+      font-size: 15px; color: var(--slate-600); line-height: 1.65;
+    }
+    .prose-wrap ul li::before {
+      content: '✓';
+      color: var(--green); font-weight: 700;
+      flex-shrink: 0; margin-top: 1px;
+    }
+    .prose-wrap a { color: var(--teal-mid); text-decoration: none; }
+    .prose-wrap a:hover { text-decoration: underline; }
+
+    .highlight-box {
+      background: var(--slate-50);
+      border: 1.5px solid var(--slate-200);
+      border-left: 3px solid var(--teal-light);
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin: 14px 0;
+    }
+    .highlight-box p { margin-bottom: 0; }
+
+    /* ── FOOTER ──────────────────────────────────── */
+    footer {
+      padding: 30px 6%; border-top: 1px solid var(--slate-200);
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 16px;
+    }
+    .footer-logo { display: flex; align-items: center; gap: 9px; text-decoration: none; }
+    .footer-logo img { height: 30px; width: auto; }
+    .footer-logo-text { font-size: 15px; font-weight: 800; color: var(--slate-800); letter-spacing: -0.3px; }
+    .footer-logo-text span { color: var(--teal-mid); }
+    .footer-copy { font-size: 13px; color: var(--slate-400); }
+    .footer-links { display: flex; gap: 20px; }
+    .footer-links a { font-size: 13px; color: var(--slate-500); text-decoration: none; }
+    .footer-links a:hover { color: var(--teal-mid); }
+    .footer-links a.active { color: var(--teal-mid); font-weight: 600; }
+
+    @media (max-width: 640px) {
+      .nav-links { display: none; }
+      footer { flex-direction: column; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <a href="/" class="nav-logo">
+    <img src="logo.png" alt="SkedAI logo" />
+    <span class="nav-logo-text">Sked<span>AI</span></span>
+  </a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a>
+    <a href="/#industries">Industries</a>
+    <a href="/#pricing">Pricing</a>
+    <a href="/#contact">Contact</a>
+    <a href="https://app.skedai.net" class="btn-nav">Log in &rarr;</a>
+  </div>
+</nav>
+
+<!-- PAGE HEADER -->
+<div class="page-header">
+  <div class="page-header-inner">
+    <p class="page-label">Legal</p>
+    <h1>Terms of Service</h1>
+    <p class="effective">Effective Date: 2 September 2025</p>
+  </div>
+</div>
+
+<!-- CONTENT -->
+<div class="prose-wrap">
+
+  <section>
+    <h2><span class="sec-num">1</span>Acceptance of Terms</h2>
+    <p>
+      By accessing or using the SkedAI platform ("Service"), including the website at <a href="https://skedai.net">skedai.net</a>, the dashboard at <a href="https://app.skedai.net">app.skedai.net</a>, and any associated APIs or integrations, you agree to be bound by these Terms of Service ("Terms"). If you do not agree to these Terms, you may not use the Service.
+    </p>
+    <p>
+      These Terms constitute a legally binding agreement between you ("you", "your", or "User") and SkedAI ("we", "us", or "our").
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="sec-num">2</span>Description of Service</h2>
+    <p>
+      SkedAI provides an AI-powered messaging platform that helps businesses manage customer conversations across multiple channels, including WhatsApp, Instagram, Facebook Messenger, and Email. The Service includes:
+    </p>
+    <ul>
+      <li>AI-powered automated responses to customer enquiries</li>
+      <li>Multi-channel inbox for managing conversations</li>
+      <li>Booking and appointment management</li>
+      <li>Integration with third-party platforms (Meta, WhatsApp Business, etc.)</li>
+      <li>Dashboard for analytics and configuration</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2><span class="sec-num">3</span>Account Registration</h2>
+    <p>
+      To use the Service, you must create an account by providing a valid email address and password. You are responsible for:
+    </p>
+    <ul>
+      <li>Maintaining the confidentiality of your account credentials</li>
+      <li>All activities that occur under your account</li>
+      <li>Notifying us immediately of any unauthorised use of your account</li>
+    </ul>
+    <p>
+      You must be at least 18 years old to create an account and use the Service.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="sec-num">4</span>Acceptable Use</h2>
+    <p>
+      You agree to use the Service only for lawful purposes and in accordance with these Terms. You shall not:
+    </p>
+    <ul>
+      <li>Use the Service to send spam, unsolicited messages, or bulk messaging</li>
+      <li>Violate any applicable laws, regulations, or third-party rights</li>
+      <li>Attempt to gain unauthorised access to any part of the Service</li>
+      <li>Use the Service to distribute malware, harmful content, or illegal material</li>
+      <li>Interfere with or disrupt the Service or its infrastructure</li>
+      <li>Resell or sublicense access to the Service without our written consent</li>
+    </ul>
+    <p>
+      We reserve the right to suspend or terminate your account if we determine, in our sole discretion, that you have violated these Terms.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="sec-num">5</span>Third-Party Integrations</h2>
+    <p>
+      The Service integrates with third-party platforms including Meta (Facebook, Instagram, WhatsApp), email providers, and others. Your use of these integrations is subject to the respective third party's terms of service and privacy policies. We are not responsible for the availability, accuracy, or practices of any third-party service.
+    </p>
+    <p>
+      When you connect a third-party account (such as an Instagram Business account or a WhatsApp Business number), you authorise SkedAI to access and use the data necessary to provide the Service, in accordance with our <a href="/privacy">Privacy Policy</a>.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="sec-num">6</span>Data and Privacy</h2>
+    <p>
+      Your use of the Service is also governed by our <a href="/privacy">Privacy Policy</a>, which describes how we collect, use, and protect your personal data. By using the Service, you consent to the practices described in the Privacy Policy.
+    </p>
+    <p>
+      You retain ownership of all content and data you submit through the Service ("Your Data"). You grant SkedAI a limited, non-exclusive licence to use Your Data solely as necessary to provide and improve the Service.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="sec-num">7</span>Fees and Payment</h2>
+    <p>
+      Certain features of the Service require a paid subscription. Subscription fees are billed quarterly in advance. Pricing details are available on our website or upon request.
+    </p>
+    <ul>
+      <li>All fees are exclusive of applicable taxes</li>
+      <li>Subscriptions may be cancelled with 30 days' written notice</li>
+      <li>Refunds are not provided for partial billing periods</li>
+    </ul>
+    <p>
+      We reserve the right to change our pricing with 30 days' advance notice.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="sec-num">8</span>Intellectual Property</h2>
+    <p>
+      The Service, including its design, code, features, documentation, and branding, is the intellectual property of SkedAI and is protected by applicable copyright, trademark, and other intellectual property laws. Nothing in these Terms grants you any right, title, or interest in the Service beyond the limited right to use it in accordance with these Terms.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="sec-num">9</span>Disclaimer of Warranties</h2>
+    <p>
+      The Service is provided "as is" and "as available" without warranties of any kind, whether express or implied, including but not limited to implied warranties of merchantability, fitness for a particular purpose, and non-infringement.
+    </p>
+    <p>
+      We do not warrant that the Service will be uninterrupted, error-free, or free from harmful components. AI-generated responses may not always be accurate; you are responsible for reviewing and approving content sent to your customers.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="sec-num">10</span>Limitation of Liability</h2>
+    <p>
+      To the maximum extent permitted by applicable law, SkedAI shall not be liable for any indirect, incidental, special, consequential, or punitive damages, including but not limited to loss of profits, data, business opportunities, or goodwill, arising out of or in connection with your use of the Service.
+    </p>
+    <p>
+      Our total aggregate liability for any claim arising out of these Terms shall not exceed the total fees paid by you to SkedAI in the twelve (12) months preceding the claim.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="sec-num">11</span>Indemnification</h2>
+    <p>
+      You agree to indemnify and hold harmless SkedAI and its officers, directors, employees, and agents from any claims, damages, losses, liabilities, and expenses (including reasonable legal fees) arising out of or related to your use of the Service, your violation of these Terms, or your violation of any rights of a third party.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="sec-num">12</span>Termination</h2>
+    <p>
+      Either party may terminate these Terms at any time by providing 30 days' written notice. We may also suspend or terminate your access to the Service immediately if:
+    </p>
+    <ul>
+      <li>You breach any provision of these Terms</li>
+      <li>Your use of the Service poses a security risk or may harm other users</li>
+      <li>We are required to do so by law</li>
+    </ul>
+    <p>
+      Upon termination, your right to use the Service ceases immediately. We will delete your account data within 30 days of termination, in accordance with our Privacy Policy.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="sec-num">13</span>Governing Law</h2>
+    <p>
+      These Terms shall be governed by and construed in accordance with the laws of the Republic of Albania, without regard to its conflict of law provisions. Any disputes arising under these Terms shall be subject to the exclusive jurisdiction of the courts of Tirana, Albania.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="sec-num">14</span>Changes to These Terms</h2>
+    <p>
+      We may update these Terms from time to time. When we do, we will update the effective date at the top of this page and, for material changes, notify you via email or through the Service. Continued use of the Service after any changes constitutes your acceptance of the updated Terms.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="sec-num">15</span>Contact Us</h2>
+    <p>
+      If you have any questions about these Terms, please contact us:
+    </p>
+    <div class="highlight-box">
+      <p>
+        Email: <a href="mailto:support@skedai.net">support@skedai.net</a><br />
+        Website: <a href="https://skedai.net">https://skedai.net</a>
+      </p>
+    </div>
+  </section>
+
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <a href="/" class="footer-logo">
+    <img src="logo.png" alt="SkedAI" />
+    <span class="footer-logo-text">Sked<span>AI</span></span>
+  </a>
+  <span class="footer-copy">&copy; 2025 SkedAI. All rights reserved.</span>
+  <div class="footer-links">
+    <a href="/privacy">Privacy</a>
+    <a href="/terms" class="active">Terms</a>
+    <a href="/#contact">Contact</a>
+  </div>
+</footer>
+
+</body>
+</html>
