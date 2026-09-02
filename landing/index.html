@@ -976,6 +976,7 @@ function launchInstagramSignup() {
   var state = Math.random().toString(36).substring(2) + Date.now().toString(36);
   var url = 'https://www.facebook.com/v26.0/dialog/oauth'
     + '?client_id=1507114490265475'
+    + '&config_id=2847372545620772'
     + '&redirect_uri=' + encodeURIComponent('https://www.skedai.net/instagram/oauth/callback')
     + '&scope=' + encodeURIComponent('instagram_business_basic,instagram_business_manage_messages,pages_show_list')
     + '&response_type=code'

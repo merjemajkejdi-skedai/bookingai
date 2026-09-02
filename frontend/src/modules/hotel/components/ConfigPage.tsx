@@ -4,6 +4,7 @@ import { api } from '../api';
 import { Button, Input, Spinner } from '../ui';
 
 const META_APP_ID = '1507114490265475';
+const META_IG_CONFIG_ID = '2847372545620772';
 
 // ── Instagram Connection section ──────────────────────────────────────────────
 
@@ -56,6 +57,7 @@ function InstagramConnection() {
     const state = Math.random().toString(36).substring(2) + Date.now().toString(36);
     const url = `https://www.facebook.com/v26.0/dialog/oauth`
       + `?client_id=${META_APP_ID}`
+      + `&config_id=${META_IG_CONFIG_ID}`
       + `&redirect_uri=${encodeURIComponent(redirectUri)}`
       + `&scope=${encodeURIComponent('instagram_business_basic,instagram_business_manage_messages,pages_show_list')}`
       + `&response_type=code`
