@@ -747,25 +747,14 @@
     <p class="section-sub reveal d2" style="max-width:520px;margin:0 auto 1.5rem;font-size:.85rem;opacity:.8">
       Requires a Business or Creator Instagram account linked to a Facebook Page.
     </p>
-    <div class="reveal d3" id="ig-fb-btn-wrap" style="display:inline-block;position:relative;overflow:hidden;border-radius:12px;background:linear-gradient(135deg,#833AB4,#FD1D1D,#F77737);padding:.85rem 2rem;cursor:pointer;transition:transform .15s,box-shadow .15s;box-shadow:0 4px 14px rgba(131,58,180,.35)"
+    <button onclick="launchInstagramSignup()" id="ig-signup-btn"
+      class="reveal d3"
+      style="display:inline-flex;align-items:center;gap:.5rem;padding:.85rem 2rem;font-size:1rem;font-weight:600;color:#fff;background:linear-gradient(135deg,#833AB4,#FD1D1D,#F77737);border:none;border-radius:12px;cursor:pointer;transition:transform .15s,box-shadow .15s;box-shadow:0 4px 14px rgba(131,58,180,.35)"
       onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 20px rgba(131,58,180,.45)'"
       onmouseout="this.style.transform='none';this.style.boxShadow='0 4px 14px rgba(131,58,180,.35)'">
-      <span style="display:inline-flex;align-items:center;gap:.5rem;font-size:1rem;font-weight:600;color:#fff;pointer-events:none">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="5"/><circle cx="17.5" cy="6.5" r="1.5" fill="white" stroke="none"/></svg>
-        Connect Instagram — Get Started Free
-      </span>
-      <fb:login-button
-        config_id="2847372545620772"
-        onlogin="checkInstagramLoginState();"
-        style="position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;cursor:pointer">
-      </fb:login-button>
-    </div>
-    <noscript>
-      <button onclick="launchInstagramSignup()" id="ig-signup-btn"
-        style="display:inline-flex;align-items:center;gap:.5rem;padding:.85rem 2rem;font-size:1rem;font-weight:600;color:#fff;background:linear-gradient(135deg,#833AB4,#FD1D1D,#F77737);border:none;border-radius:12px;cursor:pointer">
-        Connect Instagram — Get Started Free
-      </button>
-    </noscript>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="5"/><circle cx="17.5" cy="6.5" r="1.5" fill="white" stroke="none"/></svg>
+      Connect Instagram — Get Started Free
+    </button>
     <div id="ig-signup-result" style="margin-top:1rem;display:none"></div>
   </div>
 </section>
@@ -981,80 +970,7 @@ function launchWhatsAppSignup(source, tenantId) {
   });
 })();
 
-/* ── Facebook SDK (needed for fb:login-button) ───────────── */
-window.fbAsyncInit = function() {
-  FB.init({
-    appId: '1507114490265475',
-    cookie: true,
-    xfbml: true,
-    version: 'v26.0'
-  });
-};
-(function(d, s, id) {
-  var js, fjs = d.getElementsByTagName(s)[0];
-  if (d.getElementById(id)) return;
-  js = d.createElement(s); js.id = id; js.async = true;
-  js.src = 'https://connect.facebook.net/en_US/sdk.js';
-  fjs.parentNode.insertBefore(js, fjs);
-}(document, 'script', 'facebook-jssdk'));
-
-/* ── Instagram OAuth via FB Login Button (config_id) ─────── */
-function checkInstagramLoginState() {
-  FB.getLoginStatus(function(response) {
-    if (!response.authResponse) {
-      showInstagramError('Authorization cancelled or failed.');
-      return;
-    }
-
-    var result = document.getElementById('ig-signup-result');
-    if (result) {
-      result.style.display = 'block';
-      result.innerHTML = '<div style="padding:1rem 1.5rem;border-radius:10px;font-size:.95rem;background:#fae8ff;color:#6b21a8">Connecting your Instagram&hellip;</div>';
-    }
-
-    fetch('https://bookingai-production-8d5d.up.railway.app/api/instagram/oauth/callback', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        code: response.authResponse.code,
-        source: 'landing',
-        redirect_uri: 'https://www.skedai.net/instagram/oauth/callback'
-      })
-    })
-    .then(function(res) { return res.json(); })
-    .then(function(data) {
-      if (data.success) {
-        showInstagramSuccess();
-      } else {
-        showInstagramError(data.error);
-      }
-    })
-    .catch(function() {
-      showInstagramError('Something went wrong. Please try again or email support@skedai.net');
-    });
-  });
-}
-
-function showInstagramSuccess() {
-  var result = document.getElementById('ig-signup-result');
-  if (result) {
-    result.style.display = 'block';
-    result.innerHTML = '<div style="background:#d1f5e8;color:#0b5e52;padding:1rem 1.5rem;border-radius:10px;font-size:.95rem">' +
-      '<strong>&#9989; Connected!</strong> We\'ll be in touch within 24 hours to complete your setup.<br>' +
-      '<span style="font-size:.85rem;opacity:.8">Questions? WhatsApp us: +355 69 803 8120</span></div>';
-  }
-}
-
-function showInstagramError(msg) {
-  var result = document.getElementById('ig-signup-result');
-  if (result) {
-    result.style.display = 'block';
-    result.innerHTML = '<div style="background:#fee2e2;color:#991b1b;padding:1rem 1.5rem;border-radius:10px;font-size:.95rem">' +
-      '&#10060; ' + (msg || 'Something went wrong. Please try again.') + '</div>';
-  }
-}
-
-/* ── Instagram OAuth fallback (server-side redirect) ─────── */
+/* ── Instagram OAuth (server-side redirect) ──────────────── */
 function launchInstagramSignup() {
   var state = Math.random().toString(36).substring(2) + Date.now().toString(36);
   var url = 'https://www.facebook.com/v26.0/dialog/oauth'
