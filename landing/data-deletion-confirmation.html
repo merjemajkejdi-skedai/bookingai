@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Data Deletion Confirmation — SkedAI</title>
+  <link rel="icon" href="/logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --teal-dark:  #0b5e52;
+      --teal-mid:   #0f7a6a;
+      --teal-light: #1aa882;
+      --slate-50:   #f8fafc;
+      --slate-200:  #e2e8f0;
+      --slate-500:  #64748b;
+      --slate-800:  #1e293b;
+      --slate-900:  #0f172a;
+    }
+    body { font-family: 'DM Sans', sans-serif; background: #fff; color: var(--slate-800); line-height: 1.6; }
+
+    nav {
+      position: sticky; top: 0; z-index: 50;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 6%; height: 68px;
+      background: rgba(255,255,255,0.92);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--slate-200);
+    }
+    .nav-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+    .nav-logo img { height: 40px; width: auto; }
+    .nav-logo-text { font-size: 20px; font-weight: 800; color: var(--slate-900); letter-spacing: -0.5px; }
+    .nav-logo-text span { color: var(--teal-light); }
+
+    .content {
+      max-width: 600px; margin: 100px auto; padding: 0 6%;
+    }
+    .content h1 {
+      font-size: 28px; font-weight: 700; color: var(--slate-900);
+      margin-bottom: 16px; letter-spacing: -0.5px;
+    }
+    .content p {
+      font-size: 1rem; color: var(--slate-800); margin-bottom: 1rem;
+    }
+    .status-box {
+      padding: 1.25rem 1.5rem; border-radius: 10px;
+      background: #d1f5e8; color: #0b5e52;
+      font-size: .95rem; margin: 1.5rem 0;
+    }
+    .contact {
+      font-size: .9rem; color: var(--slate-500); margin-top: 2rem;
+    }
+    .contact a { color: var(--teal-mid); text-decoration: none; }
+    .contact a:hover { text-decoration: underline; }
+
+    footer {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      padding: 20px 6%; border-top: 1px solid var(--slate-200);
+      background: #fff;
+      display: flex; align-items: center; justify-content: center; gap: 20px;
+    }
+    footer a { font-size: 13px; color: var(--slate-500); text-decoration: none; }
+    footer a:hover { color: var(--teal-mid); }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a href="/" class="nav-logo">
+    <img src="/logo.png" alt="SkedAI logo" />
+    <span class="nav-logo-text">Sked<span>AI</span></span>
+  </a>
+</nav>
+
+<div class="content">
+  <h1>Data Deletion Request</h1>
+  <div class="status-box">
+    Your data deletion request has been received and processed.
+  </div>
+  <p>
+    In accordance with Meta's data deletion requirements, we have deleted the data
+    associated with your Facebook account from our systems. This includes any access
+    tokens, connection records, and related metadata.
+  </p>
+  <p>
+    Conversation history associated with your account has also been removed.
+  </p>
+  <p class="contact">
+    If you have any questions, please contact us at
+    <a href="mailto:support@skedai.net">support@skedai.net</a>.
+  </p>
+</div>
+
+<footer>
+  <a href="/privacy">Privacy</a>
+  <a href="/terms">Terms</a>
+  <a href="mailto:support@skedai.net">Contact</a>
+</footer>
+
+</body>
+</html>

@@ -24,6 +24,7 @@ import { startInstagramTokenRefresh } from './channels/instagramTokenRefresh.js'
 import { adminAnalyticsRouter } from './routes/adminAnalytics.js';
 import { whatsappSignupRouter } from './routes/whatsappSignup.js';
 import { instagramSignupRouter } from './routes/instagramSignup.js';
+import { facebookComplianceRouter } from './routes/facebookCompliance.js';
 import { alertError, cleanupCooldowns } from './utils/errorMonitor.js';
 import instagramRouter from './routes/instagramWebhook.js';
 import messengerRouter from './routes/messengerWebhook.js';
@@ -120,6 +121,7 @@ app.use('/shop', shopRouter);
 app.use('/api', skedaiRouter);
 app.use('/api', whatsappSignupRouter);
 app.use('/api', instagramSignupRouter);
+app.use('/api', facebookComplianceRouter);
 app.use('/whatsapp', whatsappRouter);
 app.use('/', metaRouter);
 app.use('/', instagramRouter);
