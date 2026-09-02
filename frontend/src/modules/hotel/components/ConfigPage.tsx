@@ -4,7 +4,6 @@ import { api } from '../api';
 import { Button, Input, Spinner } from '../ui';
 
 const META_APP_ID = '1507114490265475';
-const IG_SCOPES = 'pages_show_list';
 
 // ── Instagram Connection section ──────────────────────────────────────────────
 
@@ -33,39 +32,35 @@ function InstagramConnection() {
 
   useEffect(() => { loadStatus(); }, [loadStatus]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    if (!code) return;
+    if (!window.location.pathname.includes('/settings/instagram/oauth/callback')) return;
+    window.history.replaceState({}, '', '/settings');
+    setConnecting(true);
+    const redirectUri = window.location.origin + '/settings/instagram/oauth/callback';
+    api.connectInstagramOAuth(code, redirectUri)
+      .then(r => {
+        setSuccessMsg(r.username ? `Connected @${r.username}` : 'Connected');
+        loadStatus();
+      })
+      .catch(e => setError(e.message))
+      .finally(() => setConnecting(false));
+  }, []);
+
   function handleConnect() {
     setError('');
     setConnecting(true);
     const redirectUri = window.location.origin + '/settings/instagram/oauth/callback';
-
-    const FB = (window as any).FB;
-    if (!FB) {
-      setError('Facebook SDK not loaded — please refresh the page and try again');
-      setConnecting(false);
-      return;
-    }
-
-    FB.login((response: any) => {
-      console.log('FB.login response:', JSON.stringify(response));
-
-      if (!response.authResponse?.code) {
-        console.log('FB.login failed:', response.status, JSON.stringify(response));
-        setError(`Authorization cancelled or failed (${response.status || 'no status'})`);
-        setConnecting(false);
-        return;
-      }
-
-      api.connectInstagramOAuth(response.authResponse.code, redirectUri)
-        .then(r => {
-          setSuccessMsg(r.username ? `Connected @${r.username}` : 'Connected');
-          loadStatus();
-        })
-        .catch(e => setError(e.message))
-        .finally(() => setConnecting(false));
-    }, {
-      scope: 'instagram_business_basic,instagram_business_manage_messages,pages_show_list',
-      response_type: 'code',
-    });
+    const state = Math.random().toString(36).substring(2) + Date.now().toString(36);
+    const url = `https://www.facebook.com/v26.0/dialog/oauth`
+      + `?client_id=${META_APP_ID}`
+      + `&redirect_uri=${encodeURIComponent(redirectUri)}`
+      + `&scope=${encodeURIComponent('instagram_business_basic,instagram_business_manage_messages,pages_show_list')}`
+      + `&response_type=code`
+      + `&state=${encodeURIComponent(state)}`;
+    window.location.href = url;
   }
 
   async function handleDisconnect() {

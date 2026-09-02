@@ -970,79 +970,16 @@ function launchWhatsAppSignup(source, tenantId) {
   });
 })();
 
-/* ── Facebook SDK ─────────────────────────────────────────── */
-window.fbAsyncInit = function() {
-  FB.init({
-    appId: '1507114490265475',
-    cookie: true,
-    xfbml: true,
-    version: 'v26.0'
-  });
-};
-(function(d, s, id) {
-  var js, fjs = d.getElementsByTagName(s)[0];
-  if (d.getElementById(id)) return;
-  js = d.createElement(s); js.id = id; js.async = true;
-  js.src = 'https://connect.facebook.net/en_US/sdk.js';
-  fjs.parentNode.insertBefore(js, fjs);
-}(document, 'script', 'facebook-jssdk'));
-
-/* ── Instagram OAuth via FB.login() ──────────────────────── */
+/* ── Instagram OAuth (server-side redirect) ──────────────── */
 function launchInstagramSignup() {
-  var result = document.getElementById('ig-signup-result');
-  var btn    = document.getElementById('ig-signup-btn');
-
-  FB.login(function(response) {
-    console.log('FB.login response:', JSON.stringify(response));
-
-    if (!response.authResponse || !response.authResponse.code) {
-      console.log('FB.login failed:', response.status, JSON.stringify(response));
-      if (result) {
-        result.style.display = 'block';
-        result.innerHTML = '<div style="background:#fee2e2;color:#991b1b;padding:1rem 1.5rem;border-radius:10px;font-size:.95rem">Authorization cancelled or failed. Please try again.<br><code style="font-size:.75rem;opacity:.7">' + (response.status || 'no status') + '</code></div>';
-      }
-      return;
-    }
-
-    if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
-    if (result) {
-      result.style.display = 'block';
-      result.innerHTML = '<div style="padding:1rem 1.5rem;border-radius:10px;font-size:.95rem;background:#fae8ff;color:#6b21a8">Connecting your Instagram&hellip;</div>';
-    }
-
-    fetch('https://bookingai-production-8d5d.up.railway.app/api/instagram/oauth/callback', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        code: response.authResponse.code,
-        source: 'landing',
-        redirect_uri: 'https://www.skedai.net/instagram/oauth/callback'
-      })
-    })
-    .then(function(res) { return res.json(); })
-    .then(function(data) {
-      if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
-      if (result) {
-        if (data.success) {
-          result.innerHTML = '<div style="background:#d1f5e8;color:#0b5e52;padding:1rem 1.5rem;border-radius:10px;font-size:.95rem">' +
-            '<strong>&#9989; Connected!</strong> We\'ll be in touch within 24 hours to complete your setup.<br>' +
-            '<span style="font-size:.85rem;opacity:.8">Questions? WhatsApp us: +355 69 803 8120</span></div>';
-        } else {
-          result.innerHTML = '<div style="background:#fee2e2;color:#991b1b;padding:1rem 1.5rem;border-radius:10px;font-size:.95rem">' +
-            '&#10060; ' + (data.error || 'Something went wrong. Please try again.') + '</div>';
-        }
-      }
-    })
-    .catch(function() {
-      if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
-      if (result) {
-        result.innerHTML = '<div style="background:#fee2e2;color:#991b1b;padding:1rem 1.5rem;border-radius:10px">Something went wrong. Please try again or email support@skedai.net</div>';
-      }
-    });
-  }, {
-    scope: 'instagram_business_basic,instagram_business_manage_messages,pages_show_list',
-    response_type: 'code'
-  });
+  var state = Math.random().toString(36).substring(2) + Date.now().toString(36);
+  var url = 'https://www.facebook.com/v26.0/dialog/oauth'
+    + '?client_id=1507114490265475'
+    + '&redirect_uri=' + encodeURIComponent('https://www.skedai.net/instagram/oauth/callback')
+    + '&scope=' + encodeURIComponent('instagram_business_basic,instagram_business_manage_messages,pages_show_list')
+    + '&response_type=code'
+    + '&state=' + encodeURIComponent(state);
+  window.location.href = url;
 }
 </script>
 
