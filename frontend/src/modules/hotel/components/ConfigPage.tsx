@@ -4,7 +4,7 @@ import { api } from '../api';
 import { Button, Input, Spinner } from '../ui';
 
 const META_APP_ID = '1507114490265475';
-const IG_SCOPES = 'instagram_business_basic,instagram_business_manage_messages,pages_show_list';
+const IG_SCOPES = 'pages_show_list';
 
 // ── Instagram Connection section ──────────────────────────────────────────────
 
