@@ -59,7 +59,7 @@ function InstagramConnection() {
       + `?client_id=${META_APP_ID}`
       + `&config_id=${META_IG_CONFIG_ID}`
       + `&redirect_uri=${encodeURIComponent(redirectUri)}`
-      + `&scope=${encodeURIComponent('instagram_business_basic,instagram_business_manage_messages,pages_show_list')}`
+      + `&scope=${encodeURIComponent('instagram_business_basic,instagram_business_manage_messages,pages_show_list,email')}`
       + `&response_type=code`
       + `&state=${encodeURIComponent(state)}`;
     window.location.href = url;
