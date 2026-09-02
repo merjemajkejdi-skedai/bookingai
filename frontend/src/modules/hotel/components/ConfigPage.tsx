@@ -37,52 +37,34 @@ function InstagramConnection() {
     setError('');
     setConnecting(true);
     const redirectUri = window.location.origin + '/settings/instagram/oauth/callback';
-    const authUrl = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${META_APP_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(IG_SCOPES)}&response_type=code`;
-    console.log('Instagram login config:', JSON.stringify({
-      scope: IG_SCOPES,
-      response_type: 'code',
-      client_id: META_APP_ID,
-      redirect_uri: redirectUri,
-      authUrl,
-    }));
-    const popup = window.open(authUrl, 'ig_oauth', 'width=600,height=700');
-    if (!popup) {
-      setError('Popup blocked — please allow popups for this site');
+
+    const FB = (window as any).FB;
+    if (!FB) {
+      setError('Facebook SDK not loaded — please refresh the page and try again');
       setConnecting(false);
       return;
     }
 
-    const timer = setInterval(() => {
-      try {
-        if (popup.closed) {
-          clearInterval(timer);
-          setConnecting(false);
-          return;
-        }
-        const popupUrl = popup.location.href;
-        if (popupUrl.startsWith(redirectUri) || popupUrl.startsWith(window.location.origin)) {
-          const url = new URL(popupUrl);
-          const code = url.searchParams.get('code');
-          popup.close();
-          clearInterval(timer);
-          if (code) {
-            api.connectInstagramOAuth(code, redirectUri)
-              .then(r => {
-                setSuccessMsg(r.username ? `Connected @${r.username}` : 'Connected');
-                loadStatus();
-              })
-              .catch(e => setError(e.message))
-              .finally(() => setConnecting(false));
-          } else {
-            const errMsg = url.searchParams.get('error_description') || 'Authorization cancelled';
-            setError(errMsg);
-            setConnecting(false);
-          }
-        }
-      } catch {
-        // cross-origin — popup is still on Facebook domain
+    FB.login((response: any) => {
+      console.log('FB.login response:', JSON.stringify(response));
+
+      if (!response.authResponse?.code) {
+        setError('Authorization cancelled or failed');
+        setConnecting(false);
+        return;
       }
-    }, 500);
+
+      api.connectInstagramOAuth(response.authResponse.code, redirectUri)
+        .then(r => {
+          setSuccessMsg(r.username ? `Connected @${r.username}` : 'Connected');
+          loadStatus();
+        })
+        .catch(e => setError(e.message))
+        .finally(() => setConnecting(false));
+    }, {
+      scope: 'instagram_business_basic,instagram_business_manage_messages,pages_show_list',
+      response_type: 'code',
+    });
   }
 
   async function handleDisconnect() {
