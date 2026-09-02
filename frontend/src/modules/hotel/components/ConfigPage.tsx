@@ -49,7 +49,8 @@ function InstagramConnection() {
       console.log('FB.login response:', JSON.stringify(response));
 
       if (!response.authResponse?.code) {
-        setError('Authorization cancelled or failed');
+        console.log('FB.login failed:', response.status, JSON.stringify(response));
+        setError(`Authorization cancelled or failed (${response.status || 'no status'})`);
         setConnecting(false);
         return;
       }

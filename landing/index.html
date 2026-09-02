@@ -991,9 +991,10 @@ function launchInstagramSignup() {
     console.log('FB.login response:', JSON.stringify(response));
 
     if (!response.authResponse || !response.authResponse.code) {
+      console.log('FB.login failed:', response.status, JSON.stringify(response));
       if (result) {
         result.style.display = 'block';
-        result.innerHTML = '<div style="background:#fee2e2;color:#991b1b;padding:1rem 1.5rem;border-radius:10px;font-size:.95rem">Authorization cancelled or failed. Please try again.</div>';
+        result.innerHTML = '<div style="background:#fee2e2;color:#991b1b;padding:1rem 1.5rem;border-radius:10px;font-size:.95rem">Authorization cancelled or failed. Please try again.<br><code style="font-size:.75rem;opacity:.7">' + (response.status || 'no status') + '</code></div>';
       }
       return;
     }
