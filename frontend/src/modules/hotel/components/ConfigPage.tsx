@@ -36,8 +36,15 @@ function InstagramConnection() {
   function handleConnect() {
     setError('');
     setConnecting(true);
-    const redirectUri = window.location.origin + '/';
+    const redirectUri = window.location.origin + '/settings/instagram/oauth/callback';
     const authUrl = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${META_APP_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(IG_SCOPES)}&response_type=code`;
+    console.log('Instagram login config:', JSON.stringify({
+      scope: IG_SCOPES,
+      response_type: 'code',
+      client_id: META_APP_ID,
+      redirect_uri: redirectUri,
+      authUrl,
+    }));
     const popup = window.open(authUrl, 'ig_oauth', 'width=600,height=700');
     if (!popup) {
       setError('Popup blocked — please allow popups for this site');

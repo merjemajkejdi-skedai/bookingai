@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Connecting Instagram — SkedAI</title>
+  <link rel="icon" href="/logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --teal-dark:  #0b5e52;
+      --teal-mid:   #0f7a6a;
+      --teal-light: #1aa882;
+      --green:      #25c07a;
+      --green-soft: #d1f5e8;
+      --slate-50:   #f8fafc;
+      --slate-200:  #e2e8f0;
+      --slate-400:  #94a3b8;
+      --slate-500:  #64748b;
+      --slate-600:  #475569;
+      --slate-800:  #1e293b;
+      --slate-900:  #0f172a;
+    }
+    body { font-family: 'DM Sans', sans-serif; background: #fff; color: var(--slate-800); line-height: 1.6; }
+
+    nav {
+      position: sticky; top: 0; z-index: 50;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 6%; height: 68px;
+      background: rgba(255,255,255,0.92);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--slate-200);
+    }
+    .nav-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+    .nav-logo img { height: 40px; width: auto; }
+    .nav-logo-text { font-size: 20px; font-weight: 800; color: var(--slate-900); letter-spacing: -0.5px; }
+    .nav-logo-text span { color: var(--teal-light); }
+
+    .content {
+      max-width: 520px; margin: 120px auto; padding: 0 6%;
+      text-align: center;
+    }
+    .content h1 {
+      font-size: 24px; font-weight: 700; color: var(--slate-900);
+      margin-bottom: 12px; letter-spacing: -0.5px;
+    }
+    .status {
+      padding: 1rem 1.5rem; border-radius: 10px;
+      font-size: .95rem; margin-top: 1.5rem;
+    }
+    .status-loading { background: #fae8ff; color: #6b21a8; }
+    .status-success { background: #d1f5e8; color: #0b5e52; }
+    .status-error   { background: #fee2e2; color: #991b1b; }
+
+    footer {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      padding: 20px 6%; border-top: 1px solid var(--slate-200);
+      background: #fff;
+      display: flex; align-items: center; justify-content: center; gap: 20px;
+    }
+    footer a { font-size: 13px; color: var(--slate-500); text-decoration: none; }
+    footer a:hover { color: var(--teal-mid); }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a href="/" class="nav-logo">
+    <img src="/logo.png" alt="SkedAI logo" />
+    <span class="nav-logo-text">Sked<span>AI</span></span>
+  </a>
+</nav>
+
+<div class="content">
+  <h1>Instagram Connection</h1>
+  <div id="result" class="status status-loading">Connecting your Instagram account&hellip;</div>
+</div>
+
+<footer>
+  <a href="/privacy">Privacy</a>
+  <a href="/terms">Terms</a>
+  <a href="mailto:support@skedai.net">Contact</a>
+</footer>
+
+<script>
+(function() {
+  var params = new URLSearchParams(window.location.search);
+  var code = params.get('code');
+  var result = document.getElementById('result');
+
+  if (!code) {
+    var errorDesc = params.get('error_description') || params.get('error') || 'No authorization code received.';
+    result.className = 'status status-error';
+    result.innerHTML = '&#10060; ' + errorDesc + '<br><a href="/" style="color:inherit;text-decoration:underline;font-size:.9rem">Back to SkedAI</a>';
+    return;
+  }
+
+  window.history.replaceState({}, '', window.location.pathname);
+
+  var redirectUri = 'https://www.skedai.net/instagram/oauth/callback';
+  fetch('https://bookingai-production-8d5d.up.railway.app/api/instagram/oauth/callback', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      code: code,
+      source: 'landing',
+      redirect_uri: redirectUri
+    })
+  })
+  .then(function(res) { return res.json(); })
+  .then(function(data) {
+    if (data.success) {
+      result.className = 'status status-success';
+      result.innerHTML = '<strong>&#9989; Connected!</strong> We\'ll be in touch within 24 hours to complete your setup.<br>' +
+        '<span style="font-size:.85rem;opacity:.8">Questions? WhatsApp us: +355 69 803 8120</span>';
+    } else {
+      result.className = 'status status-error';
+      result.innerHTML = '&#10060; ' + (data.error || 'Something went wrong. Please try again.') +
+        '<br><a href="/" style="color:inherit;text-decoration:underline;font-size:.9rem">Try again</a>';
+    }
+  })
+  .catch(function() {
+    result.className = 'status status-error';
+    result.innerHTML = '&#10060; Something went wrong. Please try again or email support@skedai.net' +
+      '<br><a href="/" style="color:inherit;text-decoration:underline;font-size:.9rem">Back to SkedAI</a>';
+  });
+})();
+</script>
+
+</body>
+</html>
