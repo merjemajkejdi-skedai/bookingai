@@ -972,7 +972,12 @@ function launchWhatsAppSignup(source, tenantId) {
 
 /* ── Facebook SDK ─────────────────────────────────────────── */
 window.fbAsyncInit = function() {
-  FB.init({ appId: '1507114490265475', version: 'v21.0' });
+  FB.init({
+    appId: '1507114490265475',
+    cookie: true,
+    xfbml: true,
+    version: 'v26.0'
+  });
 };
 (function(d, s, id) {
   var js, fjs = d.getElementsByTagName(s)[0];
