@@ -12,6 +12,7 @@ import { restaurantRouter } from './modules/restaurant/routes.js';
 import { hotelRouter } from './routes/hotel.js';
 import { emailAccountsRouter } from './routes/emailAccounts.js';
 import { startEmailWorker } from './channels/email/worker.js';
+import { gbRouter } from './routes/generalBusiness.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -43,6 +44,7 @@ app.use('/admin', adminRouter);
 app.use('/whatsapp', whatsappRouter);
 app.use('/hotel', hotelRouter);
 app.use('/hotel/email', emailAccountsRouter);
+app.use('/gb', gbRouter);
 
 async function start() {
   await runMigrations();

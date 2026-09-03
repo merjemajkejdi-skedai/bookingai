@@ -405,6 +405,137 @@ export async function runMigrations() {
       `CREATE TABLE IF NOT EXISTS email_skipped_log (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, account_id TEXT NOT NULL, rfc822_message_id TEXT, from_address TEXT, subject TEXT, reason TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP))`,
       `CREATE INDEX IF NOT EXISTS idx_email_msgs_conv ON email_messages(conversation_id, created_at)`,
       `CREATE INDEX IF NOT EXISTS idx_email_msgs_tenant ON email_messages(tenant_id, created_at)`,
+      // gb_001 — General Business: business config
+      `CREATE TABLE IF NOT EXISTS gb_business_config (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  business_name VARCHAR(255) NOT NULL,
+  business_description TEXT,
+  phone VARCHAR(50),
+  website VARCHAR(255),
+  email VARCHAR(255),
+  opening_hours JSONB NOT NULL DEFAULT '{}',
+  notification_whatsapp VARCHAR(50),
+  fallback_message TEXT,
+  ai_enabled BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(tenant_id)
+)`,
+      // gb_002 — General Business: locations
+      `CREATE TABLE IF NOT EXISTS gb_locations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  address TEXT NOT NULL,
+  phone VARCHAR(50),
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)`,
+      // gb_003 — General Business: FAQs
+      `CREATE TABLE IF NOT EXISTS gb_faqs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  question TEXT NOT NULL,
+  answer TEXT NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)`,
+      // gb_004 — General Business: documents
+      `CREATE TABLE IF NOT EXISTS gb_documents (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  file_type VARCHAR(50) NOT NULL,
+  r2_key TEXT NOT NULL,
+  file_size_bytes INTEGER,
+  extracted_text TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)`,
+      // gb_005 — General Business: departments
+      `CREATE TABLE IF NOT EXISTS gb_departments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  whatsapp_number VARCHAR(50),
+  request_types TEXT[] NOT NULL DEFAULT '{}',
+  response_time_minutes INTEGER DEFAULT 30,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)`,
+      // gb_006 — General Business: conversations
+      `CREATE TABLE IF NOT EXISTS gb_conversations (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  tenant_id TEXT NOT NULL,
+  guest_phone TEXT,
+  guest_name TEXT,
+  guest_username TEXT,
+  guest_email TEXT,
+  messages JSONB NOT NULL DEFAULT '[]',
+  last_message TEXT,
+  channel TEXT NOT NULL DEFAULT 'whatsapp',
+  channel_user_id TEXT,
+  ai_paused_until TEXT,
+  ai_paused_by TEXT,
+  updated_at TEXT,
+  last_guest_message_at TEXT,
+  UNIQUE(tenant_id, channel, channel_user_id)
+)`,
+      `CREATE INDEX IF NOT EXISTS idx_gb_conversations_tenant ON gb_conversations(tenant_id, updated_at DESC)`,
+      // gb_007 — General Business: requests
+      `CREATE TABLE IF NOT EXISTS gb_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  conversation_id TEXT,
+  department_id UUID,
+  guest_phone TEXT,
+  guest_name TEXT,
+  request_type VARCHAR(100),
+  description TEXT NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'open',
+  staff_notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)`,
+      // gb_008 — General Business: menu items
+      `CREATE TABLE IF NOT EXISTS gb_menu_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  price DECIMAL(10,2),
+  currency VARCHAR(10) NOT NULL DEFAULT 'ALL',
+  category VARCHAR(100),
+  is_available BOOLEAN NOT NULL DEFAULT true,
+  image_r2_key TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)`,
+      // gb_009 — General Business: orders
+      `CREATE TABLE IF NOT EXISTS gb_orders (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  conversation_id TEXT,
+  order_number VARCHAR(50) NOT NULL,
+  guest_phone TEXT,
+  guest_name TEXT,
+  guest_instagram TEXT,
+  guest_email TEXT,
+  items JSONB NOT NULL DEFAULT '[]',
+  total_price DECIMAL(10,2),
+  currency VARCHAR(10) NOT NULL DEFAULT 'ALL',
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)`,
+      // gb_tenant_columns
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS menu_enabled BOOLEAN DEFAULT false`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS agent_notes TEXT`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
