@@ -382,6 +382,10 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
   const [igAccountId, setIgAccountId]         = useState('');
   const [igConnecting, setIgConnecting]       = useState(false);
   const [igConnectError, setIgConnectError]   = useState('');
+  // Instagram OAuth connect
+  const [igOAuthConnecting, setIgOAuthConnecting] = useState(false);
+  const [igOAuthError, setIgOAuthError]           = useState('');
+  const [igOAuthSuccess, setIgOAuthSuccess]       = useState('');
   // Instagram disconnect confirm
   const [igDisconnectOpen, setIgDisconnectOpen]   = useState(false);
   const [igDisconnecting, setIgDisconnecting]     = useState(false);
@@ -439,6 +443,62 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
       setIgFormOpen(false); setIgToken(''); setIgAccountId('');
     } catch (e: any) { setIgConnectError(e.message); }
     finally { setIgConnecting(false); }
+  }
+
+  function handleInstagramOAuthConnect() {
+    setIgOAuthError('');
+    setIgOAuthConnecting(true);
+
+    const loadFbSdk = (): Promise<void> => {
+      if ((window as any).FB) return Promise.resolve();
+      return new Promise((resolve) => {
+        (window as any).fbAsyncInit = () => {
+          (window as any).FB.init({ appId: '1507114490265475', cookie: true, xfbml: true, version: 'v26.0' });
+          resolve();
+        };
+        const s = document.createElement('script');
+        s.src = 'https://connect.facebook.net/en_US/sdk.js';
+        s.async = true;
+        document.body.appendChild(s);
+      });
+    };
+
+    loadFbSdk().then(() => {
+      const FB = (window as any).FB;
+      FB.login((response: any) => {
+        if (!response.authResponse) {
+          setIgOAuthConnecting(false);
+          return;
+        }
+        const base = (import.meta.env.VITE_API_URL as string) ?? '';
+        fetch(`${base}/api/instagram/oauth/callback`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            code: response.authResponse.code,
+            source: 'tenant_settings',
+            tenantId: tenant.id,
+            redirect_uri: window.location.origin + '/settings/instagram/oauth/callback',
+          }),
+        })
+          .then(r => r.json())
+          .then(data => {
+            if (data.success) {
+              setIgOAuthSuccess(data.data?.username ? `Connected @${data.data.username}` : 'Connected');
+              setChannels(prev => ({ ...prev, instagram: { connected: true, ai_enabled: false, connection_type: 'oauth' } }));
+            } else {
+              setIgOAuthError(data.error || 'Connection failed');
+            }
+          })
+          .catch(() => setIgOAuthError('Connection failed'))
+          .finally(() => setIgOAuthConnecting(false));
+      }, {
+        config_id: '2847372545620772',
+        response_type: 'code',
+        override_default_response_type: true,
+        extras: { setup: {}, featureName: 'instagram_onboarding', sessionInfoVersion: '3' },
+      });
+    });
   }
 
   async function handleEmailCreate() {
@@ -803,6 +863,23 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
                       )}
                     </div>
                   </div>
+
+                  {/* OAuth connect (admin) */}
+                  {!connected && (
+                    <div className="mt-1 p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
+                      <p className="text-[10px] text-slate-400 uppercase font-semibold tracking-wide">Connect via OAuth</p>
+                      <button
+                        type="button"
+                        onClick={handleInstagramOAuthConnect}
+                        disabled={igOAuthConnecting}
+                        className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-sm font-medium text-white hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 transition-all"
+                      >
+                        📷 {igOAuthConnecting ? 'Connecting…' : 'Connect Instagram Account'}
+                      </button>
+                      {igOAuthError && <p className="text-xs text-red-500">{igOAuthError}</p>}
+                      {igOAuthSuccess && <p className="text-xs text-green-600">{igOAuthSuccess}</p>}
+                    </div>
+                  )}
 
                   {/* Manual connect form (admin only) */}
                   {!connected && igFormOpen && (

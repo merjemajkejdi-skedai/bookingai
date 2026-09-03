@@ -20,10 +20,7 @@ interface Props { onLogout: () => void; }
 
 export function HotelModule({ onLogout }: Props) {
   const currentUser = getStoredUser();
-  const [page, setPage] = useState<Page>(() => {
-    if (window.location.pathname.includes('/settings/instagram/oauth/callback')) return 'config';
-    return 'conversations';
-  });
+  const [page, setPage] = useState<Page>('conversations');
   const [reviewsEnabled,    setReviewsEnabled]    = useState(false);
   const [surveyEnabled,     setSurveyEnabled]     = useState(false);
   const [menusEnabled,      setMenusEnabled]      = useState(false);
