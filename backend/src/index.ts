@@ -25,6 +25,7 @@ import { adminAnalyticsRouter } from './routes/adminAnalytics.js';
 import { whatsappSignupRouter } from './routes/whatsappSignup.js';
 import { instagramSignupRouter } from './routes/instagramSignup.js';
 import { facebookComplianceRouter } from './routes/facebookCompliance.js';
+import { messengerSignupRouter } from './routes/messengerSignup.js';
 import { alertError, cleanupCooldowns } from './utils/errorMonitor.js';
 import instagramRouter from './routes/instagramWebhook.js';
 import messengerRouter from './routes/messengerWebhook.js';
@@ -121,6 +122,7 @@ app.use('/shop', shopRouter);
 app.use('/api', skedaiRouter);
 app.use('/api', whatsappSignupRouter);
 app.use('/api', instagramSignupRouter);
+app.use('/api', messengerSignupRouter);
 app.use('/api', facebookComplianceRouter);
 app.use('/whatsapp', whatsappRouter);
 app.use('/', metaRouter);
@@ -166,7 +168,9 @@ async function start() {
     console.log(`   Claude: ${!!process.env.CLAUDE_API_KEY ? '✅' : '❌ missing CLAUDE_API_KEY'}`);
     const r2Ok = !!(process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_ENDPOINT && process.env.R2_BUCKET_NAME && process.env.R2_PUBLIC_URL);
     console.log(`   R2:     ${r2Ok ? '✅' : '❌ missing R2_* env vars — file uploads will fail'}`);
-    console.log(`   Alerts: ${process.env.RESEND_API_KEY ? '✅ → Merjemajkejdi@gmail.com' : '❌ missing RESEND_API_KEY'}\n`);
+    console.log(`   Alerts: ${process.env.RESEND_API_KEY ? '✅ → Merjemajkejdi@gmail.com' : '❌ missing RESEND_API_KEY'}`);
+    const msgCfg = process.env.META_MESSENGER_CONFIG_ID || '';
+    console.log(`   Messenger: ${msgCfg && !msgCfg.includes('PLACEHOLDER') ? '✅' : '⚠️  missing META_MESSENGER_CONFIG_ID — Messenger OAuth will fail'}\n`);
   });
 }
 

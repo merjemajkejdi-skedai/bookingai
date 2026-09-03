@@ -18,6 +18,17 @@ const META_APP_ID     = () => process.env.META_APP_ID || '1507114490265475';
 const META_APP_SECRET = () => process.env.META_APP_SECRET!;
 
 // ---------------------------------------------------------------------------
+// GET /api/messenger/config — public, returns Messenger Login config_id
+// ---------------------------------------------------------------------------
+messengerSignupRouter.get('/messenger/config', (_req: Request, res: Response) => {
+  const configId = process.env.META_MESSENGER_CONFIG_ID || '';
+  if (!configId || configId.includes('PLACEHOLDER')) {
+    return err(res, 'Messenger config_id not configured — set META_MESSENGER_CONFIG_ID env var', 503);
+  }
+  ok(res, { config_id: configId });
+});
+
+// ---------------------------------------------------------------------------
 // POST /api/messenger/oauth/callback
 // Receives the auth code from FB.login() on landing page or admin settings.
 // ---------------------------------------------------------------------------

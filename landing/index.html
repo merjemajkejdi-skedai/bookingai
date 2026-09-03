@@ -1092,51 +1092,64 @@ var messengerPagesData = [];
 var messengerEncryptedToken = '';
 
 function launchMessengerSignup() {
-  FB.login(function(response) {
-    console.log('Messenger FB.login response:', JSON.stringify(response));
-    if (response.authResponse) {
-      var result = document.getElementById('msg-signup-result');
-      if (result) {
-        result.style.display = 'block';
-        result.innerHTML = '<div style="padding:1rem 1.5rem;border-radius:10px;font-size:.95rem;background:#dbeafe;color:#1e40af">Connecting your Facebook Page&hellip;</div>';
+  fetch('https://bookingai-production-8d5d.up.railway.app/api/messenger/config')
+    .then(function(res) { return res.json(); })
+    .then(function(cfg) {
+      if (!cfg.success || !cfg.data || !cfg.data.config_id) {
+        showMessengerError('Messenger is not configured yet. Please contact support@skedai.net');
+        return;
       }
+      var messengerConfigId = cfg.data.config_id;
 
-      fetch('https://bookingai-production-8d5d.up.railway.app/api/messenger/oauth/callback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code: response.authResponse.code,
-          source: 'landing'
-        })
-      })
-      .then(function(res) { return res.json(); })
-      .then(function(data) {
-        if (data.success && data.data && data.data.pages && data.data.pages.length > 1) {
-          messengerPagesData = data.data.pages;
-          messengerEncryptedToken = data.data.encryptedToken;
-          showMessengerPageSelector(data.data.pages);
-        } else if (data.success) {
-          showMessengerSuccess();
+      FB.login(function(response) {
+        console.log('Messenger FB.login response:', JSON.stringify(response));
+        if (response.authResponse) {
+          var result = document.getElementById('msg-signup-result');
+          if (result) {
+            result.style.display = 'block';
+            result.innerHTML = '<div style="padding:1rem 1.5rem;border-radius:10px;font-size:.95rem;background:#dbeafe;color:#1e40af">Connecting your Facebook Page&hellip;</div>';
+          }
+
+          fetch('https://bookingai-production-8d5d.up.railway.app/api/messenger/oauth/callback', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              code: response.authResponse.code,
+              source: 'landing'
+            })
+          })
+          .then(function(res) { return res.json(); })
+          .then(function(data) {
+            if (data.success && data.data && data.data.pages && data.data.pages.length > 1) {
+              messengerPagesData = data.data.pages;
+              messengerEncryptedToken = data.data.encryptedToken;
+              showMessengerPageSelector(data.data.pages);
+            } else if (data.success) {
+              showMessengerSuccess();
+            } else {
+              showMessengerError(data.error);
+            }
+          })
+          .catch(function() {
+            showMessengerError('Something went wrong. Please try again or email support@skedai.net');
+          });
         } else {
-          showMessengerError(data.error);
+          console.log('Messenger login failed or cancelled:', response);
         }
-      })
-      .catch(function() {
-        showMessengerError('Something went wrong. Please try again or email support@skedai.net');
+      }, {
+        config_id: messengerConfigId,
+        response_type: 'code',
+        override_default_response_type: true,
+        extras: {
+          setup: {},
+          featureName: 'messenger_onboarding',
+          sessionInfoVersion: '3'
+        }
       });
-    } else {
-      console.log('Messenger login failed or cancelled:', response);
-    }
-  }, {
-    config_id: 'MESSENGER_CONFIG_ID_PLACEHOLDER',
-    response_type: 'code',
-    override_default_response_type: true,
-    extras: {
-      setup: {},
-      featureName: 'messenger_onboarding',
-      sessionInfoVersion: '3'
-    }
-  });
+    })
+    .catch(function() {
+      showMessengerError('Could not load Messenger configuration. Please try again.');
+    });
 }
 
 function showMessengerSuccess() {

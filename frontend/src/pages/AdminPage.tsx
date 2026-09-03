@@ -517,6 +517,8 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
     setFbOAuthConnecting(true);
     setFbPages([]);
 
+    const base = (import.meta.env.VITE_API_URL as string) ?? '';
+
     const loadFbSdk = (): Promise<void> => {
       if ((window as any).FB) return Promise.resolve();
       return new Promise((resolve) => {
@@ -531,46 +533,57 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
       });
     };
 
-    loadFbSdk().then(() => {
-      const FB = (window as any).FB;
-      FB.login((response: any) => {
-        if (!response.authResponse) {
+    fetch(`${base}/api/messenger/config`)
+      .then(r => r.json())
+      .then(cfg => {
+        if (!cfg.success || !cfg.data?.config_id) {
+          setFbOAuthError('Messenger config_id not set — add META_MESSENGER_CONFIG_ID to the backend env');
           setFbOAuthConnecting(false);
           return;
         }
-        const base = (import.meta.env.VITE_API_URL as string) ?? '';
-        fetch(`${base}/api/messenger/oauth/callback`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            code: response.authResponse.code,
-            source: 'admin',
-            tenantId: tenant.id,
-          }),
-        })
-          .then(r => r.json())
-          .then(data => {
-            if (data.success && data.data?.pages?.length > 1) {
-              setFbPages(data.data.pages);
-              setFbEncryptedToken(data.data.encryptedToken);
+        const messengerConfigId = cfg.data.config_id;
+
+        loadFbSdk().then(() => {
+          const FB = (window as any).FB;
+          FB.login((response: any) => {
+            if (!response.authResponse) {
               setFbOAuthConnecting(false);
-            } else if (data.success) {
-              setFbOAuthSuccess(data.data?.pageName ? `Connected — ${data.data.pageName}` : 'Connected');
-              setChannels(prev => ({ ...prev, facebook: { connected: true, ai_enabled: false, connection_type: 'oauth', page_name: data.data?.pageName } }));
-              setFbOAuthConnecting(false);
-            } else {
-              setFbOAuthError(data.error || 'Connection failed');
-              setFbOAuthConnecting(false);
+              return;
             }
-          })
-          .catch(() => { setFbOAuthError('Connection failed'); setFbOAuthConnecting(false); });
-      }, {
-        config_id: 'MESSENGER_CONFIG_ID_PLACEHOLDER',
-        response_type: 'code',
-        override_default_response_type: true,
-        extras: { setup: {}, featureName: 'messenger_onboarding', sessionInfoVersion: '3' },
-      });
-    });
+            fetch(`${base}/api/messenger/oauth/callback`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                code: response.authResponse.code,
+                source: 'admin',
+                tenantId: tenant.id,
+              }),
+            })
+              .then(r => r.json())
+              .then(data => {
+                if (data.success && data.data?.pages?.length > 1) {
+                  setFbPages(data.data.pages);
+                  setFbEncryptedToken(data.data.encryptedToken);
+                  setFbOAuthConnecting(false);
+                } else if (data.success) {
+                  setFbOAuthSuccess(data.data?.pageName ? `Connected — ${data.data.pageName}` : 'Connected');
+                  setChannels(prev => ({ ...prev, facebook: { connected: true, ai_enabled: false, connection_type: 'oauth', page_name: data.data?.pageName } }));
+                  setFbOAuthConnecting(false);
+                } else {
+                  setFbOAuthError(data.error || 'Connection failed');
+                  setFbOAuthConnecting(false);
+                }
+              })
+              .catch(() => { setFbOAuthError('Connection failed'); setFbOAuthConnecting(false); });
+          }, {
+            config_id: messengerConfigId,
+            response_type: 'code',
+            override_default_response_type: true,
+            extras: { setup: {}, featureName: 'messenger_onboarding', sessionInfoVersion: '3' },
+          });
+        });
+      })
+      .catch(() => { setFbOAuthError('Could not load Messenger configuration'); setFbOAuthConnecting(false); });
   }
 
   async function handleMessengerPageSelect() {
