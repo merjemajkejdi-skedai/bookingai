@@ -1451,6 +1451,24 @@ export async function runMigrations() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )`,
+
+      // messenger_oauth_001 — OAuth connection fields on tenants
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS messenger_oauth_token_encrypted TEXT`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS messenger_oauth_expires_at TIMESTAMPTZ`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS messenger_connection_type VARCHAR(20) DEFAULT 'manual'`,
+
+      // messenger_oauth_002 — Messenger signup leads table
+      `CREATE TABLE IF NOT EXISTS messenger_signup_leads (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        facebook_page_id VARCHAR(255) NOT NULL,
+        facebook_page_name VARCHAR(255),
+        access_token_encrypted TEXT,
+        status VARCHAR(20) NOT NULL DEFAULT 'pending',
+        notes TEXT,
+        tenant_id TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -2239,6 +2257,29 @@ export async function runMigrations() {
     id TEXT PRIMARY KEY,
     instagram_account_id TEXT NOT NULL,
     instagram_username TEXT,
+    facebook_page_name TEXT,
+    access_token_encrypted TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    notes TEXT,
+    tenant_id TEXT,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  )`);
+
+  // messenger_oauth_001: OAuth fields on tenants
+  const tenantCols4 = prepare("SELECT name FROM pragma_table_info('tenants')")
+    .all().map((r: any) => r.name as string);
+  if (!tenantCols4.includes('messenger_oauth_token_encrypted'))
+    exec('ALTER TABLE tenants ADD COLUMN messenger_oauth_token_encrypted TEXT');
+  if (!tenantCols4.includes('messenger_oauth_expires_at'))
+    exec('ALTER TABLE tenants ADD COLUMN messenger_oauth_expires_at TEXT');
+  if (!tenantCols4.includes('messenger_connection_type'))
+    exec("ALTER TABLE tenants ADD COLUMN messenger_connection_type TEXT DEFAULT 'manual'");
+
+  // messenger_oauth_002: Messenger signup leads
+  exec(`CREATE TABLE IF NOT EXISTS messenger_signup_leads (
+    id TEXT PRIMARY KEY,
+    facebook_page_id TEXT NOT NULL,
     facebook_page_name TEXT,
     access_token_encrypted TEXT,
     status TEXT NOT NULL DEFAULT 'pending',

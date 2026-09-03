@@ -110,3 +110,22 @@ export async function notifyNewInstagramLead(
     `Go to admin panel → Instagram Leads to create tenant.`,
   ].join('\n'));
 }
+
+// ── Messenger Signup lead ───────────────────────────────────────────────
+export async function notifyNewMessengerLead(
+  lead: { pageName: string; pageId: string },
+  overridePhone?: string,
+): Promise<void> {
+  const phone = ownerPhone(overridePhone);
+  if (!phone) return;
+
+  await send(phone, [
+    `🔵 New Messenger Signup Lead`,
+    ``,
+    `Facebook Page: ${lead.pageName}`,
+    `Page ID: ${lead.pageId}`,
+    `Time: ${new Date().toISOString()}`,
+    ``,
+    `Go to admin panel → Messenger Leads to create tenant.`,
+  ].join('\n'));
+}

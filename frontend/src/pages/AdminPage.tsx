@@ -20,7 +20,7 @@ export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) 
   const [creating, setCreating]   = useState(false);
   const [editing, setEditing]     = useState<any>(null);
   const [resetting, setResetting] = useState<any>(null);
-  const [adminTab, setAdminTab]   = useState<'shops' | 'leads' | 'ig_leads'>('shops');
+  const [adminTab, setAdminTab]   = useState<'shops' | 'leads' | 'ig_leads' | 'msg_leads'>('shops');
 
   async function load() {
     setLoading(true);
@@ -105,10 +105,10 @@ export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) 
 
       {/* Tab buttons */}
       <div className="flex gap-1 mb-4 border-b border-slate-200">
-        {(['shops', 'leads', 'ig_leads'] as const).map(tab => (
+        {(['shops', 'leads', 'ig_leads', 'msg_leads'] as const).map(tab => (
           <button key={tab} onClick={() => setAdminTab(tab)}
             className={clsx('px-3 py-1.5 text-sm font-medium border-b-2 transition-colors capitalize', adminTab === tab ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-600')}>
-            {tab === 'leads' ? 'WA Leads' : tab === 'ig_leads' ? 'IG Leads' : tab}
+            {tab === 'leads' ? 'WA Leads' : tab === 'ig_leads' ? 'IG Leads' : tab === 'msg_leads' ? 'FB Leads' : tab}
           </button>
         ))}
       </div>
@@ -118,6 +118,9 @@ export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) 
 
       {/* Instagram Leads */}
       {adminTab === 'ig_leads' && <InstagramLeadsView tenants={tenants} onCreateTenant={() => setCreating(true)} onReload={load} />}
+
+      {/* Messenger Leads */}
+      {adminTab === 'msg_leads' && <MessengerLeadsView tenants={tenants} onCreateTenant={() => setCreating(true)} onReload={load} />}
 
       {/* Tenant list */}
       {adminTab === 'shops' && (loading ? <Spinner /> : (
@@ -389,6 +392,14 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
   // Instagram disconnect confirm
   const [igDisconnectOpen, setIgDisconnectOpen]   = useState(false);
   const [igDisconnecting, setIgDisconnecting]     = useState(false);
+  // Messenger OAuth connect
+  const [fbOAuthConnecting, setFbOAuthConnecting] = useState(false);
+  const [fbOAuthError, setFbOAuthError]           = useState('');
+  const [fbOAuthSuccess, setFbOAuthSuccess]       = useState('');
+  // Messenger page selector (multiple pages)
+  const [fbPages, setFbPages]                     = useState<{id: string; name: string}[]>([]);
+  const [fbSelectedPage, setFbSelectedPage]       = useState('');
+  const [fbEncryptedToken, setFbEncryptedToken]   = useState('');
   // Messenger connect form
   const [fbFormOpen, setFbFormOpen]               = useState(false);
   const [fbPageId, setFbPageId]                   = useState('');
@@ -499,6 +510,94 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
         extras: { setup: {}, featureName: 'instagram_onboarding', sessionInfoVersion: '3' },
       });
     });
+  }
+
+  function handleMessengerOAuthConnect() {
+    setFbOAuthError('');
+    setFbOAuthConnecting(true);
+    setFbPages([]);
+
+    const loadFbSdk = (): Promise<void> => {
+      if ((window as any).FB) return Promise.resolve();
+      return new Promise((resolve) => {
+        (window as any).fbAsyncInit = () => {
+          (window as any).FB.init({ appId: '1507114490265475', cookie: true, xfbml: true, version: 'v26.0' });
+          resolve();
+        };
+        const s = document.createElement('script');
+        s.src = 'https://connect.facebook.net/en_US/sdk.js';
+        s.async = true;
+        document.body.appendChild(s);
+      });
+    };
+
+    loadFbSdk().then(() => {
+      const FB = (window as any).FB;
+      FB.login((response: any) => {
+        if (!response.authResponse) {
+          setFbOAuthConnecting(false);
+          return;
+        }
+        const base = (import.meta.env.VITE_API_URL as string) ?? '';
+        fetch(`${base}/api/messenger/oauth/callback`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            code: response.authResponse.code,
+            source: 'admin',
+            tenantId: tenant.id,
+          }),
+        })
+          .then(r => r.json())
+          .then(data => {
+            if (data.success && data.data?.pages?.length > 1) {
+              setFbPages(data.data.pages);
+              setFbEncryptedToken(data.data.encryptedToken);
+              setFbOAuthConnecting(false);
+            } else if (data.success) {
+              setFbOAuthSuccess(data.data?.pageName ? `Connected — ${data.data.pageName}` : 'Connected');
+              setChannels(prev => ({ ...prev, facebook: { connected: true, ai_enabled: false, connection_type: 'oauth', page_name: data.data?.pageName } }));
+              setFbOAuthConnecting(false);
+            } else {
+              setFbOAuthError(data.error || 'Connection failed');
+              setFbOAuthConnecting(false);
+            }
+          })
+          .catch(() => { setFbOAuthError('Connection failed'); setFbOAuthConnecting(false); });
+      }, {
+        config_id: 'MESSENGER_CONFIG_ID_PLACEHOLDER',
+        response_type: 'code',
+        override_default_response_type: true,
+        extras: { setup: {}, featureName: 'messenger_onboarding', sessionInfoVersion: '3' },
+      });
+    });
+  }
+
+  async function handleMessengerPageSelect() {
+    if (!fbSelectedPage) return;
+    setFbOAuthConnecting(true);
+    const base = (import.meta.env.VITE_API_URL as string) ?? '';
+    try {
+      const res = await fetch(`${base}/api/messenger/oauth/select-page`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pageId: fbSelectedPage,
+          encryptedToken: fbEncryptedToken,
+          source: 'admin',
+          tenantId: tenant.id,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setFbOAuthSuccess(data.data?.pageName ? `Connected — ${data.data.pageName}` : 'Connected');
+        setChannels(prev => ({ ...prev, facebook: { connected: true, ai_enabled: false, connection_type: 'oauth', page_name: data.data?.pageName } }));
+        setFbPages([]);
+      } else {
+        setFbOAuthError(data.error || 'Connection failed');
+      }
+    } catch { setFbOAuthError('Connection failed'); }
+    finally { setFbOAuthConnecting(false); }
   }
 
   async function handleEmailCreate() {
@@ -938,12 +1037,15 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
             if (key === 'facebook') {
               return (
                 <div key={key} className="border-b border-slate-100 last:border-0 pb-2">
+                  {/* Row */}
                   <div className="flex items-center justify-between py-1.5">
                     <div className="flex items-center gap-2">
                       <span className={`text-[10px] font-bold ${connected ? 'text-green-500' : 'text-slate-300'}`}>●</span>
                       <span className="text-sm text-slate-700">{icon} {label}</span>
                       <span className="text-xs text-slate-400">
-                        {connected ? (ch?.page_name || 'Connected') : 'Not connected'}
+                        {connected
+                          ? `Connected (${ch?.connection_type === 'oauth' ? 'OAuth — auto-renews' : 'manual token'})${ch?.page_name ? ` — ${ch.page_name}` : ''}`
+                          : 'Not connected'}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
@@ -973,14 +1075,55 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
                           onClick={() => { setFbFormOpen(v => !v); setFbConnectError(''); }}
                           className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
                         >
-                          {fbFormOpen ? 'Cancel ▲' : 'Connect ▼'}
+                          {fbFormOpen ? 'Cancel ▲' : 'Manual Connect ▼'}
                         </button>
                       )}
                     </div>
                   </div>
 
+                  {/* OAuth connect */}
+                  {!connected && (
+                    <div className="mt-1 p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
+                      <p className="text-[10px] text-slate-400 uppercase font-semibold tracking-wide">Connect via OAuth</p>
+                      <button
+                        type="button"
+                        onClick={handleMessengerOAuthConnect}
+                        disabled={fbOAuthConnecting}
+                        className="flex items-center gap-2 rounded-lg bg-[#0084FF] px-4 py-2 text-sm font-medium text-white hover:bg-[#0073e6] disabled:opacity-50 transition-all"
+                      >
+                        💙 {fbOAuthConnecting ? 'Connecting…' : 'Connect Facebook Page'}
+                      </button>
+                      {fbOAuthError && <p className="text-xs text-red-500">{fbOAuthError}</p>}
+                      {fbOAuthSuccess && <p className="text-xs text-green-600">{fbOAuthSuccess}</p>}
+                    </div>
+                  )}
+
+                  {/* Page selector (multiple pages) */}
+                  {!connected && fbPages.length > 0 && (
+                    <div className="mt-1 p-3 bg-blue-50 rounded-lg border border-blue-200 space-y-2">
+                      <p className="text-xs text-blue-700 font-medium">Multiple pages found — select one:</p>
+                      <select
+                        value={fbSelectedPage}
+                        onChange={(e) => setFbSelectedPage(e.target.value)}
+                        className="w-full text-sm border border-blue-200 rounded px-2 py-1"
+                      >
+                        <option value="">Select a page…</option>
+                        {fbPages.map(p => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                      <div className="flex justify-end">
+                        <Button size="sm" onClick={handleMessengerPageSelect} disabled={!fbSelectedPage || fbOAuthConnecting}>
+                          {fbOAuthConnecting ? 'Connecting…' : 'Connect Page'}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Manual connect form */}
                   {!connected && fbFormOpen && (
                     <div className="mt-1 p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
+                      <p className="text-[10px] text-slate-400 uppercase font-semibold tracking-wide">Admin — Manual override</p>
                       <Input
                         label="Page ID"
                         value={fbPageId}
@@ -1005,6 +1148,7 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
                     </div>
                   )}
 
+                  {/* Disconnect confirmation */}
                   {connected && fbDisconnectOpen && (
                     <div className="mt-1 p-3 bg-red-50 rounded-lg border border-red-200 space-y-2">
                       <p className="text-xs text-red-700 font-medium">
@@ -1452,6 +1596,118 @@ function InstagramLeadsView({ tenants, onCreateTenant, onReload }: { tenants: an
               <div className="flex items-center gap-3 mt-1 text-xs text-slate-400 flex-wrap">
                 {lead.facebook_page_name && <span>Page: {lead.facebook_page_name}</span>}
                 <span>IG ID: {lead.instagram_account_id}</span>
+                <span>{new Date(lead.created_at).toLocaleString()}</span>
+                {lead.tenant_id && (
+                  <span className="text-green-600 font-medium">
+                    Tenant: {tenants.find(t => t.id === lead.tenant_id)?.name || lead.tenant_id.slice(0, 8)}
+                  </span>
+                )}
+              </div>
+              {lead.notes && !editingNotes && (
+                <p className="mt-1 text-xs text-slate-500 italic">{lead.notes}</p>
+              )}
+              {editingNotes === lead.id && (
+                <div className="mt-2 flex gap-2">
+                  <input type="text" value={notesText} onChange={e => setNotesText(e.target.value)}
+                    className="flex-1 text-xs border border-slate-200 rounded px-2 py-1"
+                    placeholder="Add notes..." />
+                  <Button size="sm" onClick={() => saveNotes(lead.id)}>Save</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setEditingNotes(null)}>Cancel</Button>
+                </div>
+              )}
+            </div>
+            <div className="flex gap-1.5 flex-wrap items-center">
+              {lead.status === 'pending' && (
+                <>
+                  <Button size="sm" variant="outline" onClick={() => updateStatus(lead.id, 'contacted')}>
+                    Mark Contacted
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => updateStatus(lead.id, 'rejected')}>
+                    Reject
+                  </Button>
+                </>
+              )}
+              {lead.status !== 'tenant_created' && lead.status !== 'rejected' && (
+                <Button size="sm" onClick={() => {
+                  onCreateTenant();
+                }}>
+                  Create Tenant
+                </Button>
+              )}
+              {!editingNotes && (
+                <Button size="sm" variant="ghost" onClick={() => {
+                  setEditingNotes(lead.id);
+                  setNotesText(lead.notes || '');
+                }}>
+                  <Pencil size={12} />
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MessengerLeadsView({ tenants, onCreateTenant, onReload }: { tenants: any[]; onCreateTenant: () => void; onReload: () => void }) {
+  const [leads, setLeads] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editingNotes, setEditingNotes] = useState<string | null>(null);
+  const [notesText, setNotesText] = useState('');
+
+  async function loadLeads() {
+    setLoading(true);
+    try { setLeads(await adminApi.getMessengerLeads()); }
+    catch (e: any) { console.error('Failed to load Messenger leads:', e.message); }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => { loadLeads(); }, []);
+
+  async function updateStatus(leadId: string, status: string) {
+    try {
+      await adminApi.updateMessengerLead(leadId, { status });
+      loadLeads();
+    } catch (e: any) { alert(e.message); }
+  }
+
+  async function saveNotes(leadId: string) {
+    try {
+      await adminApi.updateMessengerLead(leadId, { notes: notesText });
+      setEditingNotes(null);
+      loadLeads();
+    } catch (e: any) { alert(e.message); }
+  }
+
+  const statusColor: Record<string, string> = {
+    pending:        'bg-amber-100 text-amber-700',
+    contacted:      'bg-blue-100 text-blue-700',
+    tenant_created: 'bg-green-100 text-green-700',
+    rejected:       'bg-red-100 text-red-700',
+  };
+
+  if (loading) return <Spinner />;
+
+  return (
+    <div className="space-y-3">
+      {leads.length === 0 && (
+        <div className="text-center py-12 text-slate-400">
+          <p className="text-sm">No Messenger signup leads yet.</p>
+        </div>
+      )}
+      {leads.map((lead: any) => (
+        <div key={lead.id} className="bg-white rounded-xl border border-slate-200 px-5 py-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="font-medium text-slate-800">{lead.facebook_page_name || 'Unknown Page'}</p>
+                <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium', statusColor[lead.status] || statusColor.pending)}>
+                  {lead.status}
+                </span>
+              </div>
+              <div className="flex items-center gap-3 mt-1 text-xs text-slate-400 flex-wrap">
+                {lead.facebook_page_id && <span>Page ID: {lead.facebook_page_id}</span>}
                 <span>{new Date(lead.created_at).toLocaleString()}</span>
                 {lead.tenant_id && (
                   <span className="text-green-600 font-medium">
