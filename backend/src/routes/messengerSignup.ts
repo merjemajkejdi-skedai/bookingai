@@ -52,14 +52,14 @@ messengerSignupRouter.post('/messenger/oauth/callback', async (req: Request, res
   try {
     // 1. Exchange code for short-lived user token
     console.log('[Messenger OAuth] callback received, code present:', !!code, 'source:', source, 'tenantId:', tenantId);
-    // FB.login() popup flow uses Facebook's internal redirect (staticxx.facebook.com),
-    // so the token exchange must NOT include redirect_uri — it would cause a mismatch.
-    console.log('[Messenger OAuth] Exchanging code for token (no redirect_uri — popup flow)');
+    const redirectUri = 'https://www.skedai.net/';
+    console.log('[Messenger] Token exchange redirect_uri:', redirectUri);
 
     const tokenRes = await fetch('https://graph.facebook.com/v21.0/oauth/access_token?' + new URLSearchParams({
       client_id:     META_APP_ID(),
       client_secret: appSecret,
       code,
+      redirect_uri:  redirectUri,
     }));
     console.log('[Messenger OAuth] Token exchange response status:', tokenRes.status);
     if (!tokenRes.ok) {

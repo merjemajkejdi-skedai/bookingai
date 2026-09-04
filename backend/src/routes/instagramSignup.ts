@@ -40,16 +40,14 @@ instagramSignupRouter.post('/instagram/oauth/callback', async (req: Request, res
 
   try {
     // 1. Exchange code for short-lived user token
-    console.log('[Instagram OAuth] Exchanging code for token...');
-    const defaultRedirect = 'https://app.skedai.net/';
-    const isSkedaiOrigin = redirect_uri && /^https:\/\/([a-z0-9-]+\.)*skedai\.net(\/|$)/.test(redirect_uri);
-    const resolvedRedirect = isSkedaiOrigin ? redirect_uri : defaultRedirect;
+    const redirectUri = 'https://www.skedai.net/';
+    console.log('[Instagram] Token exchange redirect_uri:', redirectUri);
 
     const tokenRes = await fetch('https://graph.facebook.com/v21.0/oauth/access_token?' + new URLSearchParams({
       client_id:     META_APP_ID(),
       client_secret: appSecret,
       code,
-      redirect_uri:  resolvedRedirect,
+      redirect_uri:  redirectUri,
     }));
     if (!tokenRes.ok) {
       const errBody = await tokenRes.text();
