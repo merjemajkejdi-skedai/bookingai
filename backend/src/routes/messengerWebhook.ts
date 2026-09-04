@@ -2,6 +2,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { isPg, prepare, queryOne, queryRun } from '../db/database.js';
 import { runHotelAgent } from '../hotel/agent.js';
+import { runGbAgent } from '../generalBusiness/agent.js';
 import { sendMessengerMessage, getMessengerSenderProfile } from '../channels/messenger.js';
 import { decrypt } from '../utils/encryption.js';
 import { alertError } from '../utils/errorMonitor.js';
@@ -163,7 +164,10 @@ async function handleMessengerMessage(tenant: any, event: any) {
   }
 
   try {
-    const reply = await runHotelAgent(text, [], guestPhone, tenantId);
+    const tenantType = (tenant.type || '').toLowerCase();
+    const reply = tenantType === 'general_business'
+      ? await runGbAgent(text, [], guestPhone, tenantId)
+      : await runHotelAgent(text, [], guestPhone, tenantId);
     if (!reply) return;
     await sendMessengerMessage(tenant.messenger_page_id, psid, reply, encryptedToken);
     console.log(`[Messenger] AI reply sent to ${psid}`);

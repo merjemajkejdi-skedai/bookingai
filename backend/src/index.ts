@@ -29,6 +29,7 @@ import { messengerSignupRouter } from './routes/messengerSignup.js';
 import { alertError, cleanupCooldowns } from './utils/errorMonitor.js';
 import instagramRouter from './routes/instagramWebhook.js';
 import messengerRouter from './routes/messengerWebhook.js';
+import { gbRouter } from './routes/generalBusiness.js';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 
@@ -129,6 +130,7 @@ app.use('/', metaRouter);
 app.use('/', instagramRouter);
 app.use('/', messengerRouter);
 app.use('/', emailWebhookRouter);
+app.use('/gb', gbRouter);
 
 app.get('/test-alert', (_req, res) => {
   alertError(new Error('Test alert from /test-alert endpoint'), 'test');

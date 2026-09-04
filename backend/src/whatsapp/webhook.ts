@@ -8,6 +8,7 @@ import { runRestaurantAgent } from '../modules/restaurant/agent.js';
 import { runHotelAgent } from '../hotel/agent.js';
 import { runSkedAIAgent } from '../skedai/agent.js';
 import { runShopAgent } from '../shop/agent.js';
+import { runGbAgent } from '../generalBusiness/agent.js';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { sendWhatsAppMessage } from './twilio.js';
 import { logMessage } from './messageLog.js';
@@ -364,6 +365,7 @@ async function runAgent(
   if (tenantType === 'art_class')        return runArtClassAgent(message, history, phone, tenantId);
   if (tenantType === 'art_event')        return runArtEventAgent(message, history, phone, tenantId);
   if (tenantType === 'restaurant')       return runRestaurantAgent(message, history, phone, tenantId);
+  if (tenantType === 'general_business') return runGbAgent(message, history, phone, tenantId);
   // happy_ POS tenants use the POS app — WhatsApp is an optional bolt-on, never route to a generic agent
   if (tenantType.startsWith('happy_')) return '';
   return runBookingAgent(message, history, phone, tenantId);
@@ -461,6 +463,19 @@ async function handleMetaWebhook(req: Request, res: Response) {
         });
       }
     } else {
+      // General business pause check
+      if (tenantType === 'general_business') {
+        const pausedRow = await dbGet(
+          'SELECT ai_paused_until FROM gb_conversations WHERE tenant_id = ? AND guest_phone = ? LIMIT 1',
+          tenant.id, customerPhone,
+        ) as any;
+        if (pausedRow?.ai_paused_until && new Date(pausedRow.ai_paused_until) > new Date()) {
+          const contactName = (value as any).contacts?.[0]?.profile?.name;
+          persistGuestMessage('gb_conversations', tenant.id, customerPhone, body, contactName || undefined);
+          return;
+        }
+      }
+
       // Art class pause check
       if (tenantType === 'art_class') {
         const pausedRow = await dbGet(
@@ -722,6 +737,19 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
         });
       }
       return;
+    }
+
+    // General business pause check
+    if (tenantType === 'general_business') {
+      const pausedRow = await dbGet(
+        'SELECT ai_paused_until FROM gb_conversations WHERE tenant_id = ? AND guest_phone = ? LIMIT 1',
+        tenant.id, phone,
+      ) as any;
+      if (pausedRow?.ai_paused_until && new Date(pausedRow.ai_paused_until) > new Date()) {
+        console.log(`[GB] ⏸ AI paused for ${phone} — saving guest message only`);
+        persistGuestMessage('gb_conversations', tenant.id, phone, messageText, ProfileName || undefined);
+        return;
+      }
     }
 
     // Art class pause check

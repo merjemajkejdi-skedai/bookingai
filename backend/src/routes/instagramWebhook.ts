@@ -1,8 +1,10 @@
 import { Router } from 'express';
 import { isPg, prepare, queryOne, queryRun } from '../db/database.js';
 import { runHotelAgent } from '../hotel/agent.js';
+import { runGbAgent } from '../generalBusiness/agent.js';
 import { sendInstagramMessage, getInstagramSenderProfile } from '../channels/instagram.js';
 import { alertError } from '../utils/errorMonitor.js';
+import { getConversationsTable } from '../utils/conversationsTable.js';
 
 const router = Router();
 
@@ -52,13 +54,15 @@ router.post('/instagram/webhook', async (req, res) => {
         }
 
         const tenantId    = row.id as string;
+        const tenantType  = (row.type || '').toLowerCase();
         const aiEnabled   = row.ai_enabled === 1 || row.ai_enabled === true;
         const accessToken = (row.ig_access_token || '') as string;
         const guestPhone  = `instagram:${psid}`;
+        const convTable   = getConversationsTable(tenantType);
 
         // Check if this is a new or existing conversation
         const existing = await dbGet(
-          'SELECT id, guest_name, guest_username FROM hotel_conversations WHERE tenant_id = ? AND guest_phone = ?',
+          `SELECT id, guest_name, guest_username FROM ${convTable} WHERE tenant_id = ? AND guest_phone = ?`,
           tenantId, guestPhone,
         ) as any;
 
@@ -70,7 +74,7 @@ router.post('/instagram/webhook', async (req, res) => {
           const profile = await getInstagramSenderProfile(psid, accessToken);
           console.log(`[Instagram] Sender profile: name=${profile.name} username=${profile.username}`);
           await dbRun(
-            `INSERT INTO hotel_conversations
+            `INSERT INTO ${convTable}
                (id, tenant_id, guest_phone, messages, channel, channel_user_id,
                 guest_name, guest_username, last_message, updated_at, last_guest_message_at)
              VALUES (?,?,?,'[]','instagram',?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`,
@@ -83,7 +87,7 @@ router.post('/instagram/webhook', async (req, res) => {
             console.log(`[Instagram] Backfill profile: name=${profile.name} username=${profile.username}`);
             if (profile.name || profile.username) {
               await dbRun(
-                `UPDATE hotel_conversations
+                `UPDATE ${convTable}
                  SET guest_name = ?, guest_username = ?, channel_user_id = ?,
                      last_guest_message_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
                  WHERE tenant_id = ? AND guest_phone = ?`,
@@ -94,7 +98,7 @@ router.post('/instagram/webhook', async (req, res) => {
             }
           } else {
             await dbRun(
-              `UPDATE hotel_conversations
+              `UPDATE ${convTable}
                SET channel_user_id = ?, last_guest_message_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
                WHERE tenant_id = ? AND guest_phone = ?`,
               psid, tenantId, guestPhone,
@@ -111,19 +115,19 @@ router.post('/instagram/webhook', async (req, res) => {
           };
           if (isPg) {
             await dbRun(
-              `UPDATE hotel_conversations
+              `UPDATE ${convTable}
                SET messages = messages || ?::jsonb, updated_at = CURRENT_TIMESTAMP
                WHERE id = ?`,
               JSON.stringify([guestMsg]), convId,
             );
           } else {
             const convRow = await dbGet(
-              'SELECT messages FROM hotel_conversations WHERE id = ?',
+              `SELECT messages FROM ${convTable} WHERE id = ?`,
               convId,
             ) as any;
             const prev: any[] = (() => { try { return JSON.parse(convRow?.messages ?? '[]'); } catch { return []; } })();
             await dbRun(
-              `UPDATE hotel_conversations
+              `UPDATE ${convTable}
                SET messages = ?, updated_at = CURRENT_TIMESTAMP
                WHERE id = ?`,
               JSON.stringify([...prev, guestMsg].slice(-30)), convId,
@@ -133,9 +137,11 @@ router.post('/instagram/webhook', async (req, res) => {
           continue;
         }
 
-        // AI is ON — run hotel agent (saves conversation internally)
+        // AI is ON — run agent based on tenant type
         try {
-          const reply = await runHotelAgent(text, [], guestPhone, tenantId);
+          const reply = tenantType === 'general_business'
+            ? await runGbAgent(text, [], guestPhone, tenantId)
+            : await runHotelAgent(text, [], guestPhone, tenantId);
           if (!reply) continue;
           if (!accessToken) {
             console.error(`[Instagram] No access token for tenant ${tenantId}`);
