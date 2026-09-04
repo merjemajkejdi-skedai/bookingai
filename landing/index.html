@@ -69,23 +69,33 @@
     }
     .hero {
       max-width: 1140px; margin: 0 auto;
-      display: grid; grid-template-columns: 35% 35% 30%;
+    }
+    .hero-row1 {
+      display: grid; grid-template-columns: 1fr 1fr;
       gap: 32px; align-items: center;
     }
-    .hero-buttons {
-      display: flex; flex-direction: column; gap: 14px;
-      align-items: flex-start; justify-content: center;
+    .hero-row2 {
+      display: flex; justify-content: center; gap: 32px;
+      margin-top: 56px;
     }
-    .hero-buttons .signup-btn {
-      display: inline-flex; align-items: center; gap: .5rem;
+    .hero-btn-card {
+      display: flex; flex-direction: column; align-items: center;
+      width: 260px;
+    }
+    .hero-btn-card .signup-btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: .5rem;
       padding: .75rem 1.5rem; font-size: .9rem; font-weight: 600;
       color: #fff; border: none; border-radius: 12px;
       cursor: pointer; transition: transform .15s, box-shadow .15s;
-      white-space: nowrap;
+      white-space: nowrap; width: 100%;
     }
-    .hero-buttons .signup-btn:hover { transform: translateY(-2px); }
-    .hero-buttons .signup-result { margin-top: .25rem; display: none; font-size: .85rem; }
-    .hero-buttons .page-selector { margin-top: .5rem; display: none; max-width: 280px; }
+    .hero-btn-card .signup-btn:hover { transform: translateY(-2px); }
+    .hero-btn-card .signup-result { margin-top: .25rem; display: none; font-size: .85rem; }
+    .hero-btn-card .page-selector { margin-top: .5rem; display: none; width: 100%; }
+    .hero-btn-prereq {
+      margin-top: 10px; font-size: 12px; color: var(--slate-400);
+      text-align: center; line-height: 1.5;
+    }
     .hero-badge {
       display: inline-flex; align-items: center; gap: 8px;
       background: var(--green-soft); color: var(--teal-dark);
@@ -425,11 +435,12 @@
 
     /* ── RESPONSIVE ──────────────────────────────────────── */
     @media (max-width: 900px) {
-      .hero { grid-template-columns: 1fr; gap: 48px; text-align: center; }
+      .hero-row1 { grid-template-columns: 1fr; gap: 48px; text-align: center; }
       .hero-sub { margin-left: auto; margin-right: auto; }
       .hero-ctas { justify-content: center; }
       .hero-phone { order: 2; }
-      .hero-buttons { order: 3; align-items: center; }
+      .hero-row2 { flex-direction: column; align-items: center; gap: 24px; margin-top: 48px; }
+      .hero-btn-card { width: 100%; max-width: 340px; }
       .phone-frame { width: 290px; height: 470px; }
     }
     @media (max-width: 640px) {
@@ -472,6 +483,9 @@
 <section class="hero-outer">
   <div class="hero">
 
+    <!-- Row 1: copy + animation -->
+    <div class="hero-row1">
+
     <!-- Left: copy -->
     <div class="hero-copy">
       <div class="hero-badge">
@@ -506,46 +520,62 @@
       </div>
     </div>
 
-    <!-- Right: connect buttons -->
-    <div class="hero-buttons">
-      <button onclick="launchWhatsAppSignup('landing')" id="wa-signup-btn"
-        class="signup-btn"
-        style="background:#25D366;box-shadow:0 4px 14px rgba(37,211,102,.35)"
-        onmouseover="this.style.boxShadow='0 6px 20px rgba(37,211,102,.45)'"
-        onmouseout="this.style.boxShadow='0 4px 14px rgba(37,211,102,.35)'">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>
-        Connect WhatsApp — Get Started Free
-      </button>
-      <div id="wa-signup-result" class="signup-result"></div>
+    </div><!-- /hero-row1 -->
 
-      <button onclick="launchInstagramSignup()" id="ig-signup-btn"
-        class="signup-btn"
-        style="background:linear-gradient(135deg,#833AB4,#FD1D1D,#F77737);box-shadow:0 4px 14px rgba(131,58,180,.35)"
-        onmouseover="this.style.boxShadow='0 6px 20px rgba(131,58,180,.45)'"
-        onmouseout="this.style.boxShadow='0 4px 14px rgba(131,58,180,.35)'">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="5"/><circle cx="17.5" cy="6.5" r="1.5" fill="white" stroke="none"/></svg>
-        Connect Instagram — Get Started Free
-      </button>
-      <div id="ig-signup-result" class="signup-result"></div>
+    <!-- Row 2: connect buttons -->
+    <div class="hero-row2">
 
-      <button onclick="launchMessengerSignup()" id="msg-signup-btn"
-        class="signup-btn"
-        style="background:#0084FF;box-shadow:0 4px 14px rgba(0,132,255,.35)"
-        onmouseover="this.style.boxShadow='0 6px 20px rgba(0,132,255,.45)'"
-        onmouseout="this.style.boxShadow='0 4px 14px rgba(0,132,255,.35)'">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.477 2 2 6.145 2 11.243c0 2.908 1.438 5.502 3.685 7.19V22l3.455-1.896A11.27 11.27 0 0 0 12 20.485c5.523 0 10-4.144 10-9.242C22 6.145 17.523 2 12 2zm1.06 12.448-2.547-2.717-4.97 2.717 5.466-5.8 2.61 2.717 4.907-2.717-5.466 5.8z"/></svg>
-        Connect Facebook Page
-      </button>
-      <div id="msg-signup-result" class="signup-result"></div>
-      <div id="msg-page-selector" class="page-selector">
-        <p style="font-size:.9rem;color:var(--slate-700);margin-bottom:.5rem;font-weight:600">Multiple pages found — select one:</p>
-        <select id="msg-page-select" style="width:100%;padding:.5rem;border:1px solid #ccc;border-radius:8px;font-size:.9rem;margin-bottom:.5rem"></select>
-        <button onclick="submitMessengerPageSelection()"
-          style="padding:.6rem 1.5rem;font-size:.9rem;font-weight:600;color:#fff;background:#0084FF;border:none;border-radius:8px;cursor:pointer">
-          Connect Page
+      <!-- WhatsApp -->
+      <div class="hero-btn-card">
+        <button onclick="launchWhatsAppSignup('landing')" id="wa-signup-btn"
+          class="signup-btn"
+          style="background:#25D366;box-shadow:0 4px 14px rgba(37,211,102,.35)"
+          onmouseover="this.style.boxShadow='0 6px 20px rgba(37,211,102,.45)'"
+          onmouseout="this.style.boxShadow='0 4px 14px rgba(37,211,102,.35)'">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>
+          Connect WhatsApp
         </button>
+        <div id="wa-signup-result" class="signup-result"></div>
+        <p class="hero-btn-prereq">Requires a Facebook Business Account<br>and a WhatsApp-enabled phone number</p>
       </div>
-    </div>
+
+      <!-- Instagram -->
+      <div class="hero-btn-card">
+        <button onclick="launchInstagramSignup()" id="ig-signup-btn"
+          class="signup-btn"
+          style="background:linear-gradient(135deg,#833AB4,#FD1D1D,#F77737);box-shadow:0 4px 14px rgba(131,58,180,.35)"
+          onmouseover="this.style.boxShadow='0 6px 20px rgba(131,58,180,.45)'"
+          onmouseout="this.style.boxShadow='0 4px 14px rgba(131,58,180,.35)'">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="5"/><circle cx="17.5" cy="6.5" r="1.5" fill="white" stroke="none"/></svg>
+          Connect Instagram
+        </button>
+        <div id="ig-signup-result" class="signup-result"></div>
+        <p class="hero-btn-prereq">Requires a Business or Creator account<br>linked to a Facebook Page</p>
+      </div>
+
+      <!-- Messenger -->
+      <div class="hero-btn-card">
+        <button onclick="launchMessengerSignup()" id="msg-signup-btn"
+          class="signup-btn"
+          style="background:#0084FF;box-shadow:0 4px 14px rgba(0,132,255,.35)"
+          onmouseover="this.style.boxShadow='0 6px 20px rgba(0,132,255,.45)'"
+          onmouseout="this.style.boxShadow='0 4px 14px rgba(0,132,255,.35)'">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.477 2 2 6.145 2 11.243c0 2.908 1.438 5.502 3.685 7.19V22l3.455-1.896A11.27 11.27 0 0 0 12 20.485c5.523 0 10-4.144 10-9.242C22 6.145 17.523 2 12 2zm1.06 12.448-2.547-2.717-4.97 2.717 5.466-5.8 2.61 2.717 4.907-2.717-5.466 5.8z"/></svg>
+          Connect Facebook Page
+        </button>
+        <div id="msg-signup-result" class="signup-result"></div>
+        <div id="msg-page-selector" class="page-selector">
+          <p style="font-size:.9rem;color:var(--slate-700);margin-bottom:.5rem;font-weight:600">Multiple pages found — select one:</p>
+          <select id="msg-page-select" style="width:100%;padding:.5rem;border:1px solid #ccc;border-radius:8px;font-size:.9rem;margin-bottom:.5rem"></select>
+          <button onclick="submitMessengerPageSelection()"
+            style="padding:.6rem 1.5rem;font-size:.9rem;font-weight:600;color:#fff;background:#0084FF;border:none;border-radius:8px;cursor:pointer">
+            Connect Page
+          </button>
+        </div>
+        <p class="hero-btn-prereq">Requires a Facebook Business Page<br>and admin access</p>
+      </div>
+
+    </div><!-- /hero-row2 -->
 
   </div>
 </section>
