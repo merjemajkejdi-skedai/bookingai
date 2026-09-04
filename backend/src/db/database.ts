@@ -1600,6 +1600,9 @@ export async function runMigrations() {
       // gb_tenant_columns
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS menu_enabled BOOLEAN DEFAULT false`,
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS agent_notes TEXT`,
+      // soft-delete columns
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(255) DEFAULT NULL`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));

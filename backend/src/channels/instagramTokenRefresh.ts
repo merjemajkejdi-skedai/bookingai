@@ -13,7 +13,8 @@ async function refreshInstagramTokens() {
        WHERE instagram_connection_type = 'oauth'
          AND instagram_oauth_expires_at IS NOT NULL
          AND instagram_oauth_expires_at < NOW() + INTERVAL '30 days'
-         AND instagram_oauth_expires_at > NOW()`,
+         AND instagram_oauth_expires_at > NOW()
+         AND deleted_at IS NULL`,
       [],
     ) as any[];
 
@@ -69,7 +70,8 @@ async function refreshMessengerTokens() {
        WHERE messenger_connection_type = 'oauth'
          AND messenger_oauth_expires_at IS NOT NULL
          AND messenger_oauth_expires_at < NOW() + INTERVAL '30 days'
-         AND messenger_oauth_expires_at > NOW()`,
+         AND messenger_oauth_expires_at > NOW()
+         AND deleted_at IS NULL`,
       [],
     ) as any[];
 

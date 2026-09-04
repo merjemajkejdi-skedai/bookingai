@@ -8,6 +8,11 @@ import { encrypt } from '../utils/encryption.js';
 export const adminRouter = Router();
 adminRouter.use(requireAuth, requireAdmin);
 
+const PROTECTED_TENANT_IDS = [
+  '41b10744-891e-439a-a976-3aff28c51afe', // La Favorita
+  '1a7ef18c-394b-441e-8376-fc57238b7dcc', // Bloom Matcha
+];
+
 const ok  = <T>(res: Response, data: T) => res.json({ success: true, data });
 const err = (res: Response, msg: string, status = 400) =>
   res.status(status).json({ success: false, error: msg });
@@ -24,7 +29,9 @@ async function dbRun(sql: string, ...params: unknown[]) {
 }
 
 // GET /admin/tenants
-adminRouter.get('/tenants', async (_req: Request, res: Response) => {
+adminRouter.get('/tenants', async (req: Request, res: Response) => {
+  const showDeleted = req.query.showDeleted === 'true';
+  const deletedFilter = showDeleted ? 'WHERE t.deleted_at IS NOT NULL' : 'WHERE t.deleted_at IS NULL';
   const tenants = await dbAll(`
     SELECT t.*,
       COUNT(DISTINCT b.id) AS total_bookings,
@@ -34,6 +41,7 @@ adminRouter.get('/tenants', async (_req: Request, res: Response) => {
     LEFT JOIN bookings b ON b.tenant_id=t.id AND b.status != 'cancelled'
     LEFT JOIN specialists s ON s.tenant_id=t.id AND s.is_active=1
     LEFT JOIN users u ON u.tenant_id=t.id AND u.role='shop_owner'
+    ${deletedFilter}
     GROUP BY t.id, u.email, u.last_login
     ORDER BY t.created_at DESC
   `);
@@ -510,7 +518,7 @@ adminRouter.put('/tenants/:tenantId/channels/:channel/ai-toggle', async (req: Re
 // GET /admin/stats
 adminRouter.get('/stats', async (_req: Request, res: Response) => {
   const [t, b, bt, u] = await Promise.all([
-    dbGet('SELECT COUNT(*) AS c FROM tenants WHERE is_active=1'),
+    dbGet('SELECT COUNT(*) AS c FROM tenants WHERE is_active=1 AND deleted_at IS NULL'),
     dbGet("SELECT COUNT(*) AS c FROM bookings WHERE status='confirmed'"),
     dbGet("SELECT COUNT(*) AS c FROM bookings WHERE DATE(starts_at)=CURRENT_DATE AND status='confirmed'"),
     dbGet('SELECT COUNT(*) AS c FROM users WHERE is_active=1'),
@@ -521,4 +529,40 @@ adminRouter.get('/stats', async (_req: Request, res: Response) => {
     bookingsToday: (bt as any)?.c ?? 0,
     totalUsers:    (u as any)?.c ?? 0,
   });
+});
+
+// DELETE /admin/tenants/:id — soft delete with R2 cleanup
+adminRouter.delete('/tenants/:id', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { confirmName } = req.body as { confirmName?: string };
+
+  if (PROTECTED_TENANT_IDS.includes(id)) {
+    console.log(`[Admin] BLOCKED delete attempt on protected tenant ${id}`);
+    return err(res, 'This tenant is protected and cannot be deleted', 403);
+  }
+
+  const tenant = await dbGet('SELECT id, name FROM tenants WHERE id = ? AND deleted_at IS NULL', id) as any;
+  if (!tenant) return err(res, 'Tenant not found', 404);
+
+  if (!confirmName || confirmName !== tenant.name) {
+    return err(res, 'Tenant name does not match');
+  }
+
+  // Delete R2 files (non-blocking — log errors but proceed)
+  let deletedFiles = 0;
+  try {
+    const { deleteTenantR2Files } = await import('../utils/r2.js');
+    deletedFiles = await deleteTenantR2Files(id);
+  } catch (e: any) {
+    console.error(`[Admin] R2 cleanup error for tenant ${id}:`, e.message);
+  }
+
+  const adminEmail = (req.user as any)?.email || 'unknown';
+  await dbRun(
+    `UPDATE tenants SET deleted_at = ${isPg ? 'NOW()' : 'CURRENT_TIMESTAMP'}, deleted_by = ? WHERE id = ? AND deleted_at IS NULL`,
+    adminEmail, id,
+  );
+
+  console.log(`[Admin] Tenant ${tenant.name} (${id}) soft-deleted by ${adminEmail}. R2 files deleted: ${deletedFiles}`);
+  ok(res, { deletedFiles });
 });

@@ -161,7 +161,7 @@ metaRouter.post('/meta/webhook', async (req: Request, res: Response) => {
           console.log(`[Meta] 📱 ${customerPhone}${guestName ? ` (${guestName})` : ''}: "${messageText}"${mediaId ? ' [+media]' : ''}`);
 
           const tenant = await dbGet(
-            'SELECT * FROM tenants WHERE meta_phone_number_id = ? AND is_active = 1 LIMIT 1',
+            'SELECT * FROM tenants WHERE meta_phone_number_id = ? AND is_active = 1 AND deleted_at IS NULL LIMIT 1',
             phoneNumId,
           ) as any;
 

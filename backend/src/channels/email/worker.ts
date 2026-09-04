@@ -364,7 +364,7 @@ export function startEmailWorker(): void {
       let accounts: EmailAccountRow[] = [];
       try {
         accounts = (await dbAll(
-          `SELECT * FROM tenant_email_accounts WHERE is_enabled ORDER BY last_checked_at ASC NULLS FIRST`,
+          `SELECT tea.* FROM tenant_email_accounts tea JOIN tenants t ON t.id = tea.tenant_id WHERE tea.is_enabled AND t.deleted_at IS NULL ORDER BY tea.last_checked_at ASC NULLS FIRST`,
         )) as unknown as EmailAccountRow[];
       } catch (e: any) {
         console.error('[Email] FATAL — failed to load accounts (schema issue?):', e.message, '\n', e.stack);

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Pencil, RefreshCw, Power, Phone, ExternalLink, BarChart2, Copy, Check, Star, SmilePlus, UtensilsCrossed } from 'lucide-react';
+import { Plus, Pencil, RefreshCw, Power, Phone, ExternalLink, BarChart2, Copy, Check, Star, SmilePlus, UtensilsCrossed, Trash2, AlertTriangle, Archive } from 'lucide-react';
 import { adminApi } from '../shared/lib/auth';
 import type { AdminTenant } from '../shared/lib/auth';
 import { Button, Modal, Input, Select, Spinner } from '../components/ui';
@@ -7,6 +7,7 @@ import clsx from 'clsx';
 
 const PLANS = ['starter', 'growth', 'pro'];
 const TYPES = ['barbershop', 'salon', 'dentist', 'medical', 'hotel', 'art_class', 'art_event', 'restaurant', 'skedai', 'shop', 'general_business'];
+const PROTECTED_TENANT_IDS = ['41b10744-891e-439a-a976-3aff28c51afe', '1a7ef18c-394b-441e-8376-fc57238b7dcc'];
 
 interface AdminPageProps {
   onViewShop?: (tenant: AdminTenant) => void;
@@ -22,17 +23,26 @@ export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) 
   const [resetting, setResetting] = useState<any>(null);
   const [adminTab, setAdminTab]   = useState<'shops' | 'leads' | 'ig_leads' | 'msg_leads'>('shops');
   const [pendingMessengerLeadId, setPendingMessengerLeadId] = useState<string | null>(null);
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [deleting, setDeleting]       = useState<any>(null);
+  const [deleteStep, setDeleteStep]   = useState<1 | 2>(1);
+  const [confirmName, setConfirmName] = useState('');
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError]     = useState('');
 
   async function load() {
     setLoading(true);
     try {
-      const [t, s] = await Promise.all([adminApi.getTenants(), adminApi.getStats()]);
+      const [t, s] = await Promise.all([
+        adminApi.getTenants({ showDeleted }),
+        adminApi.getStats(),
+      ]);
       setTenants(t); setStats(s);
-      onTenantsLoaded?.(t.map((x: any) => ({ id: x.id, name: x.name, type: x.type })));
+      if (!showDeleted) onTenantsLoaded?.(t.map((x: any) => ({ id: x.id, name: x.name, type: x.type })));
     } finally { setLoading(false); }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [showDeleted]);
 
   // Handle Meta Embedded Signup OAuth callback
   useEffect(() => {
@@ -124,6 +134,18 @@ export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) 
       {adminTab === 'msg_leads' && <MessengerLeadsView tenants={tenants} onCreateTenant={(leadId?: string) => { setPendingMessengerLeadId(leadId || null); setCreating(true); }} onReload={load} />}
 
       {/* Tenant list */}
+      {adminTab === 'shops' && (
+        <div className="flex items-center gap-2 mb-3">
+          <button
+            onClick={() => setShowDeleted(d => !d)}
+            className={clsx('flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors',
+              showDeleted ? 'bg-red-50 border-red-200 text-red-600' : 'bg-slate-50 border-slate-200 text-slate-400 hover:text-slate-600'
+            )}>
+            <Archive size={12} />
+            {showDeleted ? 'Showing deleted' : 'Show deleted'}
+          </button>
+        </div>
+      )}
       {adminTab === 'shops' && (loading ? <Spinner /> : (
         <div className="space-y-2">
           {tenants.map(t => (
@@ -203,6 +225,20 @@ export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) 
                     <UtensilsCrossed size={13} className={t.menus_enabled ? 'text-orange-500' : 'text-slate-300'} />
                   </Button>
                 )}
+                {!showDeleted && !PROTECTED_TENANT_IDS.includes(t.id) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => { setDeleting(t); setDeleteStep(1); setConfirmName(''); setDeleteError(''); }}
+                    title="Delete tenant">
+                    <Trash2 size={13} className="text-slate-300 hover:text-red-500" />
+                  </Button>
+                )}
+                {showDeleted && t.deleted_at && (
+                  <span className="text-xs text-red-400 px-2 py-0.5 bg-red-50 rounded-full">
+                    Deleted {new Date(t.deleted_at).toLocaleDateString()}
+                  </span>
+                )}
               </div>
             </div>
           ))}
@@ -250,6 +286,73 @@ export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) 
           onClose={() => setResetting(null)}
           onSaved={() => setResetting(null)}
         />
+      )}
+
+      {/* Delete confirmation — Step 1: consequences */}
+      {deleting && deleteStep === 1 && (
+        <Modal title="Delete tenant" onClose={() => setDeleting(null)}>
+          <div className="space-y-4">
+            <div className="flex items-start gap-3 p-3 bg-red-50 rounded-lg border border-red-200">
+              <AlertTriangle size={20} className="text-red-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-red-800">
+                  You are about to delete <strong>{deleting.name}</strong>
+                </p>
+                <ul className="mt-2 text-xs text-red-700 space-y-1 list-disc list-inside">
+                  <li>All R2 files (images, menus, documents) will be permanently deleted</li>
+                  <li>The tenant will no longer receive messages on any channel</li>
+                  <li>Login will be blocked for all users of this tenant</li>
+                  <li>Database records are soft-deleted and can be inspected later</li>
+                </ul>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <Button variant="ghost" onClick={() => setDeleting(null)}>Cancel</Button>
+              <Button
+                className="bg-red-600 hover:bg-red-700 text-white"
+                onClick={() => setDeleteStep(2)}>
+                I understand, continue
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Delete confirmation — Step 2: type name to confirm */}
+      {deleting && deleteStep === 2 && (
+        <Modal title="Confirm deletion" onClose={() => setDeleting(null)}>
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">
+              Type <strong className="font-mono text-red-600">{deleting.name}</strong> to confirm deletion:
+            </p>
+            <input
+              type="text"
+              value={confirmName}
+              onChange={e => setConfirmName(e.target.value)}
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-300"
+              placeholder={deleting.name}
+              autoFocus
+            />
+            {deleteError && <p className="text-sm text-red-500">{deleteError}</p>}
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <Button variant="ghost" onClick={() => { setDeleteStep(1); setConfirmName(''); setDeleteError(''); }}>Back</Button>
+              <Button
+                className="bg-red-600 hover:bg-red-700 text-white"
+                disabled={confirmName !== deleting.name || deleteLoading}
+                onClick={async () => {
+                  setDeleteLoading(true); setDeleteError('');
+                  try {
+                    await adminApi.deleteTenant(deleting.id, confirmName);
+                    setDeleting(null);
+                    load();
+                  } catch (e: any) { setDeleteError(e.message); }
+                  finally { setDeleteLoading(false); }
+                }}>
+                {deleteLoading ? 'Deleting…' : 'Delete permanently'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );

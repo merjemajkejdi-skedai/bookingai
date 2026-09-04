@@ -43,7 +43,7 @@ router.post('/instagram/webhook', async (req, res) => {
            FROM tenants t
            LEFT JOIN hotel_channel_settings cs
              ON cs.tenant_id = t.id AND cs.channel = 'instagram'
-           WHERE t.instagram_account_id = ?
+           WHERE t.instagram_account_id = ? AND t.deleted_at IS NULL
            LIMIT 1`,
           recipientId,
         ) as any;

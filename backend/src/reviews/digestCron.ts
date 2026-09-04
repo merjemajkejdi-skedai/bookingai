@@ -49,6 +49,7 @@ async function sendFlaggedBatch(frequencies: string[]): Promise<void> {
          AND t.owner_phone IS NOT NULL
          AND r.is_flagged  = 1
          AND r.owner_notified = 0
+         AND t.deleted_at IS NULL
        ORDER BY r.tenant_id, r.created_at DESC`,
       ...frequencies,
     );
@@ -138,6 +139,7 @@ async function runPositiveDigest(): Promise<void> {
        FROM tenants t
        JOIN hotel_reviews r ON r.tenant_id = t.id
        WHERE t.type       = 'hotel'
+         AND t.deleted_at IS NULL
          AND t.owner_phone IS NOT NULL
          AND r.is_flagged  = 0
          AND r.status      = 'pending'

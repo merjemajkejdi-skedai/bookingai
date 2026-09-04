@@ -42,7 +42,7 @@ router.post('/messenger/webhook', async (req, res) => {
       const pageId: string = entry.id;
 
       const tenant = await dbGet(
-        `SELECT * FROM tenants WHERE messenger_page_id = ? LIMIT 1`,
+        `SELECT * FROM tenants WHERE messenger_page_id = ? AND deleted_at IS NULL LIMIT 1`,
         pageId,
       ) as any;
 

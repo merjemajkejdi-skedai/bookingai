@@ -330,7 +330,7 @@ async function resolveTenant(toNumber: string): Promise<Record<string, any> | nu
 
   try {
     const tenant = await dbGet(
-      'SELECT * FROM tenants WHERE (whatsapp_number = ? OR whatsapp_number = ?) AND is_active = 1 LIMIT 1',
+      'SELECT * FROM tenants WHERE (whatsapp_number = ? OR whatsapp_number = ?) AND is_active = 1 AND deleted_at IS NULL LIMIT 1',
       withPrefix,
       withoutPrefix,
     ) as any;
@@ -397,7 +397,7 @@ async function handleMetaWebhook(req: Request, res: Response) {
 
     // Look up tenant by meta_phone_number_id
     const tenant = await dbGet(
-      'SELECT * FROM tenants WHERE meta_phone_number_id = ? AND is_active = 1 LIMIT 1',
+      'SELECT * FROM tenants WHERE meta_phone_number_id = ? AND is_active = 1 AND deleted_at IS NULL LIMIT 1',
       phoneNumId,
     ) as any;
 

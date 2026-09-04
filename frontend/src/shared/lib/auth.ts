@@ -133,7 +133,8 @@ export const analyticsApi = {
 };
 
 export const adminApi = {
-  getTenants: () => authFetch<any[]>('/admin/tenants'),
+  getTenants: (opts?: { showDeleted?: boolean }) =>
+    authFetch<any[]>(`/admin/tenants${opts?.showDeleted ? '?showDeleted=true' : ''}`),
   getTenant:  (id: string) => authFetch<any>(`/admin/tenants/${id}`),
   getStats:   () => authFetch<any>('/admin/stats'),
   createTenant: (data: {
@@ -194,6 +195,11 @@ export const adminApi = {
   updateInstagramLead: (leadId: string, data: { status?: string; notes?: string; tenant_id?: string }) =>
     authFetch<any>(`/api/instagram/signup-leads/${leadId}`, {
       method: 'PATCH', body: JSON.stringify(data),
+    }),
+  deleteTenant: (id: string, confirmName: string) =>
+    adminFetch<{ deleted: boolean; r2FilesDeleted: number }>(`/admin/tenants/${id}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ confirmName }),
     }),
   getMessengerLeads: () => authFetch<any[]>('/api/messenger/signup-leads'),
   updateMessengerLead: (leadId: string, data: { status?: string; notes?: string; tenant_id?: string }) =>

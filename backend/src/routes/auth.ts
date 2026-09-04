@@ -32,8 +32,8 @@ authRouter.post('/login', async (req: Request, res: Response) => {
 
   const tenant: any = user.tenant_id
     ? isPg
-      ? await queryOne('SELECT name, type, plan, has_analytics FROM tenants WHERE id = $1', [user.tenant_id])
-      : prepare('SELECT name, type, plan, has_analytics FROM tenants WHERE id = ?').get(user.tenant_id)
+      ? await queryOne('SELECT name, type, plan, has_analytics FROM tenants WHERE id = $1 AND deleted_at IS NULL', [user.tenant_id])
+      : prepare('SELECT name, type, plan, has_analytics FROM tenants WHERE id = ? AND deleted_at IS NULL').get(user.tenant_id)
     : null;
 
   res.json({ success: true, data: {
@@ -52,8 +52,8 @@ authRouter.get('/me', requireAuth, async (req: Request, res: Response) => {
 
   const tenant: any = user.tenant_id
     ? isPg
-      ? await queryOne('SELECT id,name,type,plan,whatsapp_number,is_active,has_analytics FROM tenants WHERE id = $1', [user.tenant_id])
-      : prepare('SELECT id,name,type,plan,whatsapp_number,is_active,has_analytics FROM tenants WHERE id = ?').get(user.tenant_id)
+      ? await queryOne('SELECT id,name,type,plan,whatsapp_number,is_active,has_analytics FROM tenants WHERE id = $1 AND deleted_at IS NULL', [user.tenant_id])
+      : prepare('SELECT id,name,type,plan,whatsapp_number,is_active,has_analytics FROM tenants WHERE id = ? AND deleted_at IS NULL').get(user.tenant_id)
     : null;
 
   res.json({ success: true, data: { ...user, tenant } });

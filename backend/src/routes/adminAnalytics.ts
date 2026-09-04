@@ -75,6 +75,7 @@ adminAnalyticsRouter.get('/messages', async (req: Request, res: Response) => {
         COALESCE(SUM(CASE WHEN ml.provider = 'meta'   AND ml.direction = 'outbound' THEN 1 ELSE 0 END), 0) AS meta_out
       FROM tenants t
       LEFT JOIN message_log ml ON ${joinCondition}
+      WHERE t.deleted_at IS NULL
       GROUP BY t.id, t.name, t.type, t.plan, t.is_active
       ORDER BY total DESC
     `;
