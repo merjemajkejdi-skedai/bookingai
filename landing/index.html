@@ -69,9 +69,23 @@
     }
     .hero {
       max-width: 1140px; margin: 0 auto;
-      display: grid; grid-template-columns: 1fr 1fr;
-      gap: 64px; align-items: center;
+      display: grid; grid-template-columns: 35% 35% 30%;
+      gap: 32px; align-items: center;
     }
+    .hero-buttons {
+      display: flex; flex-direction: column; gap: 14px;
+      align-items: flex-start; justify-content: center;
+    }
+    .hero-buttons .signup-btn {
+      display: inline-flex; align-items: center; gap: .5rem;
+      padding: .75rem 1.5rem; font-size: .9rem; font-weight: 600;
+      color: #fff; border: none; border-radius: 12px;
+      cursor: pointer; transition: transform .15s, box-shadow .15s;
+      white-space: nowrap;
+    }
+    .hero-buttons .signup-btn:hover { transform: translateY(-2px); }
+    .hero-buttons .signup-result { margin-top: .25rem; display: none; font-size: .85rem; }
+    .hero-buttons .page-selector { margin-top: .5rem; display: none; max-width: 280px; }
     .hero-badge {
       display: inline-flex; align-items: center; gap: 8px;
       background: var(--green-soft); color: var(--teal-dark);
@@ -415,6 +429,7 @@
       .hero-sub { margin-left: auto; margin-right: auto; }
       .hero-ctas { justify-content: center; }
       .hero-phone { order: 2; }
+      .hero-buttons { order: 3; align-items: center; }
       .phone-frame { width: 290px; height: 470px; }
     }
     @media (max-width: 640px) {
@@ -488,6 +503,47 @@
         <div class="phone-body" id="phone-body">
           <div id="chat-content"></div>
         </div>
+      </div>
+    </div>
+
+    <!-- Right: connect buttons -->
+    <div class="hero-buttons">
+      <button onclick="launchWhatsAppSignup('landing')" id="wa-signup-btn"
+        class="signup-btn"
+        style="background:#25D366;box-shadow:0 4px 14px rgba(37,211,102,.35)"
+        onmouseover="this.style.boxShadow='0 6px 20px rgba(37,211,102,.45)'"
+        onmouseout="this.style.boxShadow='0 4px 14px rgba(37,211,102,.35)'">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>
+        Connect WhatsApp — Get Started Free
+      </button>
+      <div id="wa-signup-result" class="signup-result"></div>
+
+      <button onclick="launchInstagramSignup()" id="ig-signup-btn"
+        class="signup-btn"
+        style="background:linear-gradient(135deg,#833AB4,#FD1D1D,#F77737);box-shadow:0 4px 14px rgba(131,58,180,.35)"
+        onmouseover="this.style.boxShadow='0 6px 20px rgba(131,58,180,.45)'"
+        onmouseout="this.style.boxShadow='0 4px 14px rgba(131,58,180,.35)'">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="5"/><circle cx="17.5" cy="6.5" r="1.5" fill="white" stroke="none"/></svg>
+        Connect Instagram — Get Started Free
+      </button>
+      <div id="ig-signup-result" class="signup-result"></div>
+
+      <button onclick="launchMessengerSignup()" id="msg-signup-btn"
+        class="signup-btn"
+        style="background:#0084FF;box-shadow:0 4px 14px rgba(0,132,255,.35)"
+        onmouseover="this.style.boxShadow='0 6px 20px rgba(0,132,255,.45)'"
+        onmouseout="this.style.boxShadow='0 4px 14px rgba(0,132,255,.35)'">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.477 2 2 6.145 2 11.243c0 2.908 1.438 5.502 3.685 7.19V22l3.455-1.896A11.27 11.27 0 0 0 12 20.485c5.523 0 10-4.144 10-9.242C22 6.145 17.523 2 12 2zm1.06 12.448-2.547-2.717-4.97 2.717 5.466-5.8 2.61 2.717 4.907-2.717-5.466 5.8z"/></svg>
+        Connect Facebook Page
+      </button>
+      <div id="msg-signup-result" class="signup-result"></div>
+      <div id="msg-page-selector" class="page-selector">
+        <p style="font-size:.9rem;color:var(--slate-700);margin-bottom:.5rem;font-weight:600">Multiple pages found — select one:</p>
+        <select id="msg-page-select" style="width:100%;padding:.5rem;border:1px solid #ccc;border-radius:8px;font-size:.9rem;margin-bottom:.5rem"></select>
+        <button onclick="submitMessengerPageSelection()"
+          style="padding:.6rem 1.5rem;font-size:.9rem;font-weight:600;color:#fff;background:#0084FF;border:none;border-radius:8px;cursor:pointer">
+          Connect Page
+        </button>
       </div>
     </div>
 
@@ -715,81 +771,6 @@
         </a>
         <p class="pricing-note">Billed quarterly. Cancel with 30 days' notice.</p>
       </div>
-    </div>
-  </div>
-</section>
-
-<!-- ════ CONNECT WHATSAPP ═══════════════════════════════════ -->
-<section class="section" id="connect" style="padding:3rem 0">
-  <div class="section-inner" style="text-align:center">
-    <h2 class="reveal d1" style="font-size:1.6rem;margin-bottom:.5rem">Connect in 3 minutes</h2>
-    <p class="section-sub reveal d2" style="max-width:520px;margin:0 auto 1.5rem">
-      Link your WhatsApp number to SkedAI — no Twilio, no manual setup. Just click, log in with Facebook, and verify your number.
-    </p>
-    <button onclick="launchWhatsAppSignup('landing')" id="wa-signup-btn"
-      class="reveal d3"
-      style="display:inline-flex;align-items:center;gap:.5rem;padding:.85rem 2rem;font-size:1rem;font-weight:600;color:#fff;background:#25D366;border:none;border-radius:12px;cursor:pointer;transition:transform .15s,box-shadow .15s;box-shadow:0 4px 14px rgba(37,211,102,.35)"
-      onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 20px rgba(37,211,102,.45)'"
-      onmouseout="this.style.transform='none';this.style.boxShadow='0 4px 14px rgba(37,211,102,.35)'">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>
-      Connect WhatsApp — Get Started Free
-    </button>
-    <div id="wa-signup-result" style="margin-top:1rem;display:none"></div>
-  </div>
-</section>
-
-<!-- ════ CONNECT INSTAGRAM ═════════════════════════════════ -->
-<section class="section" style="padding:2rem 0 3rem;background:var(--slate-50)">
-  <div class="section-inner" style="text-align:center">
-    <h2 class="reveal d1" style="font-size:1.6rem;margin-bottom:.5rem">Or connect Instagram</h2>
-    <p class="section-sub reveal d2" style="max-width:520px;margin:0 auto 1rem">
-      Let SkedAI handle your Instagram DMs too — answer enquiries, book appointments, and reply in any language, 24/7.
-    </p>
-    <p class="section-sub reveal d2" style="max-width:520px;margin:0 auto 1.5rem;font-size:.85rem;opacity:.8">
-      Requires a Business or Creator Instagram account linked to a Facebook Page.
-    </p>
-    <button onclick="launchInstagramSignup()" id="ig-signup-btn"
-      class="reveal d3"
-      style="display:inline-flex;align-items:center;gap:.5rem;padding:.85rem 2rem;font-size:1rem;font-weight:600;color:#fff;background:linear-gradient(135deg,#833AB4,#FD1D1D,#F77737);border:none;border-radius:12px;cursor:pointer;transition:transform .15s,box-shadow .15s;box-shadow:0 4px 14px rgba(131,58,180,.35)"
-      onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 20px rgba(131,58,180,.45)'"
-      onmouseout="this.style.transform='none';this.style.boxShadow='0 4px 14px rgba(131,58,180,.35)'">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="5"/><circle cx="17.5" cy="6.5" r="1.5" fill="white" stroke="none"/></svg>
-      Connect Instagram — Get Started Free
-    </button>
-    <div id="ig-signup-result" style="margin-top:1rem;display:none"></div>
-  </div>
-</section>
-
-<!-- ════ CONNECT MESSENGER ═══════════════════════════════════ -->
-<section class="section" style="padding:2rem 0 3rem;background:#fff">
-  <div class="section-inner" style="text-align:center">
-    <h2 class="reveal d1" style="font-size:1.6rem;margin-bottom:.5rem">Or connect Facebook Messenger</h2>
-    <p class="section-sub reveal d2" style="max-width:520px;margin:0 auto 1rem">
-      Reply to Facebook Page messages automatically. AI responds instantly, 24/7, from your business Page.
-    </p>
-    <p class="section-sub reveal d2" style="max-width:520px;margin:0 auto .5rem;font-size:.85rem;opacity:.8">
-      Requires:
-    </p>
-    <ul class="reveal d2" style="list-style:none;padding:0;max-width:320px;margin:0 auto 1.5rem;text-align:left;font-size:.85rem;color:var(--slate-600)">
-      <li style="margin-bottom:.35rem">&#x2714;&#xFE0F; A Facebook Business Page</li>
-      <li>&#x2714;&#xFE0F; Admin access to that Page</li>
-    </ul>
-    <button onclick="launchMessengerSignup()" id="msg-signup-btn"
-      class="reveal d3"
-      style="display:inline-flex;align-items:center;gap:.5rem;padding:.85rem 2rem;font-size:1rem;font-weight:600;color:#fff;background:#0084FF;border:none;border-radius:12px;cursor:pointer;transition:transform .15s,box-shadow .15s;box-shadow:0 4px 14px rgba(0,132,255,.35)"
-      onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 20px rgba(0,132,255,.45)'"
-      onmouseout="this.style.transform='none';this.style.boxShadow='0 4px 14px rgba(0,132,255,.35)'">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.477 2 2 6.145 2 11.243c0 2.908 1.438 5.502 3.685 7.19V22l3.455-1.896A11.27 11.27 0 0 0 12 20.485c5.523 0 10-4.144 10-9.242C22 6.145 17.523 2 12 2zm1.06 12.448-2.547-2.717-4.97 2.717 5.466-5.8 2.61 2.717 4.907-2.717-5.466 5.8z"/></svg>
-      Connect Facebook Page
-    </button>
-    <div id="msg-signup-result" style="margin-top:1rem;display:none"></div>
-    <div id="msg-page-selector" style="margin-top:1rem;display:none;max-width:360px;margin-left:auto;margin-right:auto">
-      <p style="font-size:.9rem;color:var(--slate-700);margin-bottom:.5rem;font-weight:600">Multiple pages found — select one:</p>
-      <select id="msg-page-select" style="width:100%;padding:.5rem;border:1px solid #ccc;border-radius:8px;font-size:.9rem;margin-bottom:.5rem"></select>
-      <button onclick="submitMessengerPageSelection()"
-        style="padding:.6rem 1.5rem;font-size:.9rem;font-weight:600;color:#fff;background:#0084FF;border:none;border-radius:8px;cursor:pointer">
-        Connect Page
-      </button>
     </div>
   </div>
 </section>
