@@ -21,6 +21,7 @@ export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) 
   const [editing, setEditing]     = useState<any>(null);
   const [resetting, setResetting] = useState<any>(null);
   const [adminTab, setAdminTab]   = useState<'shops' | 'leads' | 'ig_leads' | 'msg_leads'>('shops');
+  const [pendingMessengerLeadId, setPendingMessengerLeadId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -120,7 +121,7 @@ export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) 
       {adminTab === 'ig_leads' && <InstagramLeadsView tenants={tenants} onCreateTenant={() => setCreating(true)} onReload={load} />}
 
       {/* Messenger Leads */}
-      {adminTab === 'msg_leads' && <MessengerLeadsView tenants={tenants} onCreateTenant={() => setCreating(true)} onReload={load} />}
+      {adminTab === 'msg_leads' && <MessengerLeadsView tenants={tenants} onCreateTenant={(leadId?: string) => { setPendingMessengerLeadId(leadId || null); setCreating(true); }} onReload={load} />}
 
       {/* Tenant list */}
       {adminTab === 'shops' && (loading ? <Spinner /> : (
@@ -219,8 +220,17 @@ export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) 
       {/* Create modal */}
       {creating && (
         <CreateTenantModal
-          onClose={() => setCreating(false)}
-          onSaved={() => { setCreating(false); load(); }}
+          onClose={() => { setCreating(false); setPendingMessengerLeadId(null); }}
+          onSaved={async (tenantId?: string) => {
+            if (pendingMessengerLeadId && tenantId) {
+              try {
+                await adminApi.updateMessengerLead(pendingMessengerLeadId, { tenant_id: tenantId });
+              } catch (e: any) { console.error('Failed to link Messenger lead:', e.message); }
+            }
+            setCreating(false);
+            setPendingMessengerLeadId(null);
+            load();
+          }}
         />
       )}
 
@@ -264,7 +274,7 @@ function CopyId({ id }: { id: string }) {
 }
 
 // --- Create tenant modal ----------------------------------------------------
-function CreateTenantModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+function CreateTenantModal({ onClose, onSaved }: { onClose: () => void; onSaved: (tenantId?: string) => void }) {
   const [form, setForm] = useState({
     name: '', type: 'barbershop', timezone: 'Europe/Tirane',
     ownerEmail: '', ownerPassword: '',
@@ -281,8 +291,8 @@ function CreateTenantModal({ onClose, onSaved }: { onClose: () => void; onSaved:
   async function save() {
     setSaving(true); setError('');
     try {
-      await adminApi.createTenant(form);
-      onSaved();
+      const result = await adminApi.createTenant(form) as any;
+      onSaved(result?.tenant?.id);
     } catch (e: any) { setError(e.message); }
     finally { setSaving(false); }
   }
@@ -1663,7 +1673,7 @@ function InstagramLeadsView({ tenants, onCreateTenant, onReload }: { tenants: an
   );
 }
 
-function MessengerLeadsView({ tenants, onCreateTenant, onReload }: { tenants: any[]; onCreateTenant: () => void; onReload: () => void }) {
+function MessengerLeadsView({ tenants, onCreateTenant, onReload }: { tenants: any[]; onCreateTenant: (leadId?: string) => void; onReload: () => void }) {
   const [leads, setLeads] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingNotes, setEditingNotes] = useState<string | null>(null);
@@ -1754,7 +1764,7 @@ function MessengerLeadsView({ tenants, onCreateTenant, onReload }: { tenants: an
               )}
               {lead.status !== 'tenant_created' && lead.status !== 'rejected' && (
                 <Button size="sm" onClick={() => {
-                  onCreateTenant();
+                  onCreateTenant(lead.id);
                 }}>
                   Create Tenant
                 </Button>

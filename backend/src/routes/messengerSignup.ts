@@ -237,6 +237,67 @@ messengerSignupRouter.patch('/messenger/signup-leads/:id', async (req: Request, 
 
   try {
     await dbRun(`UPDATE messenger_signup_leads SET ${sets.join(', ')} WHERE id = ?`, ...params);
+
+    // Auto-connect Messenger when linking a lead to a tenant
+    if (tenant_id) {
+      const lead = await dbGet(
+        'SELECT facebook_page_id, facebook_page_name, access_token_encrypted FROM messenger_signup_leads WHERE id = ?',
+        req.params.id,
+      ) as any;
+      if (lead?.access_token_encrypted) {
+        console.log(`[Messenger] Auto-connecting tenant ${tenant_id} from lead ${req.params.id}`);
+        await dbRun(
+          `UPDATE tenants SET
+             messenger_page_id = ?,
+             messenger_page_name = ?,
+             messenger_access_token_encrypted = ?,
+             messenger_connected_at = ${isPg ? 'NOW()' : 'CURRENT_TIMESTAMP'},
+             messenger_connection_type = 'oauth'
+           WHERE id = ?`,
+          lead.facebook_page_id, lead.facebook_page_name, lead.access_token_encrypted, tenant_id,
+        );
+
+        // Upsert hotel_channel_settings for facebook channel
+        const { decrypt } = await import('../utils/encryption.js');
+        const pageToken = decrypt(lead.access_token_encrypted);
+        if (isPg) {
+          await dbRun(
+            `INSERT INTO hotel_channel_settings (id, tenant_id, channel, ai_enabled, connected, access_token)
+             VALUES (gen_random_uuid(), ?, 'facebook', false, true, ?)
+             ON CONFLICT (tenant_id, channel) DO UPDATE SET
+               connected    = true,
+               access_token = excluded.access_token,
+               updated_at   = NOW()`,
+            tenant_id, pageToken,
+          );
+        } else {
+          await dbRun(
+            `INSERT INTO hotel_channel_settings (id, tenant_id, channel, ai_enabled, connected, access_token)
+             VALUES (?, ?, 'facebook', 0, 1, ?)
+             ON CONFLICT (tenant_id, channel) DO UPDATE SET
+               connected    = 1,
+               access_token = excluded.access_token,
+               updated_at   = CURRENT_TIMESTAMP`,
+            crypto.randomUUID(), tenant_id, pageToken,
+          );
+        }
+
+        // Auto-subscribe the page to webhook
+        try {
+          await subscribePageToWebhook(lead.facebook_page_id, pageToken);
+        } catch (e: any) {
+          console.warn('[Messenger] Webhook subscription during auto-connect failed:', e.message);
+        }
+
+        // Mark lead as tenant_created
+        await dbRun(
+          `UPDATE messenger_signup_leads SET status = 'tenant_created' WHERE id = ?`,
+          req.params.id,
+        );
+        console.log(`[Messenger] Tenant ${tenant_id} auto-connected to page ${lead.facebook_page_id}`);
+      }
+    }
+
     const row = await dbGet('SELECT * FROM messenger_signup_leads WHERE id = ?', req.params.id);
     ok(res, row);
   } catch (e: any) { err(res, e.message, 500); }
@@ -267,6 +328,7 @@ async function saveLandingLead(
 ): Promise<{ message: string; pageName: string }> {
   const leadId = crypto.randomUUID();
   const encryptedToken = encrypt(pageToken);
+  console.log(`[Messenger] Saving lead with page_id: ${page.id}, token present: ${!!pageToken}`);
   await dbRun(
     `INSERT INTO messenger_signup_leads
        (id, facebook_page_id, facebook_page_name, access_token_encrypted, status, created_at, updated_at)
