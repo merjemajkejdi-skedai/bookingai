@@ -52,7 +52,7 @@ messengerSignupRouter.post('/messenger/oauth/callback', async (req: Request, res
   try {
     // 1. Exchange code for short-lived user token
     console.log('[Messenger OAuth] callback received, code present:', !!code, 'source:', source, 'tenantId:', tenantId);
-    const redirectUri = 'https://www.skedai.net/';
+    const redirectUri = 'https://www.skedai.net/messenger/oauth/callback';
     console.log('[Messenger] Token exchange redirect_uri:', redirectUri);
 
     const tokenRes = await fetch('https://graph.facebook.com/v21.0/oauth/access_token?' + new URLSearchParams({
