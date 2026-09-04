@@ -81,11 +81,12 @@ const publicShopLimiter = rateLimit({
 });
 app.use('/shop/public/', publicShopLimiter);
 
-// General API (dashboard routes): 200 per 15 min per IP
-// (8-second polling = ~112 requests per 15 min; 200 gives comfortable headroom)
+// General API (dashboard routes): 600 per 15 min per IP
+// Settings pages make many save calls when configuring a new tenant
+// (basic config, departments, FAQs, channel toggles, etc.)
 const generalApiLimiter = rateLimit({
   windowMs:        15 * 60 * 1000,
-  max:             200,
+  max:             600,
   standardHeaders: true,
   legacyHeaders:   false,
   message:         { error: 'Too many requests. Please try again shortly.' },
