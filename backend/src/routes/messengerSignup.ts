@@ -51,10 +51,11 @@ messengerSignupRouter.post('/messenger/oauth/callback', async (req: Request, res
 
   try {
     // 1. Exchange code for short-lived user token
-    console.log('[Messenger OAuth] Exchanging code for token...');
+    console.log('[Messenger OAuth] callback received, code present:', !!code, 'source:', source, 'tenantId:', tenantId);
     const defaultRedirect = 'https://app.skedai.net/';
     const isSkedaiOrigin = redirect_uri && /^https:\/\/([a-z0-9-]+\.)*skedai\.net(\/|$)/.test(redirect_uri);
     const resolvedRedirect = isSkedaiOrigin ? redirect_uri : defaultRedirect;
+    console.log('[Messenger OAuth] Exchanging code for token, redirect_uri:', resolvedRedirect);
 
     const tokenRes = await fetch('https://graph.facebook.com/v21.0/oauth/access_token?' + new URLSearchParams({
       client_id:     META_APP_ID(),
@@ -62,6 +63,7 @@ messengerSignupRouter.post('/messenger/oauth/callback', async (req: Request, res
       code,
       redirect_uri:  resolvedRedirect,
     }));
+    console.log('[Messenger OAuth] Token exchange response status:', tokenRes.status);
     if (!tokenRes.ok) {
       const errBody = await tokenRes.text();
       console.error('[Messenger OAuth] Token exchange failed:', errBody);
@@ -69,7 +71,7 @@ messengerSignupRouter.post('/messenger/oauth/callback', async (req: Request, res
     }
     const tokenData = await tokenRes.json() as any;
     const shortToken = tokenData.access_token;
-    console.log('[Messenger OAuth] Short-lived token obtained');
+    console.log('[Messenger OAuth] Short-lived token obtained, has access_token:', !!shortToken);
 
     // 2. Exchange for long-lived token (60 days)
     const longRes = await fetch('https://graph.facebook.com/v21.0/oauth/access_token?' + new URLSearchParams({
@@ -79,12 +81,14 @@ messengerSignupRouter.post('/messenger/oauth/callback', async (req: Request, res
       fb_exchange_token: shortToken,
     }));
     let longToken = shortToken;
+    console.log('[Messenger OAuth] Long-lived exchange status:', longRes.status);
     if (longRes.ok) {
       const longData = await longRes.json() as any;
       longToken = longData.access_token;
       console.log('[Messenger OAuth] Long-lived token obtained');
     } else {
-      console.warn('[Messenger OAuth] Long-lived token exchange failed, using short-lived');
+      const longErr = await longRes.text();
+      console.warn('[Messenger OAuth] Long-lived token exchange failed:', longErr, '— using short-lived');
     }
 
     // 3. Get user's Pages with page-level access tokens
