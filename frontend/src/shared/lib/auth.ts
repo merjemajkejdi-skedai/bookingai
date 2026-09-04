@@ -201,6 +201,13 @@ export const adminApi = {
       method: 'DELETE',
       body: JSON.stringify({ confirmName }),
     }),
+  getTenantList: () =>
+    adminFetch<{ id: string; name: string; type: string; has_whatsapp: number; has_instagram: number; has_messenger: number }[]>('/admin/tenants/list'),
+  assignLead: (leadType: 'whatsapp' | 'instagram' | 'messenger', leadId: string, tenantId: string) =>
+    adminFetch<{ tenantName: string }>(`/admin/leads/${leadType}/${leadId}/assign`, {
+      method: 'POST',
+      body: JSON.stringify({ tenantId }),
+    }),
   getMessengerLeads: () => authFetch<any[]>('/api/messenger/signup-leads'),
   updateMessengerLead: (leadId: string, data: { status?: string; notes?: string; tenant_id?: string }) =>
     authFetch<any>(`/api/messenger/signup-leads/${leadId}`, {

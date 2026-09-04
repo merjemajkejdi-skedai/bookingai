@@ -208,8 +208,8 @@ instagramSignupRouter.patch('/instagram/signup-leads/:id', async (req: Request, 
   const params: any[] = [];
 
   if (status) {
-    if (!['pending', 'contacted', 'tenant_created', 'rejected'].includes(status))
-      return err(res, "status must be 'pending', 'contacted', 'tenant_created', or 'rejected'");
+    if (!['pending', 'contacted', 'tenant_created', 'rejected', 'assigned'].includes(status))
+      return err(res, "status must be 'pending', 'contacted', 'tenant_created', 'rejected', or 'assigned'");
     sets.push('status = ?');
     params.push(status);
   }

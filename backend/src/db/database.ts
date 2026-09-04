@@ -1603,6 +1603,10 @@ export async function runMigrations() {
       // soft-delete columns
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL`,
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(255) DEFAULT NULL`,
+      // lead assignment — assigned_at column
+      `ALTER TABLE whatsapp_signup_leads ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ`,
+      `ALTER TABLE instagram_signup_leads ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ`,
+      `ALTER TABLE messenger_signup_leads ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));

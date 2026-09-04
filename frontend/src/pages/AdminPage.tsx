@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Pencil, RefreshCw, Power, Phone, ExternalLink, BarChart2, Copy, Check, Star, SmilePlus, UtensilsCrossed, Trash2, AlertTriangle, Archive } from 'lucide-react';
+import { Plus, Pencil, RefreshCw, Power, Phone, ExternalLink, BarChart2, Copy, Check, Star, SmilePlus, UtensilsCrossed, Trash2, AlertTriangle, Archive, Link, Search } from 'lucide-react';
 import { adminApi } from '../shared/lib/auth';
 import type { AdminTenant } from '../shared/lib/auth';
 import { Button, Modal, Input, Select, Spinner } from '../components/ui';
@@ -1550,11 +1550,111 @@ function ResetPasswordModal({ tenant, onClose, onSaved }: { tenant: any; onClose
 }
 
 // --- WhatsApp Signup Leads View -----------------------------------------------
+// --- Assign Lead to Existing Tenant modal -----------------------------------
+function AssignLeadModal({
+  leadName,
+  channelType,
+  onClose,
+  onAssigned,
+}: {
+  leadName: string;
+  channelType: 'whatsapp' | 'instagram' | 'messenger';
+  onClose: () => void;
+  onAssigned: (tenantId: string) => void;
+}) {
+  const [tenantList, setTenantList] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState('');
+
+  useEffect(() => {
+    adminApi.getTenantList()
+      .then(setTenantList)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const channelLabel = channelType === 'whatsapp' ? 'WhatsApp' : channelType === 'instagram' ? 'Instagram' : 'Messenger';
+  const channelFlag = channelType === 'whatsapp' ? 'has_whatsapp' : channelType === 'instagram' ? 'has_instagram' : 'has_messenger';
+
+  const filtered = tenantList.filter(t =>
+    t.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const selectedTenant = tenantList.find(t => t.id === selected);
+  const alreadyHasChannel = selectedTenant?.[channelFlag];
+
+  return (
+    <Modal title="Assign to Existing Tenant" onClose={onClose}>
+      <div className="space-y-4">
+        <p className="text-sm text-slate-600">
+          Lead: <strong>{leadName}</strong> ({channelLabel})
+        </p>
+        <p className="text-xs text-slate-400">Select tenant to connect this channel to:</p>
+
+        <div className="relative">
+          <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full border border-slate-300 rounded-lg pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300"
+            placeholder="Search tenants..."
+          />
+        </div>
+
+        {loading ? <Spinner /> : (
+          <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
+            {filtered.length === 0 && (
+              <p className="text-xs text-slate-400 p-3 text-center">No tenants found</p>
+            )}
+            {filtered.map(t => (
+              <button
+                key={t.id}
+                onClick={() => setSelected(t.id)}
+                className={clsx(
+                  'w-full text-left px-3 py-2 text-sm hover:bg-slate-50 transition-colors',
+                  selected === t.id && 'bg-brand-50 border-l-2 border-brand-500'
+                )}>
+                <span className="font-medium text-slate-800">{t.name}</span>
+                <span className="text-xs text-slate-400 ml-2 capitalize">{t.type}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {alreadyHasChannel && (
+          <div className="flex items-start gap-2 p-2.5 bg-amber-50 rounded-lg border border-amber-200">
+            <AlertTriangle size={14} className="text-amber-500 shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-700">
+              This tenant already has {channelLabel} connected. Assigning will replace the existing connection.
+            </p>
+          </div>
+        )}
+
+        {!alreadyHasChannel && selected && (
+          <p className="text-xs text-slate-400">
+            This will add {channelLabel} to the selected tenant. Existing channels are not affected.
+          </p>
+        )}
+
+        <div className="flex justify-end gap-2 pt-2 border-t">
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button disabled={!selected} onClick={() => onAssigned(selected)}>
+            Assign Channel
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function WhatsAppLeadsView({ tenants, onCreateTenant, onReload }: { tenants: any[]; onCreateTenant: () => void; onReload: () => void }) {
   const [leads, setLeads] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingNotes, setEditingNotes] = useState<string | null>(null);
   const [notesText, setNotesText] = useState('');
+  const [assigning, setAssigning] = useState<any>(null);
 
   async function loadLeads() {
     setLoading(true);
@@ -1580,11 +1680,22 @@ function WhatsAppLeadsView({ tenants, onCreateTenant, onReload }: { tenants: any
     } catch (e: any) { alert(e.message); }
   }
 
+  async function handleAssign(tenantId: string) {
+    if (!assigning) return;
+    try {
+      await adminApi.assignLead('whatsapp', assigning.id, tenantId);
+      setAssigning(null);
+      loadLeads();
+      onReload();
+    } catch (e: any) { alert(e.message); }
+  }
+
   const statusColor: Record<string, string> = {
     pending:        'bg-amber-100 text-amber-700',
     contacted:      'bg-blue-100 text-blue-700',
     tenant_created: 'bg-green-100 text-green-700',
     rejected:       'bg-red-100 text-red-700',
+    assigned:       'bg-teal-100 text-teal-700',
   };
 
   if (loading) return <Spinner />;
@@ -1605,12 +1716,17 @@ function WhatsAppLeadsView({ tenants, onCreateTenant, onReload }: { tenants: any
                 <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium', statusColor[lead.status] || statusColor.pending)}>
                   {lead.status}
                 </span>
+                {lead.status === 'assigned' && lead.tenant_id && (
+                  <span className="text-xs text-teal-600 font-medium">
+                    → {tenants.find(t => t.id === lead.tenant_id)?.name || lead.tenant_id.slice(0, 8)}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-3 mt-1 text-xs text-slate-400 flex-wrap">
                 {lead.phone_number && <span><Phone size={10} className="inline mr-0.5" /> {lead.phone_number}</span>}
                 <span>WABA: {lead.waba_id}</span>
                 <span>{new Date(lead.created_at).toLocaleString()}</span>
-                {lead.tenant_id && (
+                {lead.tenant_id && lead.status !== 'assigned' && (
                   <span className="text-green-600 font-medium">
                     Tenant: {tenants.find(t => t.id === lead.tenant_id)?.name || lead.tenant_id.slice(0, 8)}
                   </span>
@@ -1640,12 +1756,15 @@ function WhatsAppLeadsView({ tenants, onCreateTenant, onReload }: { tenants: any
                   </Button>
                 </>
               )}
-              {lead.status !== 'tenant_created' && lead.status !== 'rejected' && (
-                <Button size="sm" onClick={() => {
-                  onCreateTenant();
-                }}>
-                  Create Tenant
-                </Button>
+              {!['tenant_created', 'rejected', 'assigned'].includes(lead.status) && (
+                <>
+                  <Button size="sm" onClick={() => onCreateTenant()}>
+                    Create Tenant
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setAssigning(lead)}>
+                    <Link size={12} /> Assign to Existing
+                  </Button>
+                </>
               )}
               {!editingNotes && (
                 <Button size="sm" variant="ghost" onClick={() => {
@@ -1659,6 +1778,14 @@ function WhatsAppLeadsView({ tenants, onCreateTenant, onReload }: { tenants: any
           </div>
         </div>
       ))}
+      {assigning && (
+        <AssignLeadModal
+          leadName={assigning.business_name || 'Unknown Business'}
+          channelType="whatsapp"
+          onClose={() => setAssigning(null)}
+          onAssigned={handleAssign}
+        />
+      )}
     </div>
   );
 }
@@ -1668,6 +1795,7 @@ function InstagramLeadsView({ tenants, onCreateTenant, onReload }: { tenants: an
   const [loading, setLoading] = useState(true);
   const [editingNotes, setEditingNotes] = useState<string | null>(null);
   const [notesText, setNotesText] = useState('');
+  const [assigning, setAssigning] = useState<any>(null);
 
   async function loadLeads() {
     setLoading(true);
@@ -1693,11 +1821,22 @@ function InstagramLeadsView({ tenants, onCreateTenant, onReload }: { tenants: an
     } catch (e: any) { alert(e.message); }
   }
 
+  async function handleAssign(tenantId: string) {
+    if (!assigning) return;
+    try {
+      await adminApi.assignLead('instagram', assigning.id, tenantId);
+      setAssigning(null);
+      loadLeads();
+      onReload();
+    } catch (e: any) { alert(e.message); }
+  }
+
   const statusColor: Record<string, string> = {
     pending:        'bg-amber-100 text-amber-700',
     contacted:      'bg-blue-100 text-blue-700',
     tenant_created: 'bg-green-100 text-green-700',
     rejected:       'bg-red-100 text-red-700',
+    assigned:       'bg-teal-100 text-teal-700',
   };
 
   if (loading) return <Spinner />;
@@ -1718,12 +1857,17 @@ function InstagramLeadsView({ tenants, onCreateTenant, onReload }: { tenants: an
                 <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium', statusColor[lead.status] || statusColor.pending)}>
                   {lead.status}
                 </span>
+                {lead.status === 'assigned' && lead.tenant_id && (
+                  <span className="text-xs text-teal-600 font-medium">
+                    → {tenants.find(t => t.id === lead.tenant_id)?.name || lead.tenant_id.slice(0, 8)}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-3 mt-1 text-xs text-slate-400 flex-wrap">
                 {lead.facebook_page_name && <span>Page: {lead.facebook_page_name}</span>}
                 <span>IG ID: {lead.instagram_account_id}</span>
                 <span>{new Date(lead.created_at).toLocaleString()}</span>
-                {lead.tenant_id && (
+                {lead.tenant_id && lead.status !== 'assigned' && (
                   <span className="text-green-600 font-medium">
                     Tenant: {tenants.find(t => t.id === lead.tenant_id)?.name || lead.tenant_id.slice(0, 8)}
                   </span>
@@ -1753,12 +1897,15 @@ function InstagramLeadsView({ tenants, onCreateTenant, onReload }: { tenants: an
                   </Button>
                 </>
               )}
-              {lead.status !== 'tenant_created' && lead.status !== 'rejected' && (
-                <Button size="sm" onClick={() => {
-                  onCreateTenant();
-                }}>
-                  Create Tenant
-                </Button>
+              {!['tenant_created', 'rejected', 'assigned'].includes(lead.status) && (
+                <>
+                  <Button size="sm" onClick={() => onCreateTenant()}>
+                    Create Tenant
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setAssigning(lead)}>
+                    <Link size={12} /> Assign to Existing
+                  </Button>
+                </>
               )}
               {!editingNotes && (
                 <Button size="sm" variant="ghost" onClick={() => {
@@ -1772,6 +1919,14 @@ function InstagramLeadsView({ tenants, onCreateTenant, onReload }: { tenants: an
           </div>
         </div>
       ))}
+      {assigning && (
+        <AssignLeadModal
+          leadName={`@${assigning.instagram_username || 'unknown'}`}
+          channelType="instagram"
+          onClose={() => setAssigning(null)}
+          onAssigned={handleAssign}
+        />
+      )}
     </div>
   );
 }
@@ -1781,6 +1936,7 @@ function MessengerLeadsView({ tenants, onCreateTenant, onReload }: { tenants: an
   const [loading, setLoading] = useState(true);
   const [editingNotes, setEditingNotes] = useState<string | null>(null);
   const [notesText, setNotesText] = useState('');
+  const [assigning, setAssigning] = useState<any | null>(null);
 
   async function loadLeads() {
     setLoading(true);
@@ -1806,11 +1962,20 @@ function MessengerLeadsView({ tenants, onCreateTenant, onReload }: { tenants: an
     } catch (e: any) { alert(e.message); }
   }
 
+  async function handleAssign(tenantId: string) {
+    if (!assigning) return;
+    await adminApi.assignLead('messenger', assigning.id, tenantId);
+    setAssigning(null);
+    loadLeads();
+    onReload();
+  }
+
   const statusColor: Record<string, string> = {
     pending:        'bg-amber-100 text-amber-700',
     contacted:      'bg-blue-100 text-blue-700',
     tenant_created: 'bg-green-100 text-green-700',
     rejected:       'bg-red-100 text-red-700',
+    assigned:       'bg-teal-100 text-teal-700',
   };
 
   if (loading) return <Spinner />;
@@ -1831,11 +1996,16 @@ function MessengerLeadsView({ tenants, onCreateTenant, onReload }: { tenants: an
                 <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium', statusColor[lead.status] || statusColor.pending)}>
                   {lead.status}
                 </span>
+                {lead.status === 'assigned' && lead.tenant_id && (
+                  <span className="text-xs text-teal-600 font-medium">
+                    → {tenants.find(t => t.id === lead.tenant_id)?.name || lead.tenant_id.slice(0, 8)}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-3 mt-1 text-xs text-slate-400 flex-wrap">
                 {lead.facebook_page_id && <span>Page ID: {lead.facebook_page_id}</span>}
                 <span>{new Date(lead.created_at).toLocaleString()}</span>
-                {lead.tenant_id && (
+                {lead.tenant_id && lead.status !== 'assigned' && (
                   <span className="text-green-600 font-medium">
                     Tenant: {tenants.find(t => t.id === lead.tenant_id)?.name || lead.tenant_id.slice(0, 8)}
                   </span>
@@ -1865,12 +2035,15 @@ function MessengerLeadsView({ tenants, onCreateTenant, onReload }: { tenants: an
                   </Button>
                 </>
               )}
-              {lead.status !== 'tenant_created' && lead.status !== 'rejected' && (
-                <Button size="sm" onClick={() => {
-                  onCreateTenant(lead.id);
-                }}>
-                  Create Tenant
-                </Button>
+              {!['tenant_created', 'rejected', 'assigned'].includes(lead.status) && (
+                <>
+                  <Button size="sm" onClick={() => onCreateTenant(lead.id)}>
+                    Create Tenant
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setAssigning(lead)}>
+                    <Link size={12} /> Assign to Existing
+                  </Button>
+                </>
               )}
               {!editingNotes && (
                 <Button size="sm" variant="ghost" onClick={() => {
@@ -1884,6 +2057,14 @@ function MessengerLeadsView({ tenants, onCreateTenant, onReload }: { tenants: an
           </div>
         </div>
       ))}
+      {assigning && (
+        <AssignLeadModal
+          leadName={assigning.facebook_page_name || 'Unknown Page'}
+          channelType="messenger"
+          onClose={() => setAssigning(null)}
+          onAssigned={handleAssign}
+        />
+      )}
     </div>
   );
 }

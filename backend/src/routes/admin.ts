@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
-import { encrypt } from '../utils/encryption.js';
+import { encrypt, decrypt } from '../utils/encryption.js';
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth, requireAdmin);
@@ -278,6 +278,20 @@ adminRouter.post('/tenants/:id/migrate-demo-data', async (req: Request, res: Res
     }
     ok(res, { migrated: results });
   } catch (e: any) { err(res, e.message, 500); }
+});
+
+// GET /admin/tenants/list — lightweight list with channel connection flags
+adminRouter.get('/tenants/list', async (_req: Request, res: Response) => {
+  const tenants = await dbAll(`
+    SELECT id, name, type,
+      CASE WHEN whatsapp_number IS NOT NULL AND whatsapp_number != '' THEN 1 ELSE 0 END AS has_whatsapp,
+      CASE WHEN instagram_account_id IS NOT NULL THEN 1 ELSE 0 END AS has_instagram,
+      CASE WHEN messenger_page_id IS NOT NULL THEN 1 ELSE 0 END AS has_messenger
+    FROM tenants
+    WHERE deleted_at IS NULL
+    ORDER BY name ASC
+  `);
+  ok(res, tenants);
 });
 
 // GET /admin/tenants/:id  — single tenant with channel settings
@@ -565,4 +579,126 @@ adminRouter.delete('/tenants/:id', async (req: Request, res: Response) => {
 
   console.log(`[Admin] Tenant ${tenant.name} (${id}) soft-deleted by ${adminEmail}. R2 files deleted: ${deletedFiles}`);
   ok(res, { deletedFiles });
+});
+
+// POST /admin/leads/:leadType/:leadId/assign — assign lead to existing tenant
+adminRouter.post('/leads/:leadType/:leadId/assign', async (req: Request, res: Response) => {
+  const { leadType, leadId } = req.params;
+  const { tenantId } = req.body as { tenantId?: string };
+
+  if (!tenantId) return err(res, 'tenantId is required');
+  if (!['whatsapp', 'instagram', 'messenger'].includes(leadType))
+    return err(res, "leadType must be 'whatsapp', 'instagram', or 'messenger'");
+
+  const tableMap: Record<string, string> = {
+    whatsapp: 'whatsapp_signup_leads',
+    instagram: 'instagram_signup_leads',
+    messenger: 'messenger_signup_leads',
+  };
+  const table = tableMap[leadType];
+
+  const lead = await dbGet(`SELECT * FROM ${table} WHERE id = ?`, leadId) as any;
+  if (!lead) return err(res, 'Lead not found', 404);
+  if (lead.status === 'tenant_created' || lead.status === 'assigned')
+    return err(res, `Lead already ${lead.status}`);
+
+  const tenant = await dbGet('SELECT id, name FROM tenants WHERE id = ? AND deleted_at IS NULL', tenantId) as any;
+  if (!tenant) return err(res, 'Tenant not found', 404);
+
+  const adminEmail = (req.user as any)?.email || 'unknown';
+
+  try {
+    if (leadType === 'whatsapp') {
+      const phoneRaw = (lead.phone_number || '').replace(/[\s\-()]/g, '').trim();
+      const phone = phoneRaw.startsWith('whatsapp:') ? phoneRaw : `whatsapp:${phoneRaw}`;
+      await dbRun(
+        `UPDATE tenants SET
+           provider = 'meta',
+           meta_waba_id = ?,
+           whatsapp_number = ?,
+           whatsapp_connected_at = ${isPg ? 'NOW()' : 'CURRENT_TIMESTAMP'}
+         WHERE id = ?`,
+        lead.waba_id, phone, tenantId,
+      );
+    } else if (leadType === 'instagram') {
+      const accessToken = lead.access_token_encrypted ? decrypt(lead.access_token_encrypted) : '';
+      await dbRun(
+        `UPDATE tenants SET
+           instagram_account_id = ?,
+           instagram_oauth_token_encrypted = ?,
+           instagram_oauth_expires_at = ${isPg ? "NOW() + INTERVAL '60 days'" : "datetime('now', '+60 days')"},
+           instagram_connection_type = 'oauth'
+         WHERE id = ?`,
+        lead.instagram_account_id, lead.access_token_encrypted, tenantId,
+      );
+      if (accessToken) {
+        if (isPg) {
+          await dbRun(
+            `INSERT INTO hotel_channel_settings (id, tenant_id, channel, ai_enabled, connected, access_token)
+             VALUES (gen_random_uuid(), ?, 'instagram', false, true, ?)
+             ON CONFLICT (tenant_id, channel) DO UPDATE SET
+               connected = true, access_token = excluded.access_token, updated_at = NOW()`,
+            tenantId, accessToken,
+          );
+        } else {
+          await dbRun(
+            `INSERT INTO hotel_channel_settings (id, tenant_id, channel, ai_enabled, connected, access_token)
+             VALUES (?, ?, 'instagram', 0, 1, ?)
+             ON CONFLICT (tenant_id, channel) DO UPDATE SET
+               connected = 1, access_token = excluded.access_token, updated_at = CURRENT_TIMESTAMP`,
+            crypto.randomUUID(), tenantId, accessToken,
+          );
+        }
+      }
+    } else if (leadType === 'messenger') {
+      const pageToken = lead.access_token_encrypted ? decrypt(lead.access_token_encrypted) : '';
+      await dbRun(
+        `UPDATE tenants SET
+           messenger_page_id = ?,
+           messenger_page_name = ?,
+           messenger_access_token_encrypted = ?,
+           messenger_connected_at = ${isPg ? 'NOW()' : 'CURRENT_TIMESTAMP'},
+           messenger_connection_type = 'oauth'
+         WHERE id = ?`,
+        lead.facebook_page_id, lead.facebook_page_name, lead.access_token_encrypted, tenantId,
+      );
+      if (pageToken) {
+        if (isPg) {
+          await dbRun(
+            `INSERT INTO hotel_channel_settings (id, tenant_id, channel, ai_enabled, connected, access_token)
+             VALUES (gen_random_uuid(), ?, 'facebook', false, true, ?)
+             ON CONFLICT (tenant_id, channel) DO UPDATE SET
+               connected = true, access_token = excluded.access_token, updated_at = NOW()`,
+            tenantId, pageToken,
+          );
+        } else {
+          await dbRun(
+            `INSERT INTO hotel_channel_settings (id, tenant_id, channel, ai_enabled, connected, access_token)
+             VALUES (?, ?, 'facebook', 0, 1, ?)
+             ON CONFLICT (tenant_id, channel) DO UPDATE SET
+               connected = 1, access_token = excluded.access_token, updated_at = CURRENT_TIMESTAMP`,
+            crypto.randomUUID(), tenantId, pageToken,
+          );
+        }
+        try {
+          const { subscribePageToWebhook } = await import('./messengerSignup.js');
+          await subscribePageToWebhook(lead.facebook_page_id, pageToken);
+        } catch (e: any) {
+          console.warn('[Admin] Messenger webhook subscription during assign failed:', e.message);
+        }
+      }
+    }
+
+    // Update lead status
+    await dbRun(
+      `UPDATE ${table} SET status = 'assigned', tenant_id = ?, assigned_at = ${isPg ? 'NOW()' : 'CURRENT_TIMESTAMP'}, updated_at = ${isPg ? 'NOW()' : 'CURRENT_TIMESTAMP'} WHERE id = ?`,
+      tenantId, leadId,
+    );
+
+    console.log(`[Admin] Lead ${leadId} (${leadType}) assigned to tenant ${tenant.name} by ${adminEmail}`);
+    ok(res, { tenantName: tenant.name });
+  } catch (e: any) {
+    console.error(`[Admin] Lead assign error:`, e.message);
+    err(res, e.message, 500);
+  }
 });
