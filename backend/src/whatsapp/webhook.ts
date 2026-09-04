@@ -554,11 +554,11 @@ whatsappRouter.get('/webhook', (req: Request, res: Response) => {
   const challenge = req.query['hub.challenge']    as string;
 
   if (mode === 'subscribe') {
-    if (token === process.env.META_VERIFY_TOKEN) {
-      console.log('[Meta] ✅ Webhook verified successfully');
+    if (token === process.env.META_VERIFY_TOKEN || token === process.env.MESSENGER_VERIFY_TOKEN) {
+      console.log('[Meta] Webhook verified successfully');
       return res.status(200).send(challenge);
     }
-    console.warn('[Meta] ❌ Webhook verification failed — token mismatch');
+    console.warn('[Meta] Webhook verification failed — token mismatch');
     return res.sendStatus(403);
   }
 
@@ -574,6 +574,16 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
   // Meta Cloud API payloads always carry object: 'whatsapp_business_account'
   if (req.body?.object === 'whatsapp_business_account') {
     return handleMetaWebhook(req, res);
+  }
+
+  // Messenger webhooks (object: 'page') may arrive here when Meta's app-level
+  // webhook URL points to /whatsapp/webhook — route to the Messenger handler
+  if (req.body?.object === 'page') {
+    res.sendStatus(200);
+    const { handleMessengerWebhookBody } = await import('../routes/messengerWebhook.js');
+    try { await handleMessengerWebhookBody(req.body); }
+    catch (err: any) { console.error('[Messenger via /whatsapp/webhook] Error:', err.message); }
+    return;
   }
 
   // ── TWILIO handler (unchanged logic) ─────────────────────────────────────

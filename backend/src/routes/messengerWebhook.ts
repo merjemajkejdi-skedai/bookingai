@@ -31,35 +31,44 @@ router.get('/messenger/webhook', (req, res) => {
   res.sendStatus(403);
 });
 
+export async function handleMessengerWebhookBody(body: any): Promise<void> {
+  if (body.object !== 'page') return;
+
+  for (const entry of body.entry ?? []) {
+    const pageId: string = entry.id;
+
+    const tenant = await dbGet(
+      `SELECT * FROM tenants WHERE messenger_page_id = ? AND deleted_at IS NULL LIMIT 1`,
+      pageId,
+    ) as any;
+
+    console.log(`[Messenger] Tenant lookup for page_id: ${pageId} — found: ${tenant?.name || 'NOT FOUND'}`);
+
+    if (!tenant) {
+      console.warn(`[Messenger] Unknown page ID: ${pageId}`);
+      continue;
+    }
+
+    for (const event of entry.messaging ?? []) {
+      try {
+        const senderPsid = event.sender?.id ?? 'unknown';
+        const msgText = event.message?.text ?? '';
+        console.log(`[Messenger] Incoming message from ${senderPsid} to page ${pageId}`);
+        if (msgText) console.log(`[Messenger] Processing message: "${msgText.slice(0, 80)}"`);
+        await handleMessengerMessage(tenant, event);
+      } catch (err: any) {
+        alertError(err, 'messengerMessageHandler', { tenantId: tenant.id, pageId });
+        console.error('[Messenger] Message handler error:', err.message);
+      }
+    }
+  }
+}
+
 router.post('/messenger/webhook', async (req, res) => {
   res.sendStatus(200);
 
   try {
-    const body = req.body;
-    if (body.object !== 'page') return;
-
-    for (const entry of body.entry ?? []) {
-      const pageId: string = entry.id;
-
-      const tenant = await dbGet(
-        `SELECT * FROM tenants WHERE messenger_page_id = ? AND deleted_at IS NULL LIMIT 1`,
-        pageId,
-      ) as any;
-
-      if (!tenant) {
-        console.warn(`[Messenger] Unknown page ID: ${pageId}`);
-        continue;
-      }
-
-      for (const event of entry.messaging ?? []) {
-        try {
-          await handleMessengerMessage(tenant, event);
-        } catch (err: any) {
-          alertError(err, 'messengerMessageHandler', { tenantId: tenant.id, pageId });
-          console.error('[Messenger] Message handler error:', err.message);
-        }
-      }
-    }
+    await handleMessengerWebhookBody(req.body);
   } catch (err: any) {
     alertError(err, 'messengerWebhook');
     console.error('[Messenger] Webhook error:', err.message);
