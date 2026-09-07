@@ -1626,6 +1626,30 @@ export async function runMigrations() {
       `ALTER TABLE skedai_conversations    ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ DEFAULT NULL`,
       `ALTER TABLE skedai_conversations    ADD COLUMN IF NOT EXISTS archived_by VARCHAR(20) DEFAULT NULL`,
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS archive_after_days INTEGER NOT NULL DEFAULT 30`,
+      // manual_leads_001 — sales pipeline tracker for manually-pursued prospects
+      `CREATE TABLE IF NOT EXISTS manual_leads (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_name VARCHAR(255) NOT NULL,
+  business_type VARCHAR(50),
+  address TEXT,
+  maps_url TEXT,
+  contact_person VARCHAR(255),
+  contact_role VARCHAR(255),
+  contact_phone VARCHAR(50),
+  contact_email VARCHAR(255),
+  rating INTEGER CHECK (rating >= 1 AND rating <= 5),
+  status VARCHAR(20) NOT NULL DEFAULT 'cold',
+  brought_by VARCHAR(255),
+  number_of_rooms INTEGER,
+  potential_sale_price DECIMAL(10,2),
+  currency VARCHAR(10) DEFAULT 'EUR',
+  notes TEXT,
+  tenant_id UUID REFERENCES tenants(id),
+  converted_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)`,
+      `CREATE INDEX IF NOT EXISTS idx_manual_leads_status ON manual_leads(status)`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -2445,6 +2469,31 @@ export async function runMigrations() {
     created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
   )`);
+
+  // manual_leads_001 — sales pipeline tracker for manually-pursued prospects
+  exec(`CREATE TABLE IF NOT EXISTS manual_leads (
+    id TEXT PRIMARY KEY,
+    tenant_name TEXT NOT NULL,
+    business_type TEXT,
+    address TEXT,
+    maps_url TEXT,
+    contact_person TEXT,
+    contact_role TEXT,
+    contact_phone TEXT,
+    contact_email TEXT,
+    rating INTEGER,
+    status TEXT NOT NULL DEFAULT 'cold',
+    brought_by TEXT,
+    number_of_rooms INTEGER,
+    potential_sale_price REAL,
+    currency TEXT DEFAULT 'EUR',
+    notes TEXT,
+    tenant_id TEXT,
+    converted_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+  )`);
+  exec('CREATE INDEX IF NOT EXISTS idx_manual_leads_status ON manual_leads(status)');
 
   // archive_001: conversation auto-archive — archived_at/archived_by on every
   // conversations table, archive_after_days on tenants

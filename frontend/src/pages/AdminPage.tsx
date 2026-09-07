@@ -21,8 +21,9 @@ export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) 
   const [creating, setCreating]   = useState(false);
   const [editing, setEditing]     = useState<any>(null);
   const [resetting, setResetting] = useState<any>(null);
-  const [adminTab, setAdminTab]   = useState<'shops' | 'leads' | 'ig_leads' | 'msg_leads'>('shops');
+  const [adminTab, setAdminTab]   = useState<'shops' | 'leads' | 'ig_leads' | 'msg_leads' | 'manual_leads'>('shops');
   const [pendingMessengerLeadId, setPendingMessengerLeadId] = useState<string | null>(null);
+  const [pendingManualLead, setPendingManualLead] = useState<any | null>(null);
   const [showDeleted, setShowDeleted] = useState(false);
   const [deleting, setDeleting]       = useState<any>(null);
   const [deleteStep, setDeleteStep]   = useState<1 | 2>(1);
@@ -116,10 +117,10 @@ export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) 
 
       {/* Tab buttons */}
       <div className="flex gap-1 mb-4 border-b border-slate-200">
-        {(['shops', 'leads', 'ig_leads', 'msg_leads'] as const).map(tab => (
+        {(['shops', 'leads', 'ig_leads', 'msg_leads', 'manual_leads'] as const).map(tab => (
           <button key={tab} onClick={() => setAdminTab(tab)}
             className={clsx('px-3 py-1.5 text-sm font-medium border-b-2 transition-colors capitalize', adminTab === tab ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-600')}>
-            {tab === 'leads' ? 'WA Leads' : tab === 'ig_leads' ? 'IG Leads' : tab === 'msg_leads' ? 'FB Leads' : tab}
+            {tab === 'leads' ? 'WA Leads' : tab === 'ig_leads' ? 'IG Leads' : tab === 'msg_leads' ? 'FB Leads' : tab === 'manual_leads' ? 'Manual Leads' : tab}
           </button>
         ))}
       </div>
@@ -132,6 +133,15 @@ export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) 
 
       {/* Messenger Leads */}
       {adminTab === 'msg_leads' && <MessengerLeadsView tenants={tenants} onCreateTenant={(leadId?: string) => { setPendingMessengerLeadId(leadId || null); setCreating(true); }} onReload={load} />}
+
+      {/* Manual Leads (sales pipeline tracker) */}
+      {adminTab === 'manual_leads' && (
+        <ManualLeadsView
+          tenants={tenants}
+          onCreateTenant={(lead: any) => { setPendingManualLead(lead); setCreating(true); }}
+          onViewShop={onViewShop}
+        />
+      )}
 
       {/* Tenant list */}
       {adminTab === 'shops' && (
@@ -256,15 +266,25 @@ export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) 
       {/* Create modal */}
       {creating && (
         <CreateTenantModal
-          onClose={() => { setCreating(false); setPendingMessengerLeadId(null); }}
+          initial={pendingManualLead ? {
+            name: pendingManualLead.tenant_name,
+            type: { hotel: 'hotel', shop: 'shop', general_business: 'general_business', art_classes: 'art_class' }[pendingManualLead.business_type as string] || undefined,
+          } : undefined}
+          onClose={() => { setCreating(false); setPendingMessengerLeadId(null); setPendingManualLead(null); }}
           onSaved={async (tenantId?: string) => {
             if (pendingMessengerLeadId && tenantId) {
               try {
                 await adminApi.updateMessengerLead(pendingMessengerLeadId, { tenant_id: tenantId });
               } catch (e: any) { console.error('Failed to link Messenger lead:', e.message); }
             }
+            if (pendingManualLead && tenantId) {
+              try {
+                await adminApi.convertManualLead(pendingManualLead.id, tenantId);
+              } catch (e: any) { console.error('Failed to convert manual lead:', e.message); }
+            }
             setCreating(false);
             setPendingMessengerLeadId(null);
+            setPendingManualLead(null);
             load();
           }}
         />
@@ -377,9 +397,9 @@ function CopyId({ id }: { id: string }) {
 }
 
 // --- Create tenant modal ----------------------------------------------------
-function CreateTenantModal({ onClose, onSaved }: { onClose: () => void; onSaved: (tenantId?: string) => void }) {
+function CreateTenantModal({ onClose, onSaved, initial }: { onClose: () => void; onSaved: (tenantId?: string) => void; initial?: { name?: string; type?: string } }) {
   const [form, setForm] = useState({
-    name: '', type: 'barbershop', timezone: 'Europe/Tirane',
+    name: initial?.name || '', type: initial?.type || 'barbershop', timezone: 'Europe/Tirane',
     ownerEmail: '', ownerPassword: '',
     whatsappNumber: '', plan: 'starter', billingEmail: '',
     provider: 'twilio',
@@ -2066,5 +2086,356 @@ function MessengerLeadsView({ tenants, onCreateTenant, onReload }: { tenants: an
         />
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Manual Leads — sales pipeline tracker for manually-pursued prospects
+// ---------------------------------------------------------------------------
+
+const MANUAL_LEAD_STATUSES = ['cold', 'contacted', 'interested', 'negotiating', 'won', 'lost'] as const;
+const MANUAL_LEAD_STATUS_LABEL: Record<string, string> = {
+  cold: 'Cold', contacted: 'Contacted', interested: 'Interested',
+  negotiating: 'Negotiating', won: 'Won', lost: 'Lost',
+};
+const MANUAL_LEAD_STATUS_COLOR: Record<string, string> = {
+  cold: 'bg-slate-100 text-slate-600',
+  contacted: 'bg-blue-100 text-blue-700',
+  interested: 'bg-amber-100 text-amber-700',
+  negotiating: 'bg-orange-100 text-orange-700',
+  won: 'bg-green-100 text-green-700',
+  lost: 'bg-red-100 text-red-700',
+};
+const MANUAL_LEAD_STATUS_DOT: Record<string, string> = {
+  cold: '⚪', contacted: '🔵', interested: '🟡', negotiating: '🟠', won: '🟢', lost: '🔴',
+};
+const MANUAL_LEAD_BUSINESS_TYPES = [
+  { value: 'hotel', label: 'Hotel' },
+  { value: 'shop', label: 'Shop' },
+  { value: 'general_business', label: 'General Business' },
+  { value: 'art_classes', label: 'Art Classes' },
+  { value: 'other', label: 'Other' },
+];
+const CURRENCIES = ['EUR', 'USD', 'ALL', 'GBP'];
+
+function StarRating({ value, onChange, readOnly }: { value: number; onChange?: (v: number) => void; readOnly?: boolean }) {
+  return (
+    <div className="flex items-center gap-0.5">
+      {[1, 2, 3, 4, 5].map(n => (
+        <button
+          key={n}
+          type="button"
+          disabled={readOnly}
+          onClick={() => onChange?.(value === n ? 0 : n)}
+          className={clsx(!readOnly && 'cursor-pointer', readOnly && 'cursor-default')}
+        >
+          <Star size={readOnly ? 13 : 20} className={n <= value ? 'text-amber-400 fill-amber-400' : 'text-slate-300'} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ManualLeadsView({ tenants, onCreateTenant, onViewShop }: { tenants: any[]; onCreateTenant: (lead: any) => void; onViewShop?: (tenant: AdminTenant) => void }) {
+  const [leads, setLeads] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showLost, setShowLost] = useState(false);
+  const [sortBy, setSortBy] = useState<'updated' | 'status' | 'rating'>('updated');
+  const [formOpen, setFormOpen] = useState<'new' | any | null>(null);
+  const [broughtByOptions, setBroughtByOptions] = useState<{ teamMembers: string[]; existingTenants: string[] }>({ teamMembers: [], existingTenants: [] });
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  async function load() {
+    setLoading(true);
+    try { setLeads(await adminApi.getManualLeads()); }
+    catch (e: any) { console.error('Failed to load manual leads:', e.message); }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => {
+    load();
+    adminApi.getManualLeadBroughtByOptions().then(setBroughtByOptions).catch(e => console.error('Failed to load brought-by options:', e.message));
+  }, []);
+
+  async function changeStatus(lead: any, status: string) {
+    try {
+      await adminApi.updateManualLead(lead.id, { status });
+      load();
+    } catch (e: any) { alert(e.message); }
+  }
+
+  async function handleDelete(id: string) {
+    try {
+      await adminApi.deleteManualLead(id);
+      setDeletingId(null);
+      load();
+    } catch (e: any) { alert(e.message); }
+  }
+
+  const visibleLeads = leads
+    .filter(l => showLost || l.status !== 'lost')
+    .sort((a, b) => {
+      if (sortBy === 'status') return a.status.localeCompare(b.status);
+      if (sortBy === 'rating') return (b.rating || 0) - (a.rating || 0);
+      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+    });
+
+  const summary = MANUAL_LEAD_STATUSES.reduce((acc, s) => {
+    acc[s] = leads.filter(l => l.status === s).length;
+    return acc;
+  }, {} as Record<string, number>);
+  const pipelineValue = leads
+    .filter(l => l.status !== 'won' && l.status !== 'lost')
+    .reduce((sum, l) => sum + (parseFloat(l.potential_sale_price) || 0), 0);
+
+  if (loading) return <Spinner />;
+
+  return (
+    <div className="space-y-4">
+      {/* Summary strip */}
+      <div className="flex flex-wrap items-center gap-3 text-sm bg-white rounded-xl border border-slate-200 px-4 py-3">
+        {MANUAL_LEAD_STATUSES.filter(s => s !== 'lost').map(s => (
+          <span key={s} className="text-slate-600">{MANUAL_LEAD_STATUS_DOT[s]} {summary[s]} {MANUAL_LEAD_STATUS_LABEL[s]}</span>
+        ))}
+        <span className="ml-auto font-medium text-slate-800">
+          Total potential: {pipelineValue > 0 ? `€${pipelineValue.toLocaleString()}/mo` : '—'}
+        </span>
+      </div>
+
+      {/* Toolbar */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-1.5 text-xs text-slate-500">
+            <input type="checkbox" checked={showLost} onChange={e => setShowLost(e.target.checked)} />
+            Show lost leads
+          </label>
+          <select value={sortBy} onChange={e => setSortBy(e.target.value as any)}
+            className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white">
+            <option value="updated">Sort: Recently updated</option>
+            <option value="status">Sort: Status</option>
+            <option value="rating">Sort: Rating</option>
+          </select>
+        </div>
+        <Button size="sm" onClick={() => setFormOpen('new')}><Plus size={14} /> New Lead</Button>
+      </div>
+
+      {/* List */}
+      <div className="space-y-3">
+        {visibleLeads.length === 0 && (
+          <div className="text-center py-12 text-slate-400">
+            <p className="text-sm">No manual leads yet.</p>
+          </div>
+        )}
+        {visibleLeads.map(lead => {
+          const tenant = lead.tenant_id ? tenants.find(t => t.id === lead.tenant_id) : null;
+          return (
+            <div key={lead.id} className="bg-white rounded-xl border border-slate-200 px-5 py-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-medium text-slate-800">{lead.tenant_name}</p>
+                    {lead.business_type && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 capitalize">
+                        {MANUAL_LEAD_BUSINESS_TYPES.find(t => t.value === lead.business_type)?.label || lead.business_type}
+                      </span>
+                    )}
+                    {lead.rating ? <StarRating value={lead.rating} readOnly /> : null}
+                  </div>
+                  <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-400 flex-wrap">
+                    {lead.contact_person && <span>{lead.contact_person}{lead.contact_role ? ` (${lead.contact_role})` : ''}</span>}
+                    {lead.contact_phone && <span>{lead.contact_phone}</span>}
+                    {lead.potential_sale_price && (
+                      <span className="text-slate-600 font-medium">
+                        {parseFloat(lead.potential_sale_price).toLocaleString()} {lead.currency || 'EUR'}/mo
+                      </span>
+                    )}
+                    {lead.brought_by && <span>Brought by: {lead.brought_by}</span>}
+                    {lead.maps_url && (
+                      <a href={lead.maps_url} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline inline-flex items-center gap-0.5">
+                        <ExternalLink size={11} /> Maps
+                      </a>
+                    )}
+                  </div>
+                  {lead.notes && <p className="mt-1.5 text-xs text-slate-500 italic line-clamp-2">{lead.notes}</p>}
+                </div>
+                <div className="flex flex-col items-end gap-2 shrink-0">
+                  <select
+                    value={lead.status}
+                    onChange={e => changeStatus(lead, e.target.value)}
+                    className={clsx('text-xs font-medium rounded-full px-2 py-1 border-0 cursor-pointer', MANUAL_LEAD_STATUS_COLOR[lead.status])}
+                  >
+                    {MANUAL_LEAD_STATUSES.map(s => <option key={s} value={s}>{MANUAL_LEAD_STATUS_LABEL[s]}</option>)}
+                  </select>
+                  <div className="flex gap-1.5 items-center">
+                    {tenant ? (
+                      onViewShop ? (
+                        <button
+                          onClick={() => onViewShop({ id: tenant.id, name: tenant.name, type: tenant.type })}
+                          className="text-xs text-green-600 font-medium hover:underline inline-flex items-center gap-0.5">
+                          → {tenant.name} <ExternalLink size={10} />
+                        </button>
+                      ) : (
+                        <span className="text-xs text-green-600 font-medium">→ {tenant.name}</span>
+                      )
+                    ) : (
+                      <Button size="sm" variant="outline" onClick={() => onCreateTenant(lead)}>Create Tenant</Button>
+                    )}
+                    <Button size="sm" variant="ghost" onClick={() => setFormOpen(lead)}><Pencil size={12} /></Button>
+                    <Button size="sm" variant="ghost" onClick={() => setDeletingId(lead.id)}><Trash2 size={12} className="text-red-500" /></Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {formOpen && (
+        <ManualLeadFormModal
+          lead={formOpen === 'new' ? null : formOpen}
+          broughtByOptions={broughtByOptions}
+          onClose={() => setFormOpen(null)}
+          onSaved={() => { setFormOpen(null); load(); }}
+        />
+      )}
+
+      {deletingId && (
+        <Modal title="Delete lead" onClose={() => setDeletingId(null)}>
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">Delete this manual lead? This cannot be undone.</p>
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <Button variant="ghost" onClick={() => setDeletingId(null)}>Cancel</Button>
+              <Button className="bg-red-600 hover:bg-red-700 text-white" onClick={() => handleDelete(deletingId)}>Delete</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function ManualLeadFormModal({ lead, broughtByOptions, onClose, onSaved }: {
+  lead: any | null;
+  broughtByOptions: { teamMembers: string[]; existingTenants: string[] };
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [form, setForm] = useState({
+    tenantName: lead?.tenant_name || '',
+    businessType: lead?.business_type || 'hotel',
+    mapsUrl: lead?.maps_url || '',
+    address: lead?.address || '',
+    contactPerson: lead?.contact_person || '',
+    contactRole: lead?.contact_role || '',
+    contactPhone: lead?.contact_phone || '',
+    contactEmail: lead?.contact_email || '',
+    rating: lead?.rating || 0,
+    status: lead?.status || 'cold',
+    broughtBy: lead?.brought_by || '',
+    numberOfRooms: lead?.number_of_rooms || '',
+    potentialSalePrice: lead?.potential_sale_price || '',
+    currency: lead?.currency || 'EUR',
+    notes: lead?.notes || '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const set = (k: string) => (e: any) => setForm(f => ({ ...f, [k]: e.target.value }));
+
+  async function save() {
+    if (!form.tenantName.trim()) { setError('Tenant name is required'); return; }
+    setSaving(true); setError('');
+    try {
+      if (lead) await adminApi.updateManualLead(lead.id, form);
+      else await adminApi.createManualLead(form);
+      onSaved();
+    } catch (e: any) { setError(e.message); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <Modal title={lead ? 'Edit Manual Lead' : 'New Manual Lead'} onClose={onClose} wide>
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <Input label="Tenant name *" value={form.tenantName} onChange={set('tenantName')} placeholder="Grand Hotel" />
+          <Select label="Business type" value={form.businessType} onChange={set('businessType')}>
+            {MANUAL_LEAD_BUSINESS_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </Select>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Input label="Google Maps URL" value={form.mapsUrl} onChange={set('mapsUrl')} placeholder="https://maps.google.com/..." />
+          <Input label="Address" value={form.address} onChange={set('address')} placeholder="123 Main St" />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Input label="Contact person" value={form.contactPerson} onChange={set('contactPerson')} placeholder="Jane Doe" />
+          <Input label="Contact role" value={form.contactRole} onChange={set('contactRole')} placeholder="Manager" />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Input label="Contact phone" value={form.contactPhone} onChange={set('contactPhone')} placeholder="+355..." />
+          <Input label="Contact email" type="email" value={form.contactEmail} onChange={set('contactEmail')} placeholder="jane@hotel.com" />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 items-start">
+          <div className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-slate-700">Rating</span>
+            <StarRating value={form.rating} onChange={v => setForm(f => ({ ...f, rating: v }))} />
+          </div>
+          <Select label="Status" value={form.status} onChange={set('status')}>
+            {MANUAL_LEAD_STATUSES.map(s => <option key={s} value={s}>{MANUAL_LEAD_STATUS_LABEL[s]}</option>)}
+          </Select>
+        </div>
+
+        <div className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Brought by</span>
+          <input
+            list="brought-by-options"
+            value={form.broughtBy}
+            onChange={set('broughtBy')}
+            placeholder="Search or type a name..."
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-400/40 focus:border-brand-400"
+          />
+          <datalist id="brought-by-options">
+            {broughtByOptions.teamMembers.map(n => <option key={`team-${n}`} value={n} label={`${n} (Team)`} />)}
+            {broughtByOptions.existingTenants.map(n => <option key={`tenant-${n}`} value={n} label={`${n} (Customer)`} />)}
+          </datalist>
+        </div>
+
+        {form.businessType === 'hotel' && (
+          <Input label="Number of rooms" type="number" min={0} value={form.numberOfRooms} onChange={set('numberOfRooms')} placeholder="24" />
+        )}
+
+        <div className="grid grid-cols-2 gap-3">
+          <Input label="Potential sale price / mo" type="number" min={0} step="0.01" value={form.potentialSalePrice} onChange={set('potentialSalePrice')} placeholder="450" />
+          <Select label="Currency" value={form.currency} onChange={set('currency')}>
+            {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </Select>
+        </div>
+
+        <div className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Notes</span>
+          <textarea
+            value={form.notes}
+            onChange={set('notes')}
+            rows={3}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-400/40 focus:border-brand-400 resize-none"
+            placeholder="Any relevant notes..."
+          />
+        </div>
+
+        {lead && (
+          <p className="text-[11px] text-slate-400">
+            Created {new Date(lead.created_at).toLocaleString()} · Updated {new Date(lead.updated_at).toLocaleString()}
+          </p>
+        )}
+
+        {error && <p className="text-sm text-red-500">{error}</p>}
+        <div className="flex justify-end gap-2 pt-2 border-t">
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save Lead'}</Button>
+        </div>
+      </div>
+    </Modal>
   );
 }

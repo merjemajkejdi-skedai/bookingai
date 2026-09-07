@@ -213,4 +213,19 @@ export const adminApi = {
     authFetch<any>(`/api/messenger/signup-leads/${leadId}`, {
       method: 'PATCH', body: JSON.stringify(data),
     }),
+  // ── Manual Leads (sales pipeline tracker) ──────────────────────────────
+  getManualLeads: (status?: string) =>
+    adminFetch<any[]>(`/admin/manual-leads${status ? `?status=${encodeURIComponent(status)}` : ''}`),
+  createManualLead: (data: Record<string, any>) =>
+    adminFetch<any>('/admin/manual-leads', { method: 'POST', body: JSON.stringify(data) }),
+  updateManualLead: (id: string, data: Record<string, any>) =>
+    adminFetch<any>(`/admin/manual-leads/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteManualLead: (id: string) =>
+    adminFetch<{ deleted: boolean }>(`/admin/manual-leads/${id}`, { method: 'DELETE' }),
+  convertManualLead: (id: string, tenantId: string) =>
+    adminFetch<any>(`/admin/manual-leads/${id}/convert`, {
+      method: 'POST', body: JSON.stringify({ tenantId }),
+    }),
+  getManualLeadBroughtByOptions: () =>
+    adminFetch<{ teamMembers: string[]; existingTenants: string[] }>('/admin/manual-leads/brought-by-options'),
 };
