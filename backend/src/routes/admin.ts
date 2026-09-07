@@ -713,118 +713,148 @@ const MANUAL_LEAD_TEAM_MEMBERS = ['Kejdi Merjemaj'];
 
 // GET /admin/manual-leads/brought-by-options — MUST be before /manual-leads/:id
 adminRouter.get('/manual-leads/brought-by-options', async (_req: Request, res: Response) => {
-  const tenants = await dbAll(`SELECT name FROM tenants WHERE deleted_at IS NULL ORDER BY name ASC`);
-  ok(res, {
-    teamMembers: MANUAL_LEAD_TEAM_MEMBERS,
-    existingTenants: tenants.map((t: any) => t.name),
-  });
+  try {
+    const tenants = await dbAll(`SELECT name FROM tenants WHERE deleted_at IS NULL ORDER BY name ASC`);
+    ok(res, {
+      teamMembers: MANUAL_LEAD_TEAM_MEMBERS,
+      existingTenants: tenants.map((t: any) => t.name),
+    });
+  } catch (e: any) {
+    console.error('[Admin] manual-leads brought-by-options error:', e.message);
+    err(res, e.message, 500);
+  }
 });
 
 // GET /admin/manual-leads?status=cold|contacted|...
 adminRouter.get('/manual-leads', async (req: Request, res: Response) => {
-  const { status } = req.query as { status?: string };
-  let sql = `SELECT ml.*, t.name AS tenant_name_resolved FROM manual_leads ml LEFT JOIN tenants t ON t.id = ml.tenant_id`;
-  const params: any[] = [];
-  if (status && MANUAL_LEAD_STATUSES.includes(status)) {
-    sql += ` WHERE ml.status = ?`;
-    params.push(status);
+  try {
+    const { status } = req.query as { status?: string };
+    let sql = `SELECT ml.*, t.name AS tenant_name_resolved FROM manual_leads ml LEFT JOIN tenants t ON t.id = ml.tenant_id`;
+    const params: any[] = [];
+    if (status && MANUAL_LEAD_STATUSES.includes(status)) {
+      sql += ` WHERE ml.status = ?`;
+      params.push(status);
+    }
+    sql += ` ORDER BY ml.updated_at DESC`;
+    const leads = await dbAll(sql, ...params);
+    ok(res, leads);
+  } catch (e: any) {
+    console.error('[Admin] manual-leads list error:', e.message);
+    err(res, e.message, 500);
   }
-  sql += ` ORDER BY ml.updated_at DESC`;
-  const leads = await dbAll(sql, ...params);
-  ok(res, leads);
 });
 
 // POST /admin/manual-leads
 adminRouter.post('/manual-leads', async (req: Request, res: Response) => {
-  const {
-    tenantName, businessType, address, mapsUrl,
-    contactPerson, contactRole, contactPhone, contactEmail,
-    rating, status = 'cold', broughtBy,
-    numberOfRooms, potentialSalePrice, currency = 'EUR', notes,
-  } = req.body as Record<string, any>;
+  try {
+    const {
+      tenantName, businessType, address, mapsUrl,
+      contactPerson, contactRole, contactPhone, contactEmail,
+      rating, status = 'cold', broughtBy,
+      numberOfRooms, potentialSalePrice, currency = 'EUR', notes,
+    } = req.body as Record<string, any>;
 
-  if (!tenantName || !String(tenantName).trim()) return err(res, 'tenantName is required');
-  if (status && !MANUAL_LEAD_STATUSES.includes(status)) return err(res, 'Invalid status');
-  if (rating !== undefined && rating !== null && rating !== '' && (rating < 1 || rating > 5))
-    return err(res, 'rating must be between 1 and 5');
+    if (!tenantName || !String(tenantName).trim()) return err(res, 'tenantName is required');
+    if (status && !MANUAL_LEAD_STATUSES.includes(status)) return err(res, 'Invalid status');
+    if (rating !== undefined && rating !== null && rating !== '' && (rating < 1 || rating > 5))
+      return err(res, 'rating must be between 1 and 5');
 
-  const id = crypto.randomUUID();
-  await dbRun(
-    `INSERT INTO manual_leads
-       (id, tenant_name, business_type, address, maps_url,
-        contact_person, contact_role, contact_phone, contact_email,
-        rating, status, brought_by, number_of_rooms, potential_sale_price, currency, notes)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    id, tenantName.trim(), businessType || null, address || null, mapsUrl || null,
-    contactPerson || null, contactRole || null, contactPhone || null, contactEmail || null,
-    rating || null, status, broughtBy || null,
-    numberOfRooms || null, potentialSalePrice || null, currency || 'EUR', notes || null,
-  );
+    const id = crypto.randomUUID();
+    await dbRun(
+      `INSERT INTO manual_leads
+         (id, tenant_name, business_type, address, maps_url,
+          contact_person, contact_role, contact_phone, contact_email,
+          rating, status, brought_by, number_of_rooms, potential_sale_price, currency, notes)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      id, tenantName.trim(), businessType || null, address || null, mapsUrl || null,
+      contactPerson || null, contactRole || null, contactPhone || null, contactEmail || null,
+      rating || null, status, broughtBy || null,
+      numberOfRooms || null, potentialSalePrice || null, currency || 'EUR', notes || null,
+    );
 
-  ok(res, await dbGet('SELECT * FROM manual_leads WHERE id = ?', id));
+    ok(res, await dbGet('SELECT * FROM manual_leads WHERE id = ?', id));
+  } catch (e: any) {
+    console.error('[Admin] manual-leads create error:', e.message);
+    err(res, e.message, 500);
+  }
 });
 
 // PATCH /admin/manual-leads/:id
 adminRouter.patch('/manual-leads/:id', async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const existing = await dbGet('SELECT id FROM manual_leads WHERE id = ?', id);
-  if (!existing) return err(res, 'Lead not found', 404);
+  try {
+    const { id } = req.params;
+    const existing = await dbGet('SELECT id FROM manual_leads WHERE id = ?', id);
+    if (!existing) return err(res, 'Lead not found', 404);
 
-  const fieldMap: Record<string, string> = {
-    tenantName: 'tenant_name', businessType: 'business_type', address: 'address', mapsUrl: 'maps_url',
-    contactPerson: 'contact_person', contactRole: 'contact_role', contactPhone: 'contact_phone', contactEmail: 'contact_email',
-    rating: 'rating', status: 'status', broughtBy: 'brought_by',
-    numberOfRooms: 'number_of_rooms', potentialSalePrice: 'potential_sale_price', currency: 'currency', notes: 'notes',
-  };
+    const fieldMap: Record<string, string> = {
+      tenantName: 'tenant_name', businessType: 'business_type', address: 'address', mapsUrl: 'maps_url',
+      contactPerson: 'contact_person', contactRole: 'contact_role', contactPhone: 'contact_phone', contactEmail: 'contact_email',
+      rating: 'rating', status: 'status', broughtBy: 'brought_by',
+      numberOfRooms: 'number_of_rooms', potentialSalePrice: 'potential_sale_price', currency: 'currency', notes: 'notes',
+    };
 
-  const body = req.body as Record<string, any>;
-  if (body.status !== undefined && !MANUAL_LEAD_STATUSES.includes(body.status))
-    return err(res, 'Invalid status');
-  if (body.rating !== undefined && body.rating !== null && body.rating !== '' && (body.rating < 1 || body.rating > 5))
-    return err(res, 'rating must be between 1 and 5');
+    const body = req.body as Record<string, any>;
+    if (body.status !== undefined && !MANUAL_LEAD_STATUSES.includes(body.status))
+      return err(res, 'Invalid status');
+    if (body.rating !== undefined && body.rating !== null && body.rating !== '' && (body.rating < 1 || body.rating > 5))
+      return err(res, 'rating must be between 1 and 5');
 
-  const sets: string[] = [];
-  const params: any[] = [];
-  for (const [key, column] of Object.entries(fieldMap)) {
-    if (body[key] !== undefined) {
-      sets.push(`${column} = ?`);
-      params.push(body[key] === '' ? null : body[key]);
+    const sets: string[] = [];
+    const params: any[] = [];
+    for (const [key, column] of Object.entries(fieldMap)) {
+      if (body[key] !== undefined) {
+        sets.push(`${column} = ?`);
+        params.push(body[key] === '' ? null : body[key]);
+      }
     }
+    if (!sets.length) return err(res, 'Nothing to update');
+
+    sets.push(isPg ? 'updated_at = NOW()' : "updated_at = CURRENT_TIMESTAMP");
+    params.push(id);
+    await dbRun(`UPDATE manual_leads SET ${sets.join(', ')} WHERE id = ?`, ...params);
+
+    ok(res, await dbGet('SELECT * FROM manual_leads WHERE id = ?', id));
+  } catch (e: any) {
+    console.error('[Admin] manual-leads update error:', e.message);
+    err(res, e.message, 500);
   }
-  if (!sets.length) return err(res, 'Nothing to update');
-
-  sets.push(isPg ? 'updated_at = NOW()' : "updated_at = CURRENT_TIMESTAMP");
-  params.push(id);
-  await dbRun(`UPDATE manual_leads SET ${sets.join(', ')} WHERE id = ?`, ...params);
-
-  ok(res, await dbGet('SELECT * FROM manual_leads WHERE id = ?', id));
 });
 
 // DELETE /admin/manual-leads/:id — hard delete, these are just sales tracker rows
 adminRouter.delete('/manual-leads/:id', async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const existing = await dbGet('SELECT id FROM manual_leads WHERE id = ?', id);
-  if (!existing) return err(res, 'Lead not found', 404);
-  await dbRun('DELETE FROM manual_leads WHERE id = ?', id);
-  ok(res, { deleted: true });
+  try {
+    const { id } = req.params;
+    const existing = await dbGet('SELECT id FROM manual_leads WHERE id = ?', id);
+    if (!existing) return err(res, 'Lead not found', 404);
+    await dbRun('DELETE FROM manual_leads WHERE id = ?', id);
+    ok(res, { deleted: true });
+  } catch (e: any) {
+    console.error('[Admin] manual-leads delete error:', e.message);
+    err(res, e.message, 500);
+  }
 });
 
 // POST /admin/manual-leads/:id/convert — link lead to a newly created tenant
 adminRouter.post('/manual-leads/:id/convert', async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const { tenantId } = req.body as { tenantId?: string };
-  if (!tenantId) return err(res, 'tenantId is required');
+  try {
+    const { id } = req.params;
+    const { tenantId } = req.body as { tenantId?: string };
+    if (!tenantId) return err(res, 'tenantId is required');
 
-  const lead = await dbGet('SELECT id FROM manual_leads WHERE id = ?', id);
-  if (!lead) return err(res, 'Lead not found', 404);
+    const lead = await dbGet('SELECT id FROM manual_leads WHERE id = ?', id);
+    if (!lead) return err(res, 'Lead not found', 404);
 
-  const tenant = await dbGet('SELECT id, name FROM tenants WHERE id = ? AND deleted_at IS NULL', tenantId) as any;
-  if (!tenant) return err(res, 'Tenant not found', 404);
+    const tenant = await dbGet('SELECT id, name FROM tenants WHERE id = ? AND deleted_at IS NULL', tenantId) as any;
+    if (!tenant) return err(res, 'Tenant not found', 404);
 
-  await dbRun(
-    `UPDATE manual_leads SET tenant_id = ?, converted_at = ${isPg ? 'NOW()' : 'CURRENT_TIMESTAMP'}, status = 'won', updated_at = ${isPg ? 'NOW()' : 'CURRENT_TIMESTAMP'} WHERE id = ?`,
-    tenantId, id,
-  );
+    await dbRun(
+      `UPDATE manual_leads SET tenant_id = ?, converted_at = ${isPg ? 'NOW()' : 'CURRENT_TIMESTAMP'}, status = 'won', updated_at = ${isPg ? 'NOW()' : 'CURRENT_TIMESTAMP'} WHERE id = ?`,
+      tenantId, id,
+    );
 
-  ok(res, await dbGet('SELECT * FROM manual_leads WHERE id = ?', id));
+    ok(res, await dbGet('SELECT * FROM manual_leads WHERE id = ?', id));
+  } catch (e: any) {
+    console.error('[Admin] manual-leads convert error:', e.message);
+    err(res, e.message, 500);
+  }
 });

@@ -1627,8 +1627,11 @@ export async function runMigrations() {
       `ALTER TABLE skedai_conversations    ADD COLUMN IF NOT EXISTS archived_by VARCHAR(20) DEFAULT NULL`,
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS archive_after_days INTEGER NOT NULL DEFAULT 30`,
       // manual_leads_001 — sales pipeline tracker for manually-pursued prospects
+      // NOTE: tenant_id is TEXT with no FK — tenants.id is TEXT, not UUID, and a
+      // typed UUID REFERENCES tenants(id) fails to create (type mismatch), which
+      // silently failed the whole CREATE TABLE under the pgAlters .catch(warn).
       `CREATE TABLE IF NOT EXISTS manual_leads (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id TEXT PRIMARY KEY,
   tenant_name VARCHAR(255) NOT NULL,
   business_type VARCHAR(50),
   address TEXT,
@@ -1644,7 +1647,7 @@ export async function runMigrations() {
   potential_sale_price DECIMAL(10,2),
   currency VARCHAR(10) DEFAULT 'EUR',
   notes TEXT,
-  tenant_id UUID REFERENCES tenants(id),
+  tenant_id TEXT,
   converted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
