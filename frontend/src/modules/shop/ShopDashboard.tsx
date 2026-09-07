@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ShoppingBag, Package, MessageSquare, HelpCircle, Settings, Plus, Trash2, Pencil, X, Check, RefreshCw, LogOut, BarChart2, Users, QrCode, Boxes } from 'lucide-react';
+import { ShoppingBag, Package, MessageSquare, HelpCircle, Settings, Plus, Trash2, Pencil, X, Check, RefreshCw, LogOut, BarChart2, Users, QrCode, Boxes, Archive, ArchiveRestore } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
 import jsPDF from 'jspdf';
 import { shopApi, setViewTenantId } from './api';
@@ -1525,16 +1525,18 @@ function ConversationsTab() {
   const [selected, setSelected] = useState<ShopConversation | null>(null);
   const [loading, setLoading] = useState(true);
   const [clearing, setClearing] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [statusTab, setStatusTab] = useState<'active' | 'archived'>('active');
 
   function loadList() {
     setLoadError(null);
-    shopApi.getConversations()
+    shopApi.getConversations(statusTab)
       .then(setConvs)
       .catch((e: any) => setLoadError(e.message ?? 'Failed to load conversations'))
       .finally(() => setLoading(false));
   }
-  useEffect(() => { loadList(); }, []);
+  useEffect(() => { setSelected(null); loadList(); }, [statusTab]);
 
   async function open(c: ShopConversation) {
     const full = await shopApi.getConversation(c.guest_phone).catch(() => c);
@@ -1551,51 +1553,93 @@ function ConversationsTab() {
     } catch { /* ignore */ } finally { setClearing(false); }
   }
 
+  async function toggleArchive() {
+    if (!selected) return;
+    setArchiving(true);
+    try {
+      if (selected.archived_at) await shopApi.unarchiveConversation(selected.guest_phone);
+      else                      await shopApi.archiveConversation(selected.guest_phone);
+      setSelected(null);
+      loadList();
+    } catch (e: any) {
+      alert(`${selected.archived_at ? 'Unarchive' : 'Archive'} failed: ${e.message}`);
+    } finally { setArchiving(false); }
+  }
+
   return (
-    <div className="flex flex-col md:flex-row gap-3 h-full overflow-hidden">
-      <div className="w-full md:w-56 lg:w-64 flex-shrink-0 overflow-y-auto space-y-1 max-h-44 md:max-h-full">
-        {loading && <div className="text-slate-400 text-sm p-2">Loading…</div>}
-        {convs.map(c => (
-          <button key={c.id} onClick={() => open(c)} className={`w-full text-left px-3 py-2.5 rounded-xl transition-colors ${selected?.id === c.id ? 'bg-brand-50 border border-brand-200' : 'hover:bg-slate-100'}`}>
-            <p className="text-sm font-medium text-slate-800 truncate">{c.guest_phone}</p>
-            <p className="text-xs text-slate-400">{timeAgo(c.updated_at)}</p>
-          </button>
-        ))}
-        {loadError && (
-          <div className="text-red-500 text-xs px-2 py-2 bg-red-50 rounded-lg">
-            Error: {loadError}
-          </div>
-        )}
-        {!loading && !loadError && convs.length === 0 && <div className="text-slate-300 text-sm text-center py-8">No conversations yet</div>}
+    <div className="flex flex-col h-full overflow-hidden gap-2">
+      <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit flex-shrink-0">
+        <button onClick={() => setStatusTab('active')}
+          className={`text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${statusTab === 'active' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+          Active
+        </button>
+        <button onClick={() => setStatusTab('archived')}
+          className={`text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${statusTab === 'archived' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+          Archived
+        </button>
       </div>
-      <div className="flex-1 overflow-y-auto bg-white rounded-xl border border-slate-200 p-4">
-        {!selected ? (
-          <div className="flex flex-col items-center justify-center h-full text-slate-300">
-            <MessageSquare size={32} className="mb-2" />
-            <p className="text-sm">Select a conversation</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-slate-400 font-medium">{selected.guest_phone}</p>
-              <button
-                onClick={clearHistory}
-                disabled={clearing}
-                title="Clear conversation history (resets AI memory for this customer)"
-                className="flex items-center gap-1 text-xs text-red-400 hover:text-red-600 disabled:opacity-40 transition-colors">
-                <Trash2 size={12} /> {clearing ? 'Clearing…' : 'Clear history'}
-              </button>
+      <div className="flex flex-col md:flex-row gap-3 flex-1 overflow-hidden">
+        <div className="w-full md:w-56 lg:w-64 flex-shrink-0 overflow-y-auto space-y-1 max-h-44 md:max-h-full">
+          {loading && <div className="text-slate-400 text-sm p-2">Loading…</div>}
+          {convs.map(c => (
+            <button key={c.id} onClick={() => open(c)} className={`w-full text-left px-3 py-2.5 rounded-xl transition-colors ${selected?.id === c.id ? 'bg-brand-50 border border-brand-200' : 'hover:bg-slate-100'}`}>
+              <p className="text-sm font-medium text-slate-800 truncate">{c.guest_phone}</p>
+              <p className="text-xs text-slate-400">
+                {c.archived_at
+                  ? `Archived ${timeAgo(c.archived_at)} ${c.archived_by === 'staff' ? 'by staff' : 'automatically'}`
+                  : timeAgo(c.updated_at)}
+              </p>
+            </button>
+          ))}
+          {loadError && (
+            <div className="text-red-500 text-xs px-2 py-2 bg-red-50 rounded-lg">
+              Error: {loadError}
             </div>
-            {(selected.messages || []).map((m, i) => (
-              <div key={i} className={`flex ${m.role === 'assistant' ? 'justify-start' : 'justify-end'}`}>
-                <div className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm ${m.role === 'assistant' ? 'bg-slate-100 text-slate-800' : 'bg-brand-600 text-white'}`}>
-                  {m.content}
+          )}
+          {!loading && !loadError && convs.length === 0 && (
+            <div className="text-slate-300 text-sm text-center py-8">
+              {statusTab === 'archived' ? 'No archived conversations' : 'No conversations yet'}
+            </div>
+          )}
+        </div>
+        <div className="flex-1 overflow-y-auto bg-white rounded-xl border border-slate-200 p-4">
+          {!selected ? (
+            <div className="flex flex-col items-center justify-center h-full text-slate-300">
+              <MessageSquare size={32} className="mb-2" />
+              <p className="text-sm">Select a conversation</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-slate-400 font-medium">{selected.guest_phone}</p>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={toggleArchive}
+                    disabled={archiving}
+                    className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 disabled:opacity-40 transition-colors">
+                    {selected.archived_at ? <ArchiveRestore size={12} /> : <Archive size={12} />}
+                    {archiving ? 'Saving…' : selected.archived_at ? 'Unarchive' : 'Archive'}
+                  </button>
+                  <button
+                    onClick={clearHistory}
+                    disabled={clearing}
+                    title="Clear conversation history (resets AI memory for this customer)"
+                    className="flex items-center gap-1 text-xs text-red-400 hover:text-red-600 disabled:opacity-40 transition-colors">
+                    <Trash2 size={12} /> {clearing ? 'Clearing…' : 'Clear history'}
+                  </button>
                 </div>
               </div>
-            ))}
-            {(selected.messages || []).length === 0 && <p className="text-slate-300 text-sm text-center py-8">No messages</p>}
-          </div>
-        )}
+              {(selected.messages || []).map((m, i) => (
+                <div key={i} className={`flex ${m.role === 'assistant' ? 'justify-start' : 'justify-end'}`}>
+                  <div className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm ${m.role === 'assistant' ? 'bg-slate-100 text-slate-800' : 'bg-brand-600 text-white'}`}>
+                    {m.content}
+                  </div>
+                </div>
+              ))}
+              {(selected.messages || []).length === 0 && <p className="text-slate-300 text-sm text-center py-8">No messages</p>}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -2353,11 +2397,70 @@ function ConfigTab() {
       )}
 
       <MenuDocumentsSection />
+      <ArchiveSettingsSection />
     </div>
   );
 }
 
 // ── Menu Documents Section ─────────────────────────────────────────────────────
+
+function ArchiveSettingsSection() {
+  const [days, setDays]       = useState(30);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving]   = useState(false);
+  const [saved, setSaved]     = useState(false);
+
+  useEffect(() => {
+    shopApi.getArchiveSettings()
+      .then(d => setDays(Number(d.archive_after_days) || 30))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await shopApi.updateArchiveSettings(days);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (e: any) {
+      alert(`Save failed: ${e.message}`);
+    } finally { setSaving(false); }
+  }
+
+  if (loading) return null;
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
+      <h4 className="text-sm font-semibold text-slate-800">Conversation auto-archive</h4>
+      <p className="text-xs text-slate-400">
+        Conversations with no new messages for this many days move to the Archive tab
+        automatically. Customers can still message you — the conversation reactivates immediately.
+      </p>
+      <div className="flex items-end gap-3">
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={1}
+            value={days}
+            onChange={e => setDays(Math.max(1, Number(e.target.value) || 1))}
+            className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+          />
+          <span className="text-sm text-slate-500">days of inactivity</span>
+        </div>
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${
+            saved ? 'bg-green-50 text-green-700' : 'bg-teal-500 text-white hover:bg-teal-600 disabled:opacity-50'
+          }`}
+        >
+          {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save'}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function MenuDocumentsSection() {
   const [documents, setDocuments] = useState<any[]>([]);

@@ -115,8 +115,21 @@ export const api = {
   }>) => req(`/hotel/departments/${deptId}/schedules`, { method: 'PUT', body: JSON.stringify({ schedules }) }),
 
   // Conversations
-  getConversations: (channel?: string) =>
-    req<Conversation[]>(`/hotel/conversations${channel ? `?channel=${encodeURIComponent(channel)}` : ''}`),
+  getConversations: (channel?: string, status: 'active' | 'archived' = 'active') => {
+    const params = new URLSearchParams({ status });
+    if (channel) params.set('channel', channel);
+    return req<Conversation[]>(`/hotel/conversations?${params.toString()}`);
+  },
+  archiveConversation: (id: string) =>
+    req<{ archived: boolean }>(`/hotel/conversations/${id}/archive`, { method: 'POST' }),
+  unarchiveConversation: (id: string) =>
+    req<{ unarchived: boolean }>(`/hotel/conversations/${id}/unarchive`, { method: 'POST' }),
+  getArchiveSettings: () =>
+    req<{ archive_after_days: number }>('/hotel/archive-settings'),
+  updateArchiveSettings: (archive_after_days: number) =>
+    req<{ archive_after_days: number }>('/hotel/archive-settings', {
+      method: 'PUT', body: JSON.stringify({ archive_after_days }),
+    }),
   getActiveChannels: () =>
     req<{ whatsapp: boolean; instagram: boolean; messenger: boolean; email: boolean }>('/hotel/tenant/channels'),
   getConversation: (phone: string) =>

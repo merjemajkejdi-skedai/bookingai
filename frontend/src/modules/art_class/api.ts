@@ -82,6 +82,13 @@ export const api = {
   updateConfig: (data: { ownerWhatsapp: string; studioLocation: string; studioEmojis: string; studioGreeting: string; studioFarewell: string }) =>
     req('/art-class/config', { method: 'PUT', body: JSON.stringify(data) }),
 
+  // Conversation auto-archive
+  getArchiveSettings: () => req<{ archive_after_days: number }>('/art-class/archive-settings'),
+  updateArchiveSettings: (archive_after_days: number) =>
+    req<{ archive_after_days: number }>('/art-class/archive-settings', {
+      method: 'PUT', body: JSON.stringify({ archive_after_days }),
+    }),
+
   // Subscription plans
   getPlans: () => req<SubscriptionPlan[]>('/subscription-plans'),
   createPlan: (data: Omit<SubscriptionPlan, 'id'|'tenantId'|'createdAt'>) =>

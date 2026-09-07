@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { MessageSquare, RefreshCw, Send, User, Bot, UserCheck, Search, PauseCircle, PlayCircle } from 'lucide-react';
+import { MessageSquare, RefreshCw, Send, User, Bot, UserCheck, Search, PauseCircle, PlayCircle, Archive, ArchiveRestore } from 'lucide-react';
 import clsx from 'clsx';
 import { gbApi } from '../api';
 import type { GbConversation } from '../types';
@@ -49,6 +49,8 @@ export function GbConversationsPage() {
   const [selected, setSelected] = useState<GbConversation | null>(null);
   const [search, setSearch] = useState('');
   const [channelFilter, setChannelFilter] = useState<string>('all');
+  const [statusTab, setStatusTab] = useState<'active' | 'archived'>('active');
+  const [archivingId, setArchivingId] = useState<string | null>(null);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -56,10 +58,10 @@ export function GbConversationsPage() {
 
   const loadInbox = useCallback(async () => {
     try {
-      const list = await gbApi.getConversations();
+      const list = await gbApi.getConversations(statusTab);
       setConvos(list);
     } catch { /* silent */ }
-  }, []);
+  }, [statusTab]);
 
   const loadThread = useCallback(async () => {
     if (!selected) return;
@@ -70,6 +72,7 @@ export function GbConversationsPage() {
   }, [selected?.id]);
 
   useEffect(() => {
+    setSelected(null);
     loadInbox().then(() => setLoading(false));
     const i = setInterval(loadInbox, INBOX_POLL_MS);
     return () => clearInterval(i);
@@ -125,6 +128,21 @@ export function GbConversationsPage() {
     } catch (e: any) { alert(e.message); }
   }
 
+  async function handleArchiveToggle(e: React.MouseEvent, c: GbConversation) {
+    e.stopPropagation();
+    setArchivingId(c.id);
+    try {
+      if (c.archived_at) await gbApi.unarchiveConversation(c.id);
+      else               await gbApi.archiveConversation(c.id);
+      if (selected?.id === c.id) setSelected(null);
+      await loadInbox();
+    } catch (err: any) {
+      alert(`${c.archived_at ? 'Unarchive' : 'Archive'} failed: ${err.message}`);
+    } finally {
+      setArchivingId(null);
+    }
+  }
+
   if (loading) {
     return <div className="flex items-center justify-center h-64"><RefreshCw className="animate-spin text-slate-400" size={24} /></div>;
   }
@@ -134,6 +152,18 @@ export function GbConversationsPage() {
       {/* Sidebar */}
       <div className="w-80 flex-shrink-0 border-r border-slate-200 flex flex-col">
         <div className="p-3 border-b border-slate-100 space-y-2">
+          <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">
+            <button onClick={() => setStatusTab('active')}
+              className={clsx('text-xs font-medium px-3 py-1.5 rounded-md transition-colors',
+                statusTab === 'active' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700')}>
+              Active
+            </button>
+            <button onClick={() => setStatusTab('archived')}
+              className={clsx('text-xs font-medium px-3 py-1.5 rounded-md transition-colors',
+                statusTab === 'archived' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700')}>
+              Archived
+            </button>
+          </div>
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input value={search} onChange={e => setSearch(e.target.value)}
@@ -152,7 +182,9 @@ export function GbConversationsPage() {
         </div>
         <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
           {filtered.length === 0 && (
-            <p className="text-sm text-slate-400 text-center py-8">No conversations</p>
+            <p className="text-sm text-slate-400 text-center py-8">
+              {statusTab === 'archived' ? 'No archived conversations' : 'No conversations'}
+            </p>
           )}
           {filtered.map(c => (
             <button key={c.id} onClick={() => setSelected(c)}
@@ -167,7 +199,24 @@ export function GbConversationsPage() {
                   {c.updated_at && <span className="text-[10px] text-slate-400">{timeAgo(c.updated_at)}</span>}
                 </div>
               </div>
-              <p className="text-xs text-slate-500 truncate">{c.last_message || 'No messages'}</p>
+              <p className="text-xs text-slate-500 truncate mb-1.5">{c.last_message || 'No messages'}</p>
+              <div className="flex items-center justify-between">
+                {c.archived_at ? (
+                  <span className="text-[10px] text-slate-400">
+                    Archived {timeAgo(c.archived_at)} {c.archived_by === 'staff' ? 'by staff' : 'automatically'}
+                  </span>
+                ) : <span />}
+                <button
+                  onClick={e => handleArchiveToggle(e, c)}
+                  disabled={archivingId === c.id}
+                  className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 bg-slate-50 hover:bg-slate-100 disabled:opacity-50 text-slate-600 rounded-md border border-slate-200 transition-colors flex-shrink-0"
+                >
+                  {archivingId === c.id
+                    ? <RefreshCw size={9} className="animate-spin" />
+                    : c.archived_at ? <ArchiveRestore size={9} /> : <Archive size={9} />}
+                  {c.archived_at ? 'Unarchive' : 'Archive'}
+                </button>
+              </div>
             </button>
           ))}
         </div>
@@ -199,6 +248,13 @@ export function GbConversationsPage() {
                     <PauseCircle size={14} /> Take Over
                   </button>
                 )}
+                <button
+                  onClick={e => handleArchiveToggle(e, selected)}
+                  disabled={archivingId === selected.id}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-50 transition-colors">
+                  {selected.archived_at ? <ArchiveRestore size={14} /> : <Archive size={14} />}
+                  {selected.archived_at ? 'Unarchive' : 'Archive'}
+                </button>
               </div>
             </div>
 

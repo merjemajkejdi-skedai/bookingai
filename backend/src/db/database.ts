@@ -370,6 +370,8 @@ const SCHEMA = `
     last_guest_message_at TEXT,
     ai_paused_until       TEXT,
     ai_paused_by          TEXT,
+    archived_at           TEXT,
+    archived_by           TEXT,
     UNIQUE (tenant_id, guest_phone)
   );
   CREATE INDEX IF NOT EXISTS idx_hotel_conv_tenant  ON hotel_conversations(tenant_id, updated_at);
@@ -622,6 +624,8 @@ const SCHEMA = `
     consecutive_errors INTEGER DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    archived_at TEXT,
+    archived_by TEXT,
     UNIQUE(tenant_id, guest_phone)
   );
   CREATE TABLE IF NOT EXISTS shop_faq (
@@ -1607,6 +1611,21 @@ export async function runMigrations() {
       `ALTER TABLE whatsapp_signup_leads ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ`,
       `ALTER TABLE instagram_signup_leads ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ`,
       `ALTER TABLE messenger_signup_leads ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ`,
+      // archive_001 — conversation auto-archive: archived_at/archived_by on every
+      // conversations table (skedai included for schema consistency only — the
+      // daily archive job explicitly skips tenant type 'skedai') + per-tenant
+      // archive_after_days setting, default 30
+      `ALTER TABLE hotel_conversations     ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ DEFAULT NULL`,
+      `ALTER TABLE hotel_conversations     ADD COLUMN IF NOT EXISTS archived_by VARCHAR(20) DEFAULT NULL`,
+      `ALTER TABLE shop_conversations      ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ DEFAULT NULL`,
+      `ALTER TABLE shop_conversations      ADD COLUMN IF NOT EXISTS archived_by VARCHAR(20) DEFAULT NULL`,
+      `ALTER TABLE gb_conversations        ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ DEFAULT NULL`,
+      `ALTER TABLE gb_conversations        ADD COLUMN IF NOT EXISTS archived_by VARCHAR(20) DEFAULT NULL`,
+      `ALTER TABLE art_class_conversations ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ DEFAULT NULL`,
+      `ALTER TABLE art_class_conversations ADD COLUMN IF NOT EXISTS archived_by VARCHAR(20) DEFAULT NULL`,
+      `ALTER TABLE skedai_conversations    ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ DEFAULT NULL`,
+      `ALTER TABLE skedai_conversations    ADD COLUMN IF NOT EXISTS archived_by VARCHAR(20) DEFAULT NULL`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS archive_after_days INTEGER NOT NULL DEFAULT 30`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -2426,6 +2445,41 @@ export async function runMigrations() {
     created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
   )`);
+
+  // archive_001: conversation auto-archive — archived_at/archived_by on every
+  // conversations table, archive_after_days on tenants
+  const tenantCols5 = prepare("SELECT name FROM pragma_table_info('tenants')")
+    .all().map((r: any) => r.name as string);
+  if (!tenantCols5.includes('archive_after_days'))
+    exec('ALTER TABLE tenants ADD COLUMN archive_after_days INTEGER NOT NULL DEFAULT 30');
+
+  const hotelConvCols2 = prepare("SELECT name FROM pragma_table_info('hotel_conversations')")
+    .all().map((r: any) => r.name as string);
+  if (!hotelConvCols2.includes('archived_at'))
+    exec('ALTER TABLE hotel_conversations ADD COLUMN archived_at TEXT');
+  if (!hotelConvCols2.includes('archived_by'))
+    exec('ALTER TABLE hotel_conversations ADD COLUMN archived_by TEXT');
+
+  const shopConvCols2 = prepare("SELECT name FROM pragma_table_info('shop_conversations')")
+    .all().map((r: any) => r.name as string);
+  if (!shopConvCols2.includes('archived_at'))
+    exec('ALTER TABLE shop_conversations ADD COLUMN archived_at TEXT');
+  if (!shopConvCols2.includes('archived_by'))
+    exec('ALTER TABLE shop_conversations ADD COLUMN archived_by TEXT');
+
+  const skedaiConvCols = prepare("SELECT name FROM pragma_table_info('skedai_conversations')")
+    .all().map((r: any) => r.name as string);
+  if (!skedaiConvCols.includes('archived_at'))
+    exec('ALTER TABLE skedai_conversations ADD COLUMN archived_at TEXT');
+  if (!skedaiConvCols.includes('archived_by'))
+    exec('ALTER TABLE skedai_conversations ADD COLUMN archived_by TEXT');
+
+  const artClassConvCols = prepare("SELECT name FROM pragma_table_info('art_class_conversations')")
+    .all().map((r: any) => r.name as string);
+  if (!artClassConvCols.includes('archived_at'))
+    exec('ALTER TABLE art_class_conversations ADD COLUMN archived_at TEXT');
+  if (!artClassConvCols.includes('archived_by'))
+    exec('ALTER TABLE art_class_conversations ADD COLUMN archived_by TEXT');
 
   console.log('✅ SQLite migrations complete');
 }

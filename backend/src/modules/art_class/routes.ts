@@ -440,6 +440,26 @@ artClassRouter.put('/art-class/config', requireAuth, async (req: Request, res: R
   } catch (e: any) { err(res, e.message, 500); }
 });
 
+// ── CONVERSATION AUTO-ARCHIVE ────────────────────────────────────────────────
+
+artClassRouter.get('/art-class/archive-settings', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    const row = await dbGet('SELECT archive_after_days FROM tenants WHERE id = ?', tenantId) as any;
+    ok(res, { archive_after_days: Number(row?.archive_after_days) || 30 });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+artClassRouter.put('/art-class/archive-settings', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const days = Number(req.body?.archive_after_days);
+  if (!Number.isInteger(days) || days < 1) return err(res, 'archive_after_days must be a positive integer');
+  try {
+    await dbRun('UPDATE tenants SET archive_after_days = ? WHERE id = ?', days, tenantId);
+    ok(res, { archive_after_days: days });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
 // ── SUBSCRIPTION PLANS ────────────────────────────────────────────────────────
 
 artClassRouter.get('/subscription-plans', requireAuth, async (req: Request, res: Response) => {

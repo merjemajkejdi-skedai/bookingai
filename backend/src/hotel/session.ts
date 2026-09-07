@@ -132,7 +132,9 @@ export async function saveGuestMessage(
          room_number           = COALESCE(excluded.room_number, hotel_conversations.room_number),
          last_message          = CURRENT_TIMESTAMP,
          updated_at            = CURRENT_TIMESTAMP,
-         last_guest_message_at = CURRENT_TIMESTAMP`,
+         last_guest_message_at = CURRENT_TIMESTAMP,
+         archived_at           = NULL,
+         archived_by           = NULL`,
       id, tenantId, phone, roomNumber ?? null, JSON.stringify(updated),
     );
   } catch (e: any) {

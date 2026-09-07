@@ -86,7 +86,8 @@ export const gbApi = {
   updateRequest: (id: string, data: { status?: string; staff_notes?: string }) =>
     req<GbRequest>('/gb/requests/' + id, { method: 'PATCH', body: JSON.stringify(data) }),
 
-  getConversations: () => req<GbConversation[]>('/gb/conversations'),
+  getConversations: (status: 'active' | 'archived' = 'active') =>
+    req<GbConversation[]>(`/gb/conversations?status=${status}`),
   getConversation: (id: string) => req<GbConversation>('/gb/conversations/' + id),
   sendReply: (id: string, message: string) =>
     req<any>('/gb/conversations/' + id + '/reply', { method: 'POST', body: JSON.stringify({ message }) }),
@@ -94,4 +95,13 @@ export const gbApi = {
     req<any>('/gb/conversations/' + id + '/takeover', { method: 'POST', body: JSON.stringify({ minutes }) }),
   resumeConversation: (id: string) =>
     req<any>('/gb/conversations/' + id + '/resume', { method: 'POST' }),
+  archiveConversation: (id: string) =>
+    req<any>('/gb/conversations/' + id + '/archive', { method: 'POST' }),
+  unarchiveConversation: (id: string) =>
+    req<any>('/gb/conversations/' + id + '/unarchive', { method: 'POST' }),
+  getArchiveSettings: () => req<{ archive_after_days: number }>('/hotel/archive-settings'),
+  updateArchiveSettings: (archive_after_days: number) =>
+    req<{ archive_after_days: number }>('/hotel/archive-settings', {
+      method: 'PUT', body: JSON.stringify({ archive_after_days }),
+    }),
 };

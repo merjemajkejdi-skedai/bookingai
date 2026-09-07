@@ -114,6 +114,10 @@ export interface Conversation {
   email_subject?: string | null;
   email_from_address?: string | null;
   email_from_name?: string | null;
+  // Archive state — set when the conversation has no activity for the
+  // tenant's archive_after_days window, or was archived manually by staff
+  archived_at?: string | null;
+  archived_by?: 'auto' | 'staff' | null;
 }
 
 export interface ChannelSetting {

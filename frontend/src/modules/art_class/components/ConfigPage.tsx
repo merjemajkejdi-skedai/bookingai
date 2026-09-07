@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Save, Phone, MapPin, Smile, MessageCircle, LogOut, CheckCircle2 } from 'lucide-react';
+import { Save, Phone, MapPin, Smile, MessageCircle, LogOut, CheckCircle2, Archive } from 'lucide-react';
 import { api } from '../api';
 import { Button, Input, Spinner } from '../ui';
 
@@ -41,6 +41,61 @@ function Section({ icon, title, children }: { icon: React.ReactNode; title: stri
       </div>
       {children}
     </div>
+  );
+}
+
+function ArchiveSettings() {
+  const [days, setDays]       = useState(30);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving]   = useState(false);
+  const [saved, setSaved]     = useState(false);
+
+  useEffect(() => {
+    api.getArchiveSettings()
+      .then(d => setDays(Number(d.archive_after_days) || 30))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true); setSaved(false);
+    try {
+      await api.updateArchiveSettings(days);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (err: any) {
+      alert(`Save failed: ${err.message}`);
+    } finally { setSaving(false); }
+  }
+
+  if (loading) return <Spinner />;
+
+  return (
+    <Section icon={<Archive size={15} />} title="Conversation Auto-Archive">
+      <p className="text-xs text-slate-400 -mt-1">
+        Conversations with no new messages for this many days move to the Archive tab
+        automatically. Customers can still message you — the conversation reactivates immediately.
+      </p>
+      <form onSubmit={handleSave} className="flex items-end gap-3">
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-xs text-slate-500">Auto-archive after</span>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={1}
+              value={days}
+              onChange={e => setDays(Math.max(1, Number(e.target.value) || 1))}
+              className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400/40"
+            />
+            <span className="text-sm text-slate-500">days of inactivity</span>
+          </div>
+        </label>
+        <Button type="submit" disabled={saving}>
+          {saving ? 'Saving…' : saved ? '✓ Saved!' : 'Save'}
+        </Button>
+      </form>
+    </Section>
   );
 }
 
@@ -184,6 +239,9 @@ export function ConfigPage() {
             )}
           </div>
         </form>
+
+        {/* Conversation Auto-Archive — own form/state, outside main form */}
+        <ArchiveSettings />
       </div>
     </div>
   );

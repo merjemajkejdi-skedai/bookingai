@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Save, Wifi, Coffee, Waves, UtensilsCrossed, Clock, Phone, MapPin, BookOpen, UserCheck, Star, MessageSquare, SmilePlus, AlertTriangle } from 'lucide-react';
+import { Save, Wifi, Coffee, Waves, UtensilsCrossed, Clock, Phone, MapPin, BookOpen, UserCheck, Star, MessageSquare, SmilePlus, AlertTriangle, Archive } from 'lucide-react';
 import { api } from '../api';
 import { Button, Input, Spinner } from '../ui';
 
@@ -219,6 +219,70 @@ const EMPTY: Config = {
   ask_maintenance_photo: true,
   add_conversation_to_faq_enabled: false,
 };
+
+// ── Conversation Auto-Archive section ─────────────────────────────────────────
+
+function ArchiveSettings() {
+  const [days, setDays]       = useState(30);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving]   = useState(false);
+  const [saved, setSaved]     = useState(false);
+
+  useEffect(() => {
+    api.getArchiveSettings()
+      .then(d => setDays(Number(d.archive_after_days) || 30))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api.updateArchiveSettings(days);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (err: any) {
+      alert(`Save failed: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) return <Spinner />;
+
+  return (
+    <section className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+      <div className="flex items-center gap-2">
+        <Archive size={15} className="text-slate-400" />
+        <h2 className="text-sm font-semibold text-slate-700">Conversation Auto-Archive</h2>
+      </div>
+      <p className="text-xs text-slate-400 -mt-1">
+        Conversations with no new messages for this many days move to the Archive tab
+        automatically. Guests can still message you — the conversation reactivates immediately.
+      </p>
+      <form onSubmit={handleSave} className="flex items-end gap-3">
+        <div className="space-y-1">
+          <label className="block text-xs font-medium text-slate-600">Auto-archive after</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={1}
+              value={days}
+              onChange={e => setDays(Math.max(1, Number(e.target.value) || 1))}
+              placeholder="30"
+              className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400/40"
+            />
+            <span className="text-sm text-slate-500">days of inactivity</span>
+          </div>
+        </div>
+        <Button type="submit" disabled={saving}>
+          {saving ? 'Saving…' : saved ? '✓ Saved!' : 'Save'}
+        </Button>
+      </form>
+    </section>
+  );
+}
 
 export function ConfigPage() {
   const [config, setConfig] = useState<Config>(EMPTY);
@@ -537,6 +601,11 @@ export function ConfigPage() {
         {/* Review Management — own form/state, outside main form */}
         <div className="mt-5">
           <ReviewSettings />
+        </div>
+
+        {/* Conversation Auto-Archive — own form/state, outside main form */}
+        <div className="mt-5">
+          <ArchiveSettings />
         </div>
 
       </div>

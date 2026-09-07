@@ -429,16 +429,45 @@ gbRouter.patch('/requests/:id', requireAuth, async (req: Request, res: Response)
 
 gbRouter.get('/conversations', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
+  const status = (req.query.status as string) || 'active';
+  const statusClause = status === 'archived' ? 'AND archived_at IS NOT NULL' : 'AND archived_at IS NULL';
+  const orderClause  = status === 'archived' ? 'ORDER BY archived_at DESC' : 'ORDER BY updated_at DESC';
   try {
     const rows = await dbAll(
       `SELECT id, tenant_id, guest_phone, guest_name, guest_username, guest_email,
               last_message, channel, channel_user_id, ai_paused_until, ai_paused_by,
-              updated_at, last_guest_message_at
-       FROM gb_conversations WHERE tenant_id = ?
-       ORDER BY updated_at DESC`,
+              updated_at, last_guest_message_at, archived_at, archived_by
+       FROM gb_conversations WHERE tenant_id = ? ${statusClause}
+       ${orderClause}`,
       tenantId,
     );
     ok(res, rows);
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// POST /gb/conversations/:id/archive — manual staff archive
+gbRouter.post('/conversations/:id/archive', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    await dbRun(
+      `UPDATE gb_conversations SET archived_at = ${isPg ? 'NOW()' : 'CURRENT_TIMESTAMP'}, archived_by = 'staff'
+       WHERE id = ? AND tenant_id = ?`,
+      req.params.id, tenantId,
+    );
+    ok(res, { archived: true });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// POST /gb/conversations/:id/unarchive — manual staff unarchive
+gbRouter.post('/conversations/:id/unarchive', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    await dbRun(
+      `UPDATE gb_conversations SET archived_at = NULL, archived_by = NULL
+       WHERE id = ? AND tenant_id = ?`,
+      req.params.id, tenantId,
+    );
+    ok(res, { unarchived: true });
   } catch (e: any) { err(res, e.message, 500); }
 });
 

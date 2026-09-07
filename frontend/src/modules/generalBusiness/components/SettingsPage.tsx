@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Save, Plus, Pencil, Trash2, RefreshCw, ToggleLeft, ToggleRight, Building, MapPin, Users, HelpCircle, FileText, Radio } from 'lucide-react';
+import { Save, Plus, Pencil, Trash2, RefreshCw, ToggleLeft, ToggleRight, Building, MapPin, Users, HelpCircle, FileText, Radio, Archive } from 'lucide-react';
 import clsx from 'clsx';
 import { gbApi } from '../api';
 import type { GbConfig, GbLocation, GbDepartment, GbFaq, GbDocument } from '../types';
@@ -127,6 +127,61 @@ function ConfigTab({ onMenuToggle }: { onMenuToggle: (v: boolean) => void }) {
         <button onClick={handleSave} disabled={saving}
           className="flex items-center gap-1.5 px-5 py-2 rounded-lg bg-brand-500 text-white text-sm font-medium hover:bg-brand-600 disabled:opacity-40 transition-colors">
           <Save size={14} /> {saving ? 'Saving...' : 'Save Settings'}
+        </button>
+      </div>
+
+      <ArchiveSection />
+    </div>
+  );
+}
+
+// ── Conversation Auto-Archive (own state, rendered inside Config sub-tab) ──────
+
+function ArchiveSection() {
+  const [days, setDays]       = useState(30);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving]   = useState(false);
+  const [saved, setSaved]     = useState(false);
+
+  useEffect(() => {
+    gbApi.getArchiveSettings()
+      .then(d => setDays(Number(d.archive_after_days) || 30))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await gbApi.updateArchiveSettings(days);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (e: any) { alert(e.message); }
+    setSaving(false);
+  }
+
+  if (loading) return null;
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <Archive size={15} className="text-slate-400" />
+        <h3 className="text-sm font-semibold text-slate-700">Conversation Auto-Archive</h3>
+      </div>
+      <p className="text-xs text-slate-400">
+        Conversations with no new messages for this many days move to the Archive tab
+        automatically. Customers can still message you — the conversation reactivates immediately.
+      </p>
+      <div className="flex items-end gap-3">
+        <div className="flex items-center gap-2">
+          <input type="number" min={1} value={days}
+            onChange={e => setDays(Math.max(1, Number(e.target.value) || 1))}
+            className="w-24 px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
+          <span className="text-sm text-slate-500">days of inactivity</span>
+        </div>
+        <button onClick={handleSave} disabled={saving}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-500 text-white text-sm font-medium hover:bg-brand-600 disabled:opacity-40 transition-colors">
+          <Save size={14} /> {saving ? 'Saving...' : saved ? 'Saved ✓' : 'Save'}
         </button>
       </div>
     </div>

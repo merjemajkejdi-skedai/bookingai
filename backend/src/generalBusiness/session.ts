@@ -126,7 +126,9 @@ export async function saveGbGuestMessage(
          channel_user_id       = COALESCE(excluded.channel_user_id, gb_conversations.channel_user_id),
          last_message          = CURRENT_TIMESTAMP,
          updated_at            = CURRENT_TIMESTAMP,
-         last_guest_message_at = CURRENT_TIMESTAMP`,
+         last_guest_message_at = CURRENT_TIMESTAMP,
+         archived_at           = NULL,
+         archived_by           = NULL`,
       id, tenantId, phone, guestName ?? null, guestUsername ?? null, guestEmail ?? null,
       channel ?? null, channelUserId ?? null, JSON.stringify(updated),
     );

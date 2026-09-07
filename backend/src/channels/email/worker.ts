@@ -153,7 +153,9 @@ async function processMessage(
        SET messages = messages || ?::jsonb,
            last_message = CURRENT_TIMESTAMP,
            updated_at = CURRENT_TIMESTAMP,
-           last_guest_message_at = CURRENT_TIMESTAMP
+           last_guest_message_at = CURRENT_TIMESTAMP,
+           archived_at = NULL,
+           archived_by = NULL
        WHERE id = ?`,
       JSON.stringify([emailMsg]), conversationId,
     );
@@ -165,7 +167,9 @@ async function processMessage(
        SET messages = ?,
            last_message = CURRENT_TIMESTAMP,
            updated_at = CURRENT_TIMESTAMP,
-           last_guest_message_at = CURRENT_TIMESTAMP
+           last_guest_message_at = CURRENT_TIMESTAMP,
+           archived_at = NULL,
+           archived_by = NULL
        WHERE id = ?`,
       JSON.stringify([...prev, emailMsg].slice(-200)), conversationId,
     );

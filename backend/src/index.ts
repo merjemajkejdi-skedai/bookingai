@@ -21,6 +21,7 @@ import { startShopCron } from './shop/cron.js';
 import { emailAccountsRouter } from './routes/emailAccounts.js';
 import { startEmailWorker } from './channels/email/worker.js';
 import { startInstagramTokenRefresh } from './channels/instagramTokenRefresh.js';
+import { startArchiveCron } from './conversations/archiveCron.js';
 import { adminAnalyticsRouter } from './routes/adminAnalytics.js';
 import { whatsappSignupRouter } from './routes/whatsappSignup.js';
 import { instagramSignupRouter } from './routes/instagramSignup.js';
@@ -160,6 +161,7 @@ async function start() {
   startShopCron();
   startEmailWorker();
   startInstagramTokenRefresh();
+  startArchiveCron();
   app.listen(Number(PORT), '0.0.0.0', () => {
     console.log(`\n🚀 BookingAI backend running at http://localhost:${PORT}`);
     console.log(`   API:       http://localhost:${PORT}/api`);

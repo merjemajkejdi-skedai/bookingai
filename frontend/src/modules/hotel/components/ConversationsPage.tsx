@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { MessageSquare, RefreshCw, Send, User, Bot, UserCheck, Search, Bell, BellOff, LogOut, PauseCircle, BookOpen } from 'lucide-react';
+import { MessageSquare, RefreshCw, Send, User, Bot, UserCheck, Search, Bell, BellOff, LogOut, PauseCircle, BookOpen, Archive, ArchiveRestore } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../api';
 import type { Conversation, HotelMessage } from '../types';
@@ -816,6 +816,8 @@ export function ConversationsPage({ surveyEnabled = false, addToFaqEnabled = fal
   const [faqToast, setFaqToast]           = useState(false);
   const [channelFilter, setChannelFilter] = useState<string | null>(null);
   const [activeChannels, setActiveChannels] = useState<{ whatsapp: boolean; instagram: boolean; messenger: boolean; email: boolean } | null>(null);
+  const [statusTab, setStatusTab]     = useState<'active' | 'archived'>('active');
+  const [archivingId, setArchivingId] = useState<string | null>(null);
 
   const { permission, request: requestNotifPermission } = useNotificationPermission();
 
@@ -835,7 +837,7 @@ export function ConversationsPage({ surveyEnabled = false, addToFaqEnabled = fal
   const loadConvs = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const fresh = await api.getConversations(channelFilter ?? undefined);
+      const fresh = await api.getConversations(channelFilter ?? undefined, statusTab);
       setConvs(fresh);
       convsRef.current = fresh;
 
@@ -843,8 +845,8 @@ export function ConversationsPage({ surveyEnabled = false, addToFaqEnabled = fal
         // First load — seed lastSeen baseline, no notifications
         fresh.forEach(c => lastSeenRef.current.set(c.guest_phone, c.updated_at));
         initializedRef.current = true;
-      } else {
-        // Subsequent polls — detect new inbound guest messages
+      } else if (statusTab === 'active') {
+        // Subsequent polls — detect new inbound guest messages (active tab only)
         fresh.forEach(c => {
           const prev  = lastSeenRef.current.get(c.guest_phone);
           const isNew = !prev || new Date(c.updated_at) > new Date(prev);
@@ -864,7 +866,7 @@ export function ConversationsPage({ surveyEnabled = false, addToFaqEnabled = fal
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [channelFilter]);
+  }, [channelFilter, statusTab]);
 
   // Initial load
   useEffect(() => { loadConvs(); }, [loadConvs]);
@@ -939,6 +941,21 @@ export function ConversationsPage({ surveyEnabled = false, addToFaqEnabled = fal
     }
   }
 
+  // Archive / unarchive a conversation from the list
+  async function handleArchiveToggle(e: React.MouseEvent, c: Conversation) {
+    e.stopPropagation();
+    setArchivingId(c.id);
+    try {
+      if (c.archived_at) await api.unarchiveConversation(c.id);
+      else               await api.archiveConversation(c.id);
+      await loadConvs(true);
+    } catch (err: any) {
+      alert(`${c.archived_at ? 'Unarchive' : 'Archive'} failed: ${err.message}`);
+    } finally {
+      setArchivingId(null);
+    }
+  }
+
   const filtered = convs.filter(c => {
     const q = search.toLowerCase();
     return !q
@@ -999,6 +1016,28 @@ export function ConversationsPage({ surveyEnabled = false, addToFaqEnabled = fal
           className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-colors"
         >
           <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+        </button>
+      </div>
+
+      {/* Active / Archived sub-tabs */}
+      <div className="flex gap-1 flex-shrink-0 bg-slate-100 rounded-lg p-1 w-fit">
+        <button
+          onClick={() => setStatusTab('active')}
+          className={clsx(
+            'text-xs font-medium px-3 py-1.5 rounded-md transition-colors',
+            statusTab === 'active' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700',
+          )}
+        >
+          Active
+        </button>
+        <button
+          onClick={() => setStatusTab('archived')}
+          className={clsx(
+            'text-xs font-medium px-3 py-1.5 rounded-md transition-colors',
+            statusTab === 'archived' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700',
+          )}
+        >
+          Archived
         </button>
       </div>
 
@@ -1076,7 +1115,9 @@ export function ConversationsPage({ surveyEnabled = false, addToFaqEnabled = fal
         {loading ? <Spinner /> : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 text-slate-400">
             <MessageSquare size={32} className="mb-2 opacity-30" />
-            <p className="text-sm">{search ? 'No matching conversations' : 'No conversations yet'}</p>
+            <p className="text-sm">
+              {search ? 'No matching conversations' : statusTab === 'archived' ? 'No archived conversations' : 'No conversations yet'}
+            </p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -1187,6 +1228,21 @@ export function ConversationsPage({ surveyEnabled = false, addToFaqEnabled = fal
                     <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
                       <span className="text-[10px] text-slate-400">{timeAgo(c.updated_at)}</span>
                       <span className="text-[10px] text-slate-400">{c.message_count} msg{c.message_count !== 1 ? 's' : ''}</span>
+                      {c.archived_at && (
+                        <span className="text-[10px] text-slate-400">
+                          Archived {timeAgo(c.archived_at)} {c.archived_by === 'staff' ? 'by staff' : 'automatically'}
+                        </span>
+                      )}
+                      <button
+                        onClick={e => handleArchiveToggle(e, c)}
+                        disabled={archivingId === c.id}
+                        className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 bg-slate-50 hover:bg-slate-100 disabled:opacity-50 text-slate-600 rounded-md border border-slate-200 transition-colors"
+                      >
+                        {archivingId === c.id
+                          ? <RefreshCw size={9} className="animate-spin" />
+                          : c.archived_at ? <ArchiveRestore size={9} /> : <Archive size={9} />}
+                        {c.archived_at ? 'Unarchive' : 'Archive'}
+                      </button>
                       {/* Survey button — visible when survey is enabled AND guest messaged in last 24h */}
                       {surveyEnabled && !c.survey_sent &&
                        c.last_guest_message_at != null &&

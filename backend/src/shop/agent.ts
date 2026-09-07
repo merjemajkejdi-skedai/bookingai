@@ -89,6 +89,14 @@ export async function runShopAgent(
       );
       conv = { id: convId, messages: '[]' };
       console.log(`[Shop] created conversation ${convId} for ${guestPhone}`);
+    } else if (conv.archived_at) {
+      // Guest messaged an archived conversation — auto-unarchive
+      await dbRun(
+        `UPDATE shop_conversations SET archived_at = NULL, archived_by = NULL WHERE id = ?`,
+        conv.id,
+      ).catch(() => {});
+      conv.archived_at = null;
+      conv.archived_by = null;
     }
 
     // Parse stored history

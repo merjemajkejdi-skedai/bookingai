@@ -87,9 +87,17 @@ export const shopApi = {
   updateFaq:    (id: string, d: Partial<ShopFaq>) => req<void>(`/shop/faq/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
   deleteFaq:    (id: string)             => req<void>(`/shop/faq/${id}`, { method: 'DELETE' }),
 
-  getConversations:   ()             => req<ShopConversation[]>('/shop/conversations'),
+  getConversations:   (status: 'active' | 'archived' = 'active') =>
+    req<ShopConversation[]>(`/shop/conversations?status=${status}`),
   getConversation:    (phone: string) => req<ShopConversation>(`/shop/conversations/${encodeURIComponent(phone)}`),
   clearConversation:  (phone: string) => req<void>(`/shop/conversations/${encodeURIComponent(phone)}`, { method: 'DELETE' }),
+  archiveConversation:   (phone: string) => req<{ archived: boolean }>(`/shop/conversations/${encodeURIComponent(phone)}/archive`, { method: 'POST' }),
+  unarchiveConversation: (phone: string) => req<{ unarchived: boolean }>(`/shop/conversations/${encodeURIComponent(phone)}/unarchive`, { method: 'POST' }),
+  getArchiveSettings: () => req<{ archive_after_days: number }>('/hotel/archive-settings'),
+  updateArchiveSettings: (archive_after_days: number) =>
+    req<{ archive_after_days: number }>('/hotel/archive-settings', {
+      method: 'PUT', body: JSON.stringify({ archive_after_days }),
+    }),
 
   getReportsSummary:   (period: string) => req<any>(`/shop/reports/summary?period=${period}`),
   getReportsBreakdown: (period: string) => req<any>(`/shop/reports/breakdown?period=${period}`),

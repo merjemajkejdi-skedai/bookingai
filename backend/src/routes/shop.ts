@@ -639,13 +639,43 @@ shopRouter.delete('/faq/:id', authenticateShopOrTenant, async (req: any, res: Re
 shopRouter.get('/conversations', authenticateShopOrTenant, async (req: any, res: Response) => {
   try {
     const tenantId = resolveTenantId(req);
-    console.log('[Shop] GET /shop/conversations tenantId:', tenantId);
+    const status = (req.query.status as string) || 'active';
+    const statusClause = status === 'archived' ? 'AND archived_at IS NOT NULL' : 'AND archived_at IS NULL';
+    const orderClause  = status === 'archived' ? 'ORDER BY archived_at DESC' : 'ORDER BY updated_at DESC';
+    console.log('[Shop] GET /shop/conversations tenantId:', tenantId, 'status:', status);
     const rows = await dbAll(
-      `SELECT id, guest_phone, cart_state, created_at, updated_at FROM shop_conversations WHERE tenant_id=? ORDER BY updated_at DESC`,
+      `SELECT id, guest_phone, cart_state, created_at, updated_at, archived_at, archived_by
+       FROM shop_conversations WHERE tenant_id=? ${statusClause} ${orderClause}`,
       tenantId,
     );
     console.log('[Shop] conversations found:', rows.length);
     res.json({ success: true, data: rows });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// POST /shop/conversations/:phone/archive — manual staff archive
+shopRouter.post('/conversations/:phone/archive', authenticateShopOrTenant, async (req: any, res: Response) => {
+  try {
+    const phone = decodeURIComponent(req.params.phone);
+    await dbRun(
+      `UPDATE shop_conversations SET archived_at = ${isPg ? 'NOW()' : 'CURRENT_TIMESTAMP'}, archived_by = 'staff'
+       WHERE tenant_id=? AND guest_phone=?`,
+      resolveTenantId(req), phone,
+    );
+    res.json({ success: true, archived: true });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// POST /shop/conversations/:phone/unarchive — manual staff unarchive
+shopRouter.post('/conversations/:phone/unarchive', authenticateShopOrTenant, async (req: any, res: Response) => {
+  try {
+    const phone = decodeURIComponent(req.params.phone);
+    await dbRun(
+      `UPDATE shop_conversations SET archived_at = NULL, archived_by = NULL
+       WHERE tenant_id=? AND guest_phone=?`,
+      resolveTenantId(req), phone,
+    );
+    res.json({ success: true, unarchived: true });
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
 });
 

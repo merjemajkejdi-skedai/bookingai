@@ -127,15 +127,24 @@ async function handleMessengerMessage(tenant: any, event: any) {
         await dbRun(
           `UPDATE ${table}
            SET guest_name = ?, channel_user_id = ?,
-               last_guest_message_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+               last_guest_message_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP,
+               archived_at = NULL, archived_by = NULL
            WHERE tenant_id = ? AND guest_phone = ?`,
           profile.name, psid, tenantId, guestPhone,
+        );
+      } else {
+        await dbRun(
+          `UPDATE ${table}
+           SET archived_at = NULL, archived_by = NULL
+           WHERE tenant_id = ? AND guest_phone = ?`,
+          tenantId, guestPhone,
         );
       }
     } else {
       await dbRun(
         `UPDATE ${table}
-         SET channel_user_id = ?, last_guest_message_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+         SET channel_user_id = ?, last_guest_message_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP,
+             archived_at = NULL, archived_by = NULL
          WHERE tenant_id = ? AND guest_phone = ?`,
         psid, tenantId, guestPhone,
       );

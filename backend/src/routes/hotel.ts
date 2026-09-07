@@ -992,6 +992,9 @@ hotelRouter.get('/conversations', requireAuth, async (req: Request, res: Respons
           ? ' AND (c.channel IS NULL OR c.channel = ?)'
           : ' AND c.channel = ?')
       : '';
+    const status = (req.query.status as string) || 'active';
+    const statusClause = status === 'archived' ? ' AND c.archived_at IS NOT NULL' : ' AND c.archived_at IS NULL';
+    const orderClause  = status === 'archived' ? 'ORDER BY c.archived_at DESC' : 'ORDER BY c.updated_at DESC';
     const params: unknown[] = [tenantId];
     if (channelFilter) params.push(channelFilter);
 
@@ -1012,6 +1015,8 @@ hotelRouter.get('/conversations', requireAuth, async (req: Request, res: Respons
            c.channel,
            c.channel_user_id,
            c.guest_username,
+           c.archived_at,
+           c.archived_by,
            g.id           AS stay_id,
            COALESCE(g.guest_name, c.guest_name) AS guest_name,
            g.check_in,
@@ -1041,8 +1046,8 @@ hotelRouter.get('/conversations', requireAuth, async (req: Request, res: Respons
            WHERE conversation_id = c.id AND direction = 'inbound'
            ORDER BY created_at ASC LIMIT 1
          )
-         WHERE c.tenant_id = ?${channelClause}
-         ORDER BY c.updated_at DESC
+         WHERE c.tenant_id = ?${channelClause}${statusClause}
+         ${orderClause}
          LIMIT 100`,
         ...params,
       ) as any[];
@@ -1060,10 +1065,12 @@ hotelRouter.get('/conversations', requireAuth, async (req: Request, res: Respons
            c.channel,
            c.channel_user_id,
            c.guest_username,
-           c.guest_name
+           c.guest_name,
+           c.archived_at,
+           c.archived_by
          FROM ${table} c
-         WHERE c.tenant_id = ?${channelClause}
-         ORDER BY c.updated_at DESC
+         WHERE c.tenant_id = ?${channelClause}${statusClause}
+         ${orderClause}
          LIMIT 100`,
         ...params,
       ) as any[];
@@ -1413,6 +1420,56 @@ hotelRouter.post('/conversations/:phone/resume', requireAuth, async (req: Reques
     );
     console.log(`[Conversations] ▶ AI resumed for ${phone}`);
     ok(res, { paused: false });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// GET /hotel/archive-settings  — current auto-archive threshold (shared across all tenant types)
+hotelRouter.get('/archive-settings', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    const row = await dbGet('SELECT archive_after_days FROM tenants WHERE id = ?', tenantId) as any;
+    ok(res, { archive_after_days: Number(row?.archive_after_days) || 30 });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// PUT /hotel/archive-settings  — update auto-archive threshold (shared across all tenant types)
+hotelRouter.put('/archive-settings', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const days = Number(req.body?.archive_after_days);
+  if (!Number.isInteger(days) || days < 1) return err(res, 'archive_after_days must be a positive integer');
+  try {
+    await dbRun('UPDATE tenants SET archive_after_days = ? WHERE id = ?', days, tenantId);
+    ok(res, { archive_after_days: days });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// POST /hotel/conversations/:id/archive  — manual staff archive
+hotelRouter.post('/conversations/:id/archive', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    const table = getConversationsTable(await getTenantType(tenantId));
+    await dbRun(
+      `UPDATE ${table}
+       SET archived_at = ${isPg ? 'NOW()' : 'CURRENT_TIMESTAMP'}, archived_by = 'staff'
+       WHERE id = ? AND tenant_id = ?`,
+      req.params.id, tenantId,
+    );
+    ok(res, { archived: true });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// POST /hotel/conversations/:id/unarchive  — manual staff unarchive
+hotelRouter.post('/conversations/:id/unarchive', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    const table = getConversationsTable(await getTenantType(tenantId));
+    await dbRun(
+      `UPDATE ${table}
+       SET archived_at = NULL, archived_by = NULL
+       WHERE id = ? AND tenant_id = ?`,
+      req.params.id, tenantId,
+    );
+    ok(res, { unarchived: true });
   } catch (e: any) { err(res, e.message, 500); }
 });
 

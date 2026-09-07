@@ -119,7 +119,8 @@ async function persistConversation(
       await dbRun(
         `UPDATE ${table}
          SET messages = ?, last_message = ?, updated_at = ?, last_guest_message_at = ?,
-             guest_name = COALESCE(?, guest_name)
+             guest_name = COALESCE(?, guest_name),
+             archived_at = NULL, archived_by = NULL
          WHERE tenant_id = ? AND guest_phone = ?`,
         JSON.stringify(updated), now, now, now, guestName ?? null, tenantId, phone,
       );
@@ -169,7 +170,8 @@ async function persistGuestMessage(
       await dbRun(
         `UPDATE ${table}
          SET messages = ?, last_message = ?, updated_at = ?, last_guest_message_at = ?,
-             guest_name = COALESCE(?, guest_name)
+             guest_name = COALESCE(?, guest_name),
+             archived_at = NULL, archived_by = NULL
          WHERE tenant_id = ? AND guest_phone = ?`,
         JSON.stringify(updated), now, now, now, guestName ?? null, tenantId, phone,
       );

@@ -104,4 +104,6 @@ export interface GbConversation {
   ai_paused_by?: string;
   updated_at?: string;
   last_guest_message_at?: string;
+  archived_at?: string | null;
+  archived_by?: 'auto' | 'staff' | null;
 }

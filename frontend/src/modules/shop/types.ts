@@ -150,4 +150,6 @@ export interface ShopConversation {
   cart_state: string;
   updated_at: string;
   messages?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  archived_at?: string | null;
+  archived_by?: 'auto' | 'staff' | null;
 }
