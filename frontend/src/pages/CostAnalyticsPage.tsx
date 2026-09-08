@@ -86,11 +86,22 @@ function calcCosts(row: any, p: Params, metaBillable: boolean) {
   return { twilioCost, metaCost, claudeCost, totalVariableCost, chargeTwilio };
 }
 
-function revenue(row: any): number {
+/** The configured price (monthly_price override, else the plan default) — independent
+ *  of environment. Used for the editable Revenue cell so a price can still be set
+ *  in advance while a tenant is in 'test', ready for whenever it goes 'live'. */
+function configuredPrice(row: any): number {
   if (row.monthly_price !== null && row.monthly_price !== undefined && row.monthly_price !== '') {
     return Number(row.monthly_price);
   }
   return PLAN_REVENUE[row.plan] ?? 0;
+}
+
+/** Effective revenue used in every cost calculation. A 'test' tenant always counts
+ *  as €0 revenue — matching the existing Twilio-cost/infra-allocation gating — even
+ *  if a monthly_price has been pre-configured for it. */
+function revenue(row: any): number {
+  if (row.environment !== 'live') return 0;
+  return configuredPrice(row);
 }
 
 function margin(rev: number, cost: number): number {
@@ -388,9 +399,12 @@ export function CostAnalyticsPage() {
       const costs = calcCosts(r, params, metaBillable);
       const rev   = revenue(r);
       const infraAllocation = r.environment === 'live' ? infraCostPerTenant : 0;
-      const commissionable = period === 'month'
+      // A 'test' tenant is never commissionable, regardless of its own flag/history —
+      // matches revenue() being forced to €0 while in test.
+      const rawCommissionable = period === 'month'
         ? (r.snapshot_is_commissionable !== undefined ? !!r.snapshot_is_commissionable : !!r.is_commissionable)
         : !!r.is_commissionable;
+      const commissionable = r.environment === 'live' && rawCommissionable;
       const commissionRate = period === 'month' && r.snapshot_commission_rate !== undefined && r.snapshot_commission_rate !== null
         ? Number(r.snapshot_commission_rate)
         : (Number(r.commission_rate) || 50);
@@ -399,7 +413,7 @@ export function CostAnalyticsPage() {
       const netAfterCommission = rev - costs.totalVariableCost - infraAllocation - commission;
       return {
         ...r, ...costs, revenue: rev, margin: margin(rev, costs.totalVariableCost),
-        infraAllocation, commissionable, commissionRate, commission, netAfterCommission,
+        infraAllocation, commissionable, rawCommissionable, commissionRate, commission, netAfterCommission,
       };
     })
     .sort((a, b) => {
@@ -510,8 +524,9 @@ export function CostAnalyticsPage() {
             <li>Claude $ is a simulated estimate (messages × slider rate) — not real Anthropic token usage.</li>
             <li>Instagram, Messenger, and Email messages are not logged anywhere long-term — this page only reflects WhatsApp volume and WhatsApp-attributable cost.</li>
             <li>Revenue is a flat monthly figure — no proration for partial months.</li>
-            <li>Claude $ and Meta $ are NOT gated by environment — only Twilio cost and infra allocation are. A 'test' tenant will still show non-zero Claude/Meta cost figures.</li>
-            <li><strong>Action needed:</strong> new tenants default to environment = 'test'. Switch real paying customers (e.g. La Favorita, Bloom Matcha) to 'live' below, or their Twilio cost, infra allocation, and commission will all read as zero/wrong.</li>
+            <li>Claude $ and Meta $ are NOT gated by environment — only Twilio cost, revenue, infra allocation, and commissionable status are. A 'test' tenant will still show non-zero Claude/Meta cost figures even though Revenue, Twilio $, Infra, and Commission all read €0/N/A.</li>
+            <li>A 'test' tenant always counts as €0 revenue and is never commissionable, regardless of its monthly_price or Commissionable flag — those settings still save normally, ready for when it's switched to 'live'.</li>
+            <li><strong>Action needed:</strong> new tenants default to environment = 'test'. Switch real paying customers (e.g. La Favorita, Bloom Matcha) to 'live' below, or their Revenue, Twilio cost, infra allocation, and commission will all read as zero/N/A.</li>
           </ul>
         )}
       </div>
@@ -701,10 +716,13 @@ export function CostAnalyticsPage() {
                       <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
                         <input
                           type="checkbox"
-                          checked={r.commissionable}
-                          onChange={() => setConfirmToggle({ tenantId: r.tenant_id, tenantName: r.tenant_name, newStatus: !r.commissionable })}
+                          checked={r.rawCommissionable}
+                          onChange={() => setConfirmToggle({ tenantId: r.tenant_id, tenantName: r.tenant_name, newStatus: !r.rawCommissionable })}
                         />
-                        {r.commissionable ? 'Yes' : 'No'}
+                        {r.rawCommissionable ? 'Yes' : 'No'}
+                        {r.rawCommissionable && r.environment !== 'live' && (
+                          <span className="text-slate-400" title="Test tenants are never commissionable, regardless of this flag">(test)</span>
+                        )}
                       </label>
                     )}
                     <button
@@ -751,12 +769,17 @@ export function CostAnalyticsPage() {
                     ${r.totalVariableCost.toFixed(2)}
                   </td>
                   <td className="px-3 py-3 text-right">
-                    <InlineNumber
-                      value={r.monthly_price !== null && r.monthly_price !== undefined && r.monthly_price !== '' ? Number(r.monthly_price) : null}
-                      placeholder={`$${PLAN_REVENUE[r.plan] ?? 0} (plan)`}
-                      prefix="$"
-                      onSave={v => patchTenant(r.tenant_id, { monthlyPrice: v })}
-                    />
+                    <div className="flex flex-col items-end gap-0.5">
+                      <InlineNumber
+                        value={r.monthly_price !== null && r.monthly_price !== undefined && r.monthly_price !== '' ? Number(r.monthly_price) : null}
+                        placeholder={`$${PLAN_REVENUE[r.plan] ?? 0} (plan)`}
+                        prefix="$"
+                        onSave={v => patchTenant(r.tenant_id, { monthlyPrice: v })}
+                      />
+                      {r.environment !== 'live' && (
+                        <span className="text-[10px] text-slate-400" title="Test tenants always count as €0 revenue, whatever price is set here">counted as $0 (test)</span>
+                      )}
+                    </div>
                   </td>
                   <td className={clsx(
                     'px-3 py-3 text-right tabular-nums font-medium',
