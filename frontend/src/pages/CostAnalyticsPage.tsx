@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, type ElementType } from 'react';
-import { TrendingUp, TrendingDown, MessageSquare, DollarSign, BarChart2, ChevronDown, ChevronUp, ArrowUpDown } from 'lucide-react';
-import { analyticsApi } from '../shared/lib/auth';
+import { TrendingUp, TrendingDown, MessageSquare, DollarSign, BarChart2, ChevronDown, ChevronUp, ArrowUpDown, Info } from 'lucide-react';
+import { analyticsApi, adminApi } from '../shared/lib/auth';
 import { Spinner } from '../components/ui';
 import clsx from 'clsx';
 
@@ -10,10 +10,14 @@ import clsx from 'clsx';
 const DEFAULTS = {
   twilioInbound:    0.005,
   twilioOutbound:   0.005,
-  metaInbound:      0.002,
-  metaOutbound:     0.003,
-  claudePerMessage: 0.008,
+  metaOutbound:     0.0077, // unconfirmed — Meta WABA business-initiated conversation rate
+  claudePerMessage: 0.008,  // simulated only — NOT real Anthropic usage, out of scope for v2
 };
+
+// Meta bills WABA usage on outbound messages regardless of provider (Twilio or direct
+// Cloud API) from this date onward. Unlike Twilio cost, this is NOT gated by
+// environment — see Part 10 known limitations.
+const META_SERVICE_MSG_CUTOVER = new Date('2026-10-01T00:00:00Z');
 
 const PLAN_REVENUE: Record<string, number> = {
   starter: 29,
@@ -31,37 +35,103 @@ const TYPE_COLORS: Record<string, string> = {
   skedai:     'bg-violet-100 text-violet-700',
   dentist:    'bg-cyan-100 text-cyan-700',
   medical:    'bg-green-100 text-green-700',
+  shop:       'bg-lime-100 text-lime-700',
+  general_business: 'bg-indigo-100 text-indigo-700',
 };
 
 const PERIODS = [
-  { label: 'Today',    value: '1d'  },
-  { label: '7 days',   value: '7d'  },
-  { label: '30 days',  value: '30d' },
-  { label: 'All time', value: 'all' },
+  { label: 'Today',    value: '1d'   },
+  { label: '7 days',   value: '7d'   },
+  { label: '30 days',  value: '30d'  },
+  { label: 'Month',    value: 'month' },
+  { label: 'All time', value: 'all'  },
 ];
 
-// ---------------------------------------------------------------------------
-// Cost calculation
-// ---------------------------------------------------------------------------
-interface Params { twilioInbound: number; twilioOutbound: number; metaInbound: number; metaOutbound: number; claudePerMessage: number; }
-
-function calcCosts(row: any, p: Params) {
-  const twilioCost  = (Number(row.twilio_in)  || 0) * p.twilioInbound
-                    + (Number(row.twilio_out) || 0) * p.twilioOutbound;
-  const metaCost    = (Number(row.meta_in)    || 0) * p.metaInbound
-                    + (Number(row.meta_out)   || 0) * p.metaOutbound;
-  const claudeCost  = (Number(row.total)      || 0) * p.claudePerMessage;
-  const totalCost   = twilioCost + metaCost + claudeCost;
-  return { twilioCost, metaCost, claudeCost, totalCost };
+function currentMonthStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-function revenue(plan: string): number {
-  return PLAN_REVENUE[plan] ?? 0;
+// ---------------------------------------------------------------------------
+// Twilio gating — Part 3
+// A 'test' tenant never shows Twilio cost. A 'live' tenant's manual
+// uses_twilio_flag override always wins when set; otherwise falls back to
+// the provider field, exactly as WhatsApp routing actually works today.
+// ---------------------------------------------------------------------------
+function resolveTwilioFlag(row: any): boolean {
+  return row.provider === 'twilio';
+}
+function shouldChargeTwilio(row: any): boolean {
+  if (row.environment !== 'live') return false;
+  if (row.uses_twilio_flag !== null && row.uses_twilio_flag !== undefined) return !!row.uses_twilio_flag;
+  return resolveTwilioFlag(row);
+}
+
+// ---------------------------------------------------------------------------
+// Cost calculation — Part 3/5/6
+// ---------------------------------------------------------------------------
+interface Params { twilioInbound: number; twilioOutbound: number; metaOutbound: number; claudePerMessage: number; }
+
+function calcCosts(row: any, p: Params, metaBillable: boolean) {
+  const chargeTwilio = shouldChargeTwilio(row);
+  const twilioCost = chargeTwilio
+    ? (Number(row.inbound) || 0) * p.twilioInbound + (Number(row.outbound) || 0) * p.twilioOutbound
+    : 0;
+  // Meta $ applies to ALL outbound messages regardless of provider (Meta bills WABA
+  // usage whether routed through Twilio or direct Cloud API) — gated only by the
+  // October 2026 cutover date, NOT by environment. See Part 10 known limitations.
+  const metaCost = metaBillable ? (Number(row.outbound) || 0) * p.metaOutbound : 0;
+  const claudeCost = (Number(row.total) || 0) * p.claudePerMessage;
+  const totalVariableCost = twilioCost + metaCost + claudeCost;
+  return { twilioCost, metaCost, claudeCost, totalVariableCost, chargeTwilio };
+}
+
+function revenue(row: any): number {
+  if (row.monthly_price !== null && row.monthly_price !== undefined && row.monthly_price !== '') {
+    return Number(row.monthly_price);
+  }
+  return PLAN_REVENUE[row.plan] ?? 0;
 }
 
 function margin(rev: number, cost: number): number {
   if (rev === 0) return cost === 0 ? 100 : -Infinity;
   return ((rev - cost) / rev) * 100;
+}
+
+// ---------------------------------------------------------------------------
+// Small shared inline-edit controls
+// ---------------------------------------------------------------------------
+function InlineNumber({ value, placeholder, prefix = '', onSave }: {
+  value: number | null; placeholder: string; prefix?: string; onSave: (v: number | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value !== null ? String(value) : '');
+
+  if (!editing) {
+    return (
+      <button
+        onClick={() => { setDraft(value !== null ? String(value) : ''); setEditing(true); }}
+        className={clsx('tabular-nums hover:underline decoration-dotted', value === null && 'text-slate-400 italic')}
+        title="Click to edit"
+      >
+        {value !== null ? `${prefix}${Number(value).toLocaleString()}` : placeholder}
+      </button>
+    );
+  }
+  return (
+    <input
+      autoFocus
+      type="number"
+      value={draft}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={() => { setEditing(false); onSave(draft === '' ? null : Number(draft)); }}
+      onKeyDown={e => {
+        if (e.key === 'Enter') { setEditing(false); onSave(draft === '' ? null : Number(draft)); }
+        if (e.key === 'Escape') setEditing(false);
+      }}
+      className="w-20 border border-brand-300 rounded px-1.5 py-0.5 text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-400/40"
+    />
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -114,6 +184,7 @@ function MetricCard({ label, value, sub, icon: Icon, color }: {
 // ---------------------------------------------------------------------------
 export function CostAnalyticsPage() {
   const [period,    setPeriod]    = useState('7d');
+  const [month,     setMonth]     = useState(currentMonthStr());
   const [summary,   setSummary]   = useState<any>(null);
   const [messages,  setMessages]  = useState<any[]>([]);
   const [loading,   setLoading]   = useState(true);
@@ -122,6 +193,7 @@ export function CostAnalyticsPage() {
   // Cost-slider state
   const [params, setParams]       = useState<Params>(DEFAULTS);
   const [sliders, setSliders]     = useState(false);
+  const [showLimitations, setShowLimitations] = useState(false);
 
   // Type filter
   const [typeFilter, setTypeFilter] = useState<string>('all');
@@ -130,37 +202,97 @@ export function CostAnalyticsPage() {
   const [sortCol, setSortCol]   = useState<string>('total');
   const [sortDir, setSortDir]   = useState<1 | -1>(-1); // -1 = desc
 
-  // Projection simulator
-  const [projShops,   setProjShops]   = useState(10);
-  const [projMsgs,    setProjMsgs]    = useState(200);
-  const [projPlan,    setProjPlan]    = useState<'starter' | 'growth' | 'pro'>('growth');
+  // Infra cost (Part 6)
+  const [infraCost, setInfraCost]   = useState<{ amount: number; notes: string | null } | null>(null);
+  const [infraInput, setInfraInput] = useState('');
+  const [infraSaving, setInfraSaving] = useState(false);
+
+  // Projection simulator (Part 9)
+  const [projHotels,    setProjHotels]    = useState(10);
+  const [projPrice,     setProjPrice]     = useState(79);
+  const [projClaude,    setProjClaude]    = useState(0);
+  const [projWhatsapp,  setProjWhatsapp]  = useState(0);
+  const [projInfra,     setProjInfra]     = useState(0);
+  const [projCommission, setProjCommission] = useState(50);
 
   // ── Load data ────────────────────────────────────────────────────────────
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const [sumData, msgData] = await Promise.all([
-        analyticsApi.getSummary(period),
-        analyticsApi.getMessages(period),
+      const monthParam = period === 'month' ? month : undefined;
+      const [sumData, msgData, infraData] = await Promise.all([
+        analyticsApi.getSummary(period, monthParam),
+        analyticsApi.getMessages(period, monthParam),
+        analyticsApi.getInfraCost(period === 'month' ? month : currentMonthStr()),
       ]);
       setSummary(sumData);
       setMessages(msgData);
+      setInfraCost(infraData);
+      setInfraInput(String(infraData.amount ?? 0));
     } catch (e: any) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  }, [period]);
+  }, [period, month]);
 
   useEffect(() => { load(); }, [load]);
 
+  // Seed projection defaults once on mount
+  useEffect(() => {
+    analyticsApi.getProjectionDefaults().then(d => {
+      setProjPrice(d.avgPrice || 79);
+      setProjClaude(d.avgClaudeCost || 0);
+      setProjWhatsapp(d.avgWhatsappCost || 0);
+      setProjInfra(d.currentInfraCost || 0);
+      setProjCommission(d.currentCommissionRate || 50);
+    }).catch(e => console.error('Failed to load projection defaults:', e.message));
+  }, []);
+
+  async function saveInfraCost() {
+    const amount = Number(infraInput);
+    if (!Number.isFinite(amount) || amount < 0) return;
+    setInfraSaving(true);
+    try {
+      const monthParam = period === 'month' ? month : currentMonthStr();
+      const saved = await analyticsApi.setInfraCost(monthParam, amount);
+      setInfraCost(saved);
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setInfraSaving(false);
+    }
+  }
+
+  async function patchTenant(tenantId: string, data: Record<string, any>) {
+    try {
+      await adminApi.updateTenant(tenantId, data);
+      load();
+    } catch (e: any) {
+      alert(e.message);
+    }
+  }
+
+  // ── Meta billing cutover (Part 3) ──────────────────────────────────────
+  // Month mode: compare the selected calendar month to the cutover.
+  // Relative periods (1d/7d/30d/all): these are rolling windows ending "now",
+  // so gate on today's date instead.
+  const metaBillable = period === 'month'
+    ? new Date(`${month}-01T00:00:00Z`) >= META_SERVICE_MSG_CUTOVER
+    : new Date() >= META_SERVICE_MSG_CUTOVER;
+
+  // ── Infra allocation (Part 6) — split evenly across 'live' tenants only ──
+  const liveTenantCount = messages.filter(r => r.environment === 'live').length;
+  const infraAmount = infraCost?.amount ?? 0;
+  const infraCostPerTenant = liveTenantCount > 0 ? infraAmount / liveTenantCount : 0;
+
   // ── Derived aggregates ───────────────────────────────────────────────────
-  const totalTwilioCost  = messages.reduce((acc, r) => acc + calcCosts(r, params).twilioCost,  0);
-  const totalMetaCost    = messages.reduce((acc, r) => acc + calcCosts(r, params).metaCost,    0);
-  const totalClaudeCost  = messages.reduce((acc, r) => acc + calcCosts(r, params).claudeCost,  0);
-  const totalCost        = totalTwilioCost + totalMetaCost + totalClaudeCost;
-  const totalRevenue     = messages.reduce((acc, r) => acc + revenue(r.plan), 0);
-  const netMargin        = margin(totalRevenue, totalCost);
+  const totalTwilioCost = messages.reduce((acc, r) => acc + calcCosts(r, params, metaBillable).twilioCost, 0);
+  const totalMetaCost   = messages.reduce((acc, r) => acc + calcCosts(r, params, metaBillable).metaCost,   0);
+  const totalClaudeCost = messages.reduce((acc, r) => acc + calcCosts(r, params, metaBillable).claudeCost, 0);
+  const totalVariableCost = totalTwilioCost + totalMetaCost + totalClaudeCost;
+  const totalRevenue    = messages.reduce((acc, r) => acc + revenue(r), 0);
+  const netMargin        = margin(totalRevenue, totalVariableCost);
 
   // ── Filter + sort ────────────────────────────────────────────────────────
   const allTypes = [...new Set(messages.map(r => r.tenant_type).filter(Boolean))].sort();
@@ -168,9 +300,17 @@ export function CostAnalyticsPage() {
   const filtered = messages
     .filter(r => typeFilter === 'all' || r.tenant_type === typeFilter)
     .map(r => {
-      const costs = calcCosts(r, params);
-      const rev   = revenue(r.plan);
-      return { ...r, ...costs, revenue: rev, margin: margin(rev, costs.totalCost) };
+      const costs = calcCosts(r, params, metaBillable);
+      const rev   = revenue(r);
+      const infraAllocation = r.environment === 'live' ? infraCostPerTenant : 0;
+      const netBeforeCommission = Math.max(0, rev - costs.totalVariableCost - infraAllocation);
+      const commissionRate = Number(r.commission_rate) || 50;
+      const commission = netBeforeCommission * (commissionRate / 100);
+      const netAfterCommission = rev - costs.totalVariableCost - infraAllocation - commission;
+      return {
+        ...r, ...costs, revenue: rev, margin: margin(rev, costs.totalVariableCost),
+        infraAllocation, commissionRate, commission, netAfterCommission,
+      };
     })
     .sort((a, b) => {
       const av = a[sortCol] ?? 0;
@@ -184,14 +324,14 @@ export function CostAnalyticsPage() {
     else { setSortCol(col); setSortDir(-1); }
   }
 
-  // ── Projection ───────────────────────────────────────────────────────────
-  const projInbound  = projMsgs * 0.45; // ~45% of traffic is inbound
-  const projOutbound = projMsgs * 0.55;
-  const projCostPerShop  = projInbound * params.twilioInbound + projOutbound * params.twilioOutbound
-                         + projMsgs * params.claudePerMessage;
-  const projTotalCost    = projCostPerShop * projShops;
-  const projTotalRev     = PLAN_REVENUE[projPlan] * projShops;
-  const projNetMargin    = margin(projTotalRev, projTotalCost);
+  // ── Projection (Part 9) — includes infra in the commission formula ──────
+  const projTotalRevenue   = projHotels * projPrice;
+  const projTotalVariable  = projHotels * (projClaude + projWhatsapp);
+  const projTotalInfra     = projInfra; // flat platform-wide cost, not per-hotel
+  const projNetBeforeComm  = Math.max(0, projTotalRevenue - projTotalVariable - projTotalInfra);
+  const projTotalCommission = projNetBeforeComm * (projCommission / 100);
+  const projTrueNetProfit  = projTotalCommission;
+  const projProfitPerHotel = projHotels > 0 ? projTrueNetProfit / projHotels : 0;
 
   // ── Sort header helper ──────────────────────────────────────────────────
   function SortTh({ col, label, align = 'right' }: { col: string; label: string; align?: string }) {
@@ -226,7 +366,7 @@ export function CostAnalyticsPage() {
   );
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
 
       {/* Header + period tabs */}
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -235,25 +375,55 @@ export function CostAnalyticsPage() {
             <BarChart2 size={18} className="text-brand-500" /> Cost Analytics
           </h1>
           <p className="text-sm text-slate-400 mt-0.5">
-            Platform-wide message costs and margin per tenant
+            Platform-wide message costs, commission, and margin per tenant
           </p>
         </div>
-        <div className="flex bg-white border border-slate-200 rounded-lg overflow-hidden">
-          {PERIODS.map(p => (
-            <button
-              key={p.value}
-              onClick={() => setPeriod(p.value)}
-              className={clsx(
-                'px-4 py-2 text-sm font-medium transition-colors',
-                period === p.value
-                  ? 'bg-brand-500 text-white'
-                  : 'text-slate-600 hover:bg-slate-50',
-              )}
-            >
-              {p.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex bg-white border border-slate-200 rounded-lg overflow-hidden">
+            {PERIODS.map(p => (
+              <button
+                key={p.value}
+                onClick={() => setPeriod(p.value)}
+                className={clsx(
+                  'px-4 py-2 text-sm font-medium transition-colors',
+                  period === p.value
+                    ? 'bg-brand-500 text-white'
+                    : 'text-slate-600 hover:bg-slate-50',
+                )}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {period === 'month' && (
+            <input
+              type="month"
+              value={month}
+              onChange={e => setMonth(e.target.value)}
+              className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-400/40"
+            />
+          )}
         </div>
+      </div>
+
+      {/* Known limitations (Part 10) */}
+      <div className="bg-amber-50 border border-amber-200 rounded-xl overflow-hidden">
+        <button
+          onClick={() => setShowLimitations(s => !s)}
+          className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-medium text-amber-800 hover:bg-amber-100/50 transition-colors"
+        >
+          <span className="flex items-center gap-2"><Info size={13} /> Known limitations — read before trusting these numbers</span>
+          {showLimitations ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+        </button>
+        {showLimitations && (
+          <ul className="px-4 pb-3 pt-1 text-xs text-amber-700 space-y-1 list-disc list-inside border-t border-amber-200">
+            <li>Claude $ is a simulated estimate (messages × slider rate) — not real Anthropic token usage.</li>
+            <li>Instagram, Messenger, and Email messages are not logged anywhere long-term — this page only reflects WhatsApp volume and WhatsApp-attributable cost.</li>
+            <li>Revenue is a flat monthly figure — no proration for partial months.</li>
+            <li>Claude $ and Meta $ are NOT gated by environment — only Twilio cost and infra allocation are. A 'test' tenant will still show non-zero Claude/Meta cost figures.</li>
+            <li><strong>Action needed:</strong> new tenants default to environment = 'test'. Switch real paying customers (e.g. La Favorita, Bloom Matcha) to 'live' below, or their Twilio cost, infra allocation, and commission will all read as zero/wrong.</li>
+          </ul>
+        )}
       </div>
 
       {/* Metric cards */}
@@ -266,26 +436,56 @@ export function CostAnalyticsPage() {
           color="bg-blue-50 text-blue-500"
         />
         <MetricCard
-          label="Twilio cost"
-          value={`$${totalTwilioCost.toFixed(2)}`}
-          sub={`Twilio msgs: ${Number(summary?.twilio_count ?? 0).toLocaleString()}`}
+          label="Twilio + Meta cost"
+          value={`$${(totalTwilioCost + totalMetaCost).toFixed(2)}`}
+          sub={metaBillable ? 'Meta billing active' : 'Meta billing starts Oct 2026'}
           icon={DollarSign}
           color="bg-orange-50 text-orange-500"
         />
         <MetricCard
           label="Claude cost"
           value={`$${totalClaudeCost.toFixed(2)}`}
-          sub={`$${params.claudePerMessage.toFixed(4)}/msg`}
+          sub={`$${params.claudePerMessage.toFixed(4)}/msg (simulated)`}
           icon={DollarSign}
           color="bg-violet-50 text-violet-500"
         />
         <MetricCard
           label="Net margin"
           value={isFinite(netMargin) ? `${netMargin.toFixed(1)}%` : '—'}
-          sub={`Rev $${totalRevenue} · Cost $${totalCost.toFixed(2)}`}
+          sub={`Rev $${totalRevenue.toFixed(0)} · Cost $${totalVariableCost.toFixed(2)}`}
           icon={netMargin >= 0 ? TrendingUp : TrendingDown}
           color={netMargin >= 50 ? 'bg-green-50 text-green-500' : 'bg-red-50 text-red-500'}
         />
+      </div>
+
+      {/* Infra cost input — Part 6 */}
+      <div className="bg-white rounded-xl border border-slate-200 px-5 py-4">
+        <p className="text-sm font-medium text-slate-700 mb-2">
+          General &amp; Infrastructure Costs — {period === 'month' ? month : currentMonthStr()}
+        </p>
+        <p className="text-xs text-slate-400 mb-3">Railway, R2, Resend, domains, etc. — split evenly across live tenants for the commission formula.</p>
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm text-slate-400">€</span>
+            <input
+              type="number" min={0} step="0.01" value={infraInput}
+              onChange={e => setInfraInput(e.target.value)}
+              className="w-28 border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400/40"
+            />
+          </div>
+          <button
+            onClick={saveInfraCost}
+            disabled={infraSaving}
+            className="px-3 py-1.5 text-sm font-medium rounded-lg bg-brand-500 text-white hover:bg-brand-600 disabled:opacity-40"
+          >
+            {infraSaving ? 'Saving…' : 'Save'}
+          </button>
+          <span className="text-xs text-slate-500">
+            Split across {liveTenantCount} live tenant{liveTenantCount === 1 ? '' : 's'}:
+            {' '}<strong>€{infraCostPerTenant.toFixed(2)}/tenant</strong>
+            {liveTenantCount === 0 && <span className="text-amber-600"> (no live tenants yet — allocation is €0 for everyone)</span>}
+          </span>
+        </div>
       </div>
 
       {/* Cost sliders */}
@@ -305,8 +505,7 @@ export function CostAnalyticsPage() {
           <div className="px-5 pb-5 pt-2 space-y-3 border-t border-slate-100">
             <PriceSlider label="Twilio inbound ($/msg)"   value={params.twilioInbound}    min={0.001} max={0.02} step={0.001} onChange={v => setParams(p => ({ ...p, twilioInbound: v }))}  />
             <PriceSlider label="Twilio outbound ($/msg)"  value={params.twilioOutbound}   min={0.001} max={0.02} step={0.001} onChange={v => setParams(p => ({ ...p, twilioOutbound: v }))} />
-            <PriceSlider label="Meta inbound ($/msg)"     value={params.metaInbound}      min={0.001} max={0.01} step={0.001} onChange={v => setParams(p => ({ ...p, metaInbound: v }))}    />
-            <PriceSlider label="Meta outbound ($/msg)"    value={params.metaOutbound}     min={0.001} max={0.01} step={0.001} onChange={v => setParams(p => ({ ...p, metaOutbound: v }))}   />
+            <PriceSlider label="Meta outbound ($/msg)"    value={params.metaOutbound}     min={0.001} max={0.02} step={0.0001} onChange={v => setParams(p => ({ ...p, metaOutbound: v }))}  />
             <PriceSlider label="Claude per message ($/msg)" value={params.claudePerMessage} min={0.001} max={0.05} step={0.001} onChange={v => setParams(p => ({ ...p, claudePerMessage: v }))} />
             <button
               onClick={() => setParams(DEFAULTS)}
@@ -351,91 +550,135 @@ export function CostAnalyticsPage() {
               <tr>
                 <SortTh col="tenant_name" label="Shop"     align="left" />
                 <th className="px-3 py-2 text-xs font-medium text-slate-500 text-left">Type / Plan</th>
+                <th className="px-3 py-2 text-xs font-medium text-slate-500 text-left">Environment</th>
                 <SortTh col="total"       label="Messages" />
-                <SortTh col="twilioCost"  label="Twilio $" />
+                <th className="px-3 py-2 text-xs font-medium text-slate-500 text-right">Twilio $</th>
+                <SortTh col="metaCost"    label="Meta $" />
                 <SortTh col="claudeCost"  label="Claude $" />
-                <SortTh col="totalCost"   label="Total cost" />
+                <SortTh col="totalVariableCost" label="Total cost" />
                 <SortTh col="revenue"     label="Revenue" />
                 <SortTh col="margin"      label="Margin" />
-                <th className="px-3 py-2 text-xs font-medium text-slate-500 text-right">Cost / Rev</th>
+                <SortTh col="infraAllocation" label="Infra" />
+                <SortTh col="commission"  label="Commission $" />
+                <SortTh col="netAfterCommission" label="Net After Comm." />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="text-center py-10 text-sm text-slate-400">
+                  <td colSpan={12} className="text-center py-10 text-sm text-slate-400">
                     No data for this period
                   </td>
                 </tr>
               )}
-              {filtered.map(r => {
-                const costRevRatio = r.revenue > 0 ? r.totalCost / r.revenue : 0;
-                const barWidth     = Math.min(costRevRatio * 100, 100);
-                const barDanger    = costRevRatio > 0.7;
-
-                return (
-                  <tr key={r.tenant_id} className={clsx(
-                    'hover:bg-slate-50 transition-colors',
-                    !r.is_active && 'opacity-50',
-                  )}>
-                    <td className="px-3 py-3 font-medium text-slate-800 whitespace-nowrap">
-                      {r.tenant_name}
-                    </td>
-                    <td className="px-3 py-3">
-                      <span className={clsx(
-                        'inline-block px-2 py-0.5 rounded-full text-xs font-medium capitalize',
-                        TYPE_COLORS[r.tenant_type] ?? 'bg-slate-100 text-slate-600',
-                      )}>
-                        {String(r.tenant_type).replace('_', ' ')}
-                      </span>
-                      <span className="ml-1.5 text-xs text-slate-400 capitalize">{r.plan}</span>
-                    </td>
-                    <td className="px-3 py-3 text-right tabular-nums">
-                      {Number(r.total).toLocaleString()}
-                      <span className="text-xs text-slate-400 ml-1">
-                        ({Number(r.inbound)}↓ {Number(r.outbound)}↑)
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 text-right tabular-nums text-slate-600">
-                      ${r.twilioCost.toFixed(2)}
-                    </td>
-                    <td className="px-3 py-3 text-right tabular-nums text-slate-600">
-                      ${r.claudeCost.toFixed(2)}
-                    </td>
-                    <td className="px-3 py-3 text-right tabular-nums font-medium text-slate-800">
-                      ${r.totalCost.toFixed(2)}
-                    </td>
-                    <td className="px-3 py-3 text-right tabular-nums text-slate-600">
-                      ${r.revenue}
-                    </td>
-                    <td className={clsx(
-                      'px-3 py-3 text-right tabular-nums font-medium',
-                      isFinite(r.margin) && r.margin >= 60 ? 'text-green-600' :
-                      isFinite(r.margin) && r.margin >= 30 ? 'text-amber-600' : 'text-red-500',
+              {filtered.map(r => (
+                <tr key={r.tenant_id} className={clsx(
+                  'hover:bg-slate-50 transition-colors',
+                  !r.is_active && 'opacity-50',
+                )}>
+                  <td className="px-3 py-3 font-medium text-slate-800 whitespace-nowrap">
+                    {r.tenant_name}
+                  </td>
+                  <td className="px-3 py-3">
+                    <span className={clsx(
+                      'inline-block px-2 py-0.5 rounded-full text-xs font-medium capitalize',
+                      TYPE_COLORS[r.tenant_type] ?? 'bg-slate-100 text-slate-600',
                     )}>
-                      {isFinite(r.margin) ? `${r.margin.toFixed(1)}%` : '—'}
-                    </td>
-                    <td className="px-3 py-3 w-24">
-                      <div className="flex items-center gap-1.5">
-                        <div className="flex-1 bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                          <div
-                            className={clsx('h-full rounded-full transition-all', barDanger ? 'bg-red-400' : 'bg-green-400')}
-                            style={{ width: `${barWidth}%` }}
-                          />
-                        </div>
-                        <span className={clsx('text-xs w-8 text-right', barDanger ? 'text-red-500' : 'text-slate-400')}>
-                          {r.revenue > 0 ? `${(costRevRatio * 100).toFixed(0)}%` : '—'}
-                        </span>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+                      {String(r.tenant_type).replace('_', ' ')}
+                    </span>
+                    <span className="ml-1.5 text-xs text-slate-400 capitalize">{r.plan}</span>
+                  </td>
+                  <td className="px-3 py-3">
+                    <select
+                      value={r.environment || 'test'}
+                      onChange={e => patchTenant(r.tenant_id, { environment: e.target.value })}
+                      className={clsx(
+                        'text-xs font-medium rounded-full px-2 py-1 border-0 cursor-pointer',
+                        r.environment === 'live' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600',
+                      )}
+                    >
+                      <option value="test">Test</option>
+                      <option value="live">Live</option>
+                    </select>
+                  </td>
+                  <td className="px-3 py-3 text-right tabular-nums">
+                    {Number(r.total).toLocaleString()}
+                    <span className="text-xs text-slate-400 ml-1">
+                      ({Number(r.inbound)}↓ {Number(r.outbound)}↑)
+                    </span>
+                  </td>
+                  <td className="px-3 py-3 text-right tabular-nums text-slate-600">
+                    <div className="flex flex-col items-end gap-0.5">
+                      <span>${r.twilioCost.toFixed(2)}</span>
+                      <select
+                        value={
+                          r.uses_twilio_flag === true || r.uses_twilio_flag === 1 ? 'yes' :
+                          r.uses_twilio_flag === false || r.uses_twilio_flag === 0 ? 'no' : 'auto'
+                        }
+                        onChange={e => {
+                          const v = e.target.value;
+                          patchTenant(r.tenant_id, { usesTwilioFlag: v === 'auto' ? null : v === 'yes' });
+                        }}
+                        className="text-[10px] border border-slate-200 rounded px-1 py-0.5 bg-white text-slate-500"
+                        title={`Auto currently resolves to: ${resolveTwilioFlag(r) ? 'Yes' : 'No'} (via provider field: ${r.provider || 'unknown'})`}
+                      >
+                        <option value="auto">Auto ({resolveTwilioFlag(r) ? 'Yes' : 'No'} via provider)</option>
+                        <option value="yes">Force Yes</option>
+                        <option value="no">Force No</option>
+                      </select>
+                    </div>
+                  </td>
+                  <td className="px-3 py-3 text-right tabular-nums text-slate-600">
+                    ${r.metaCost.toFixed(2)}
+                  </td>
+                  <td className="px-3 py-3 text-right tabular-nums text-slate-600">
+                    ${r.claudeCost.toFixed(2)}
+                  </td>
+                  <td className="px-3 py-3 text-right tabular-nums font-medium text-slate-800">
+                    ${r.totalVariableCost.toFixed(2)}
+                  </td>
+                  <td className="px-3 py-3 text-right">
+                    <InlineNumber
+                      value={r.monthly_price !== null && r.monthly_price !== undefined && r.monthly_price !== '' ? Number(r.monthly_price) : null}
+                      placeholder={`$${PLAN_REVENUE[r.plan] ?? 0} (plan)`}
+                      prefix="$"
+                      onSave={v => patchTenant(r.tenant_id, { monthlyPrice: v })}
+                    />
+                  </td>
+                  <td className={clsx(
+                    'px-3 py-3 text-right tabular-nums font-medium',
+                    isFinite(r.margin) && r.margin >= 60 ? 'text-green-600' :
+                    isFinite(r.margin) && r.margin >= 30 ? 'text-amber-600' : 'text-red-500',
+                  )}>
+                    {isFinite(r.margin) ? `${r.margin.toFixed(1)}%` : '—'}
+                  </td>
+                  <td className="px-3 py-3 text-right tabular-nums text-slate-600">
+                    ${r.infraAllocation.toFixed(2)}
+                  </td>
+                  <td className="px-3 py-3 text-right tabular-nums text-slate-700">
+                    <div className="flex flex-col items-end gap-0.5">
+                      <span>${r.commission.toFixed(2)}</span>
+                      <InlineNumber
+                        value={r.commissionRate}
+                        placeholder="50"
+                        onSave={v => patchTenant(r.tenant_id, { commissionRate: v ?? 50 })}
+                      />
+                      <span className="text-[10px] text-slate-400">%</span>
+                    </div>
+                  </td>
+                  <td className={clsx(
+                    'px-3 py-3 text-right tabular-nums font-semibold',
+                    r.netAfterCommission >= 0 ? 'text-slate-800' : 'text-red-500',
+                  )}>
+                    ${r.netAfterCommission.toFixed(2)}
+                  </td>
+                </tr>
+              ))}
             </tbody>
             {filtered.length > 0 && (
               <tfoot className="border-t-2 border-slate-200 bg-slate-50">
                 <tr>
-                  <td colSpan={2} className="px-3 py-3 text-xs font-semibold text-slate-600">
+                  <td colSpan={3} className="px-3 py-3 text-xs font-semibold text-slate-600">
                     Total ({filtered.length} shops)
                   </td>
                   <td className="px-3 py-3 text-right text-xs font-semibold tabular-nums">
@@ -445,21 +688,33 @@ export function CostAnalyticsPage() {
                     ${filtered.reduce((s, r) => s + r.twilioCost, 0).toFixed(2)}
                   </td>
                   <td className="px-3 py-3 text-right text-xs font-semibold tabular-nums">
+                    ${filtered.reduce((s, r) => s + r.metaCost, 0).toFixed(2)}
+                  </td>
+                  <td className="px-3 py-3 text-right text-xs font-semibold tabular-nums">
                     ${filtered.reduce((s, r) => s + r.claudeCost, 0).toFixed(2)}
                   </td>
                   <td className="px-3 py-3 text-right text-xs font-semibold tabular-nums">
-                    ${filtered.reduce((s, r) => s + r.totalCost, 0).toFixed(2)}
+                    ${filtered.reduce((s, r) => s + r.totalVariableCost, 0).toFixed(2)}
                   </td>
                   <td className="px-3 py-3 text-right text-xs font-semibold tabular-nums">
-                    ${filtered.reduce((s, r) => s + r.revenue, 0)}
+                    ${filtered.reduce((s, r) => s + r.revenue, 0).toFixed(2)}
                   </td>
-                  <td colSpan={2} className="px-3 py-3 text-right text-xs font-semibold">
+                  <td className="px-3 py-3 text-right text-xs font-semibold">
                     {(() => {
                       const rev  = filtered.reduce((s, r) => s + r.revenue, 0);
-                      const cost = filtered.reduce((s, r) => s + r.totalCost, 0);
+                      const cost = filtered.reduce((s, r) => s + r.totalVariableCost, 0);
                       const m    = margin(rev, cost);
                       return isFinite(m) ? `${m.toFixed(1)}%` : '—';
                     })()}
+                  </td>
+                  <td className="px-3 py-3 text-right text-xs font-semibold tabular-nums">
+                    ${filtered.reduce((s, r) => s + r.infraAllocation, 0).toFixed(2)}
+                  </td>
+                  <td className="px-3 py-3 text-right text-xs font-semibold tabular-nums">
+                    ${filtered.reduce((s, r) => s + r.commission, 0).toFixed(2)}
+                  </td>
+                  <td className="px-3 py-3 text-right text-xs font-semibold tabular-nums">
+                    ${filtered.reduce((s, r) => s + r.netAfterCommission, 0).toFixed(2)}
                   </td>
                 </tr>
               </tfoot>
@@ -468,72 +723,73 @@ export function CostAnalyticsPage() {
         </div>
       </div>
 
-      {/* Projection simulator */}
+      {/* Scaling Projection tool — Part 9 */}
       <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
         <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
           <TrendingUp size={15} className="text-brand-500" />
-          Projection Simulator
+          Scaling Projection
         </h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-500">Number of shops</span>
-              <span className="text-xs font-semibold text-slate-800">{projShops}</span>
-            </div>
-            <input
-              type="range" min={1} max={200} step={1} value={projShops}
-              onChange={e => setProjShops(Number(e.target.value))}
-              className="w-full accent-brand-500 h-1.5"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-500">Messages / shop / month</span>
-              <span className="text-xs font-semibold text-slate-800">{projMsgs}</span>
-            </div>
-            <input
-              type="range" min={10} max={5000} step={10} value={projMsgs}
-              onChange={e => setProjMsgs(Number(e.target.value))}
-              className="w-full accent-brand-500 h-1.5"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <span className="text-xs text-slate-500 block">Plan</span>
-            <div className="flex gap-2">
-              {(['starter', 'growth', 'pro'] as const).map(pl => (
-                <button
-                  key={pl}
-                  onClick={() => setProjPlan(pl)}
-                  className={clsx(
-                    'flex-1 py-1.5 rounded-lg text-xs font-medium capitalize transition-colors border',
-                    projPlan === pl
-                      ? 'bg-brand-500 text-white border-brand-500'
-                      : 'border-slate-200 text-slate-600 hover:bg-slate-50',
-                  )}
-                >
-                  {pl}
-                </button>
-              ))}
-            </div>
-          </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <label className="flex flex-col gap-1 text-xs text-slate-500">
+            Number of hotels
+            <input type="number" min={1} value={projHotels} onChange={e => setProjHotels(Math.max(1, Number(e.target.value) || 0))}
+              className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400/40" />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-slate-500">
+            Average price per hotel (€)
+            <input type="number" min={0} step="0.01" value={projPrice} onChange={e => setProjPrice(Number(e.target.value) || 0)}
+              className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400/40" />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-slate-500">
+            Average Claude cost (€/hotel)
+            <input type="number" min={0} step="0.01" value={projClaude} onChange={e => setProjClaude(Number(e.target.value) || 0)}
+              className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400/40" />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-slate-500">
+            Average WhatsApp cost (€/hotel)
+            <input type="number" min={0} step="0.01" value={projWhatsapp} onChange={e => setProjWhatsapp(Number(e.target.value) || 0)}
+              className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400/40" />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-slate-500">
+            Monthly infra cost (€, flat)
+            <input type="number" min={0} step="0.01" value={projInfra} onChange={e => setProjInfra(Number(e.target.value) || 0)}
+              className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400/40" />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-slate-500">
+            Commission rate (%)
+            <input type="number" min={0} max={100} step="0.1" value={projCommission} onChange={e => setProjCommission(Number(e.target.value) || 0)}
+              className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400/40" />
+          </label>
         </div>
 
-        {/* Projection result cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2 border-t border-slate-100">
+        {/* Results */}
+        <div className="pt-3 border-t border-slate-100 space-y-1.5">
           {[
-            { label: 'Monthly revenue', value: `$${projTotalRev.toLocaleString()}` },
-            { label: 'Monthly cost',    value: `$${projTotalCost.toFixed(2)}` },
-            { label: 'Net income',      value: `$${(projTotalRev - projTotalCost).toFixed(2)}` },
-            { label: 'Margin',          value: isFinite(projNetMargin) ? `${projNetMargin.toFixed(1)}%` : '—' },
-          ].map(c => (
-            <div key={c.label} className="bg-slate-50 rounded-lg px-4 py-3">
-              <p className="text-xs text-slate-400">{c.label}</p>
-              <p className="text-lg font-semibold text-slate-800 mt-0.5">{c.value}</p>
+            { label: 'Total revenue',          value: `€${projTotalRevenue.toLocaleString(undefined, { maximumFractionDigits: 2 })}` },
+            { label: 'Total variable costs',   value: `€${projTotalVariable.toLocaleString(undefined, { maximumFractionDigits: 2 })}` },
+            { label: 'Total infra cost',       value: `€${projTotalInfra.toLocaleString(undefined, { maximumFractionDigits: 2 })}` },
+            { label: 'Net before commission',  value: `€${projNetBeforeComm.toLocaleString(undefined, { maximumFractionDigits: 2 })}` },
+            { label: 'Total commission owed',  value: `€${projTotalCommission.toLocaleString(undefined, { maximumFractionDigits: 2 })}` },
+          ].map(row => (
+            <div key={row.label} className="flex items-center justify-between text-sm text-slate-600">
+              <span>{row.label}</span>
+              <span className="font-medium tabular-nums">{row.value}</span>
             </div>
           ))}
+          <div className="border-t border-slate-200 my-2" />
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold text-slate-800">True net profit</span>
+            <span className="text-lg font-semibold tabular-nums text-green-600">
+              €{projTrueNetProfit.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-slate-500">Profit per hotel</span>
+            <span className="text-sm font-medium tabular-nums text-slate-700">
+              €{projProfitPerHotel.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            </span>
+          </div>
         </div>
       </div>
     </div>

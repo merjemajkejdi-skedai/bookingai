@@ -180,12 +180,25 @@ adminRouter.put('/tenants/:id', async (req: Request, res: Response) => {
     provider, metaPhoneNumberId, metaAccessToken, metaWabaId,
     twilioAccountSid, twilioAuthToken, twilioDeptTemplateSid,
     notificationEmail, emailFallbackEnabled,
+    monthlyPrice, commissionRate, environment, usesTwilioFlag,
   } = req.body;
 
   // Normalise: always store with whatsapp: prefix; empty string → null (don't overwrite)
   const normalisedWhatsapp = whatsappNumber
     ? normaliseWhatsapp(whatsappNumber)
     : null;
+
+  if (environment !== undefined && !['test', 'live'].includes(environment))
+    return err(res, "environment must be 'test' or 'live'");
+
+  // monthly_price and uses_twilio_flag both treat `null` as a meaningful, intentional
+  // value (null = fall back to PLAN_REVENUE / fall back to the provider field), so a
+  // plain COALESCE(?,col) can never clear them back to that state once set. Use an
+  // explicit "was this key provided at all" gate + CASE WHEN instead.
+  const monthlyPriceProvided = monthlyPrice !== undefined;
+  const monthlyPriceValue    = (monthlyPrice === null || monthlyPrice === '') ? null : Number(monthlyPrice);
+  const twilioFlagProvided   = usesTwilioFlag !== undefined;
+  const twilioFlagValue      = usesTwilioFlag === true ? 1 : usesTwilioFlag === false ? 0 : null;
 
   await dbRun(
     `UPDATE tenants SET
@@ -209,7 +222,11 @@ adminRouter.put('/tenants/:id', async (req: Request, res: Response) => {
        twilio_auth_token         = COALESCE(?,twilio_auth_token),
        twilio_dept_template_sid  = COALESCE(?,twilio_dept_template_sid),
        notification_email        = COALESCE(?,notification_email),
-       email_fallback_enabled    = COALESCE(?,email_fallback_enabled)
+       email_fallback_enabled    = COALESCE(?,email_fallback_enabled),
+       monthly_price        = CASE WHEN ? THEN ? ELSE monthly_price END,
+       commission_rate      = COALESCE(?,commission_rate),
+       environment          = COALESCE(?,environment),
+       uses_twilio_flag     = CASE WHEN ? THEN ? ELSE uses_twilio_flag END
      WHERE id=?`,
     name??null, normalisedWhatsapp, plan??null,
     isActive !== undefined ? (isActive ? 1 : 0) : null,
@@ -223,6 +240,10 @@ adminRouter.put('/tenants/:id', async (req: Request, res: Response) => {
     twilioAccountSid||null, twilioAuthToken||null, twilioDeptTemplateSid||null,
     notificationEmail !== undefined ? (notificationEmail || null) : null,
     emailFallbackEnabled !== undefined ? (emailFallbackEnabled ? 1 : 0) : null,
+    monthlyPriceProvided ? 1 : 0, monthlyPriceValue,
+    commissionRate??null,
+    environment??null,
+    twilioFlagProvided ? 1 : 0, twilioFlagValue,
     req.params.id,
   );
 

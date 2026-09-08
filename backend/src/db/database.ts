@@ -1653,6 +1653,26 @@ export async function runMigrations() {
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 )`,
       `CREATE INDEX IF NOT EXISTS idx_manual_leads_status ON manual_leads(status)`,
+      // cost_analysis_v2_001 — per-tenant pricing/commission/environment overrides
+      // for the Cost Analysis page. All default to inert/safe values: monthly_price
+      // NULL falls back to the existing PLAN_REVENUE map, environment defaults to
+      // 'test' (excluded from Twilio cost + infra allocation until manually flipped
+      // to 'live'), uses_twilio_flag NULL falls back to the existing provider field.
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS monthly_price DECIMAL(10,2) DEFAULT NULL`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS commission_rate DECIMAL(5,2) NOT NULL DEFAULT 50.00`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS environment VARCHAR(10) NOT NULL DEFAULT 'test'`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS uses_twilio_flag BOOLEAN DEFAULT NULL`,
+      // cost_analysis_v2_002 — platform-wide monthly infra cost (Railway, R2, Resend,
+      // domains, etc.), keyed by calendar month, split evenly across 'live' tenants
+      `CREATE TABLE IF NOT EXISTS platform_monthly_costs (
+  id TEXT PRIMARY KEY,
+  period_month DATE NOT NULL,
+  amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(period_month)
+)`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -2497,6 +2517,28 @@ export async function runMigrations() {
     updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
   )`);
   exec('CREATE INDEX IF NOT EXISTS idx_manual_leads_status ON manual_leads(status)');
+
+  // cost_analysis_v2_001/002 — per-tenant pricing overrides + platform infra cost
+  const tenantCostCols = prepare("SELECT name FROM pragma_table_info('tenants')")
+    .all().map((r: any) => r.name as string);
+  if (!tenantCostCols.includes('monthly_price'))
+    exec('ALTER TABLE tenants ADD COLUMN monthly_price REAL DEFAULT NULL');
+  if (!tenantCostCols.includes('commission_rate'))
+    exec('ALTER TABLE tenants ADD COLUMN commission_rate REAL NOT NULL DEFAULT 50.00');
+  if (!tenantCostCols.includes('environment'))
+    exec("ALTER TABLE tenants ADD COLUMN environment TEXT NOT NULL DEFAULT 'test'");
+  if (!tenantCostCols.includes('uses_twilio_flag'))
+    exec('ALTER TABLE tenants ADD COLUMN uses_twilio_flag INTEGER DEFAULT NULL');
+
+  exec(`CREATE TABLE IF NOT EXISTS platform_monthly_costs (
+    id TEXT PRIMARY KEY,
+    period_month TEXT NOT NULL,
+    amount REAL NOT NULL DEFAULT 0,
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    UNIQUE(period_month)
+  )`);
 
   // archive_001: conversation auto-archive — archived_at/archived_by on every
   // conversations table, archive_after_days on tenants

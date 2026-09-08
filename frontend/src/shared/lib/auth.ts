@@ -124,12 +124,21 @@ export const authApi = {
 };
 
 export const analyticsApi = {
-  getMessages: (period: string) =>
-    adminFetch<any[]>(`/admin/analytics/messages?period=${period}`),
-  getSummary: (period: string) =>
-    adminFetch<any>(`/admin/analytics/summary?period=${period}`),
+  getMessages: (period: string, month?: string) =>
+    adminFetch<any[]>(`/admin/analytics/messages?period=${period}${month ? `&month=${month}` : ''}`),
+  getSummary: (period: string, month?: string) =>
+    adminFetch<any>(`/admin/analytics/summary?period=${period}${month ? `&month=${month}` : ''}`),
   getTimeline: (period: string) =>
     adminFetch<any[]>(`/admin/analytics/timeline?period=${period}`),
+  getInfraCost: (month: string) =>
+    adminFetch<{ period_month: string; amount: number; notes: string | null }>(`/admin/analytics/infra-cost?month=${month}`),
+  setInfraCost: (month: string, amount: number, notes?: string) =>
+    adminFetch<{ period_month: string; amount: number; notes: string | null }>('/admin/analytics/infra-cost', {
+      method: 'PATCH',
+      body: JSON.stringify({ month, amount, notes }),
+    }),
+  getProjectionDefaults: () =>
+    adminFetch<{ avgPrice: number; avgClaudeCost: number; avgWhatsappCost: number; currentInfraCost: number; currentCommissionRate: number }>('/admin/analytics/projection-defaults'),
 };
 
 export const adminApi = {
