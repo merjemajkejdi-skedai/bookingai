@@ -266,6 +266,90 @@ adminRouter.put('/tenants/:id', async (req: Request, res: Response) => {
   ok(res, await dbGet('SELECT * FROM tenants WHERE id=?', req.params.id));
 });
 
+// ---------------------------------------------------------------------------
+// Commissionable flag — per tenant, with month-by-month history
+// (addendum to Cost Analysis v2)
+// ---------------------------------------------------------------------------
+
+/** 'YYYY-MM-01' for the current calendar month — the only month this PATCH endpoint
+ *  ever writes to, which is what keeps past months locked: there's no code path
+ *  that lets a caller target a period_month other than "now". */
+function currentPeriodMonth(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+}
+
+// PATCH /admin/tenants/:id/commissionable
+// Body: { isCommissionable: boolean, reason?: string }
+adminRouter.patch('/tenants/:id/commissionable', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { isCommissionable, reason } = req.body as { isCommissionable?: boolean; reason?: string };
+
+    if (typeof isCommissionable !== 'boolean')
+      return err(res, 'isCommissionable (boolean) is required');
+
+    const tenant = await dbGet('SELECT id, name, commission_rate FROM tenants WHERE id = ?', id) as any;
+    if (!tenant) return err(res, 'Tenant not found', 404);
+
+    const periodMonth = currentPeriodMonth();
+    const adminEmail = (req.user as any)?.email || 'unknown';
+
+    await dbRun(
+      `UPDATE tenants SET is_commissionable = ? WHERE id = ?`,
+      isCommissionable ? 1 : 0, id,
+    );
+
+    const logId = crypto.randomUUID();
+    if (isPg) {
+      await dbRun(
+        `INSERT INTO commissionable_status_log (id, tenant_id, period_month, is_commissionable, commission_rate, changed_by, reason)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (tenant_id, period_month) DO UPDATE SET
+           is_commissionable = excluded.is_commissionable,
+           commission_rate   = excluded.commission_rate,
+           changed_by        = excluded.changed_by,
+           reason            = excluded.reason`,
+        logId, id, periodMonth, isCommissionable, tenant.commission_rate, adminEmail, reason || null,
+      );
+    } else {
+      await dbRun(
+        `INSERT INTO commissionable_status_log (id, tenant_id, period_month, is_commissionable, commission_rate, changed_by, reason)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (tenant_id, period_month) DO UPDATE SET
+           is_commissionable = excluded.is_commissionable,
+           commission_rate   = excluded.commission_rate,
+           changed_by        = excluded.changed_by,
+           reason            = excluded.reason`,
+        logId, id, periodMonth, isCommissionable ? 1 : 0, tenant.commission_rate, adminEmail, reason || null,
+      );
+    }
+
+    console.log(`[Admin] Tenant ${tenant.name} commissionable status set to ${isCommissionable} for ${periodMonth} by ${adminEmail}`);
+    ok(res, {
+      tenant: await dbGet('SELECT * FROM tenants WHERE id = ?', id),
+      logRow: await dbGet('SELECT * FROM commissionable_status_log WHERE tenant_id = ? AND period_month = ?', id, periodMonth),
+    });
+  } catch (e: any) {
+    console.error('[Admin] commissionable PATCH error:', e.message);
+    err(res, e.message, 500);
+  }
+});
+
+// GET /admin/tenants/:id/commissionable-history
+adminRouter.get('/tenants/:id/commissionable-history', async (req: Request, res: Response) => {
+  try {
+    const rows = await dbAll(
+      `SELECT * FROM commissionable_status_log WHERE tenant_id = ? ORDER BY period_month DESC`,
+      req.params.id,
+    );
+    ok(res, rows);
+  } catch (e: any) {
+    console.error('[Admin] commissionable-history error:', e.message);
+    err(res, e.message, 500);
+  }
+});
+
 // POST /admin/tenants/:id/reset-password
 adminRouter.post('/tenants/:id/reset-password', async (req: Request, res: Response) => {
   const { newPassword } = req.body;

@@ -1673,6 +1673,24 @@ export async function runMigrations() {
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(period_month)
 )`,
+      // commissionable_001 — per-tenant commissionable flag + month-by-month history.
+      // Defaults to true so existing v2 commission behaviour is unaffected until
+      // explicitly turned off. tenant_id is TEXT (not UUID) to match tenants.id —
+      // see the manual_leads_001 note above for why a mismatched FK type silently
+      // fails the whole CREATE TABLE.
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS is_commissionable BOOLEAN NOT NULL DEFAULT true`,
+      `CREATE TABLE IF NOT EXISTS commissionable_status_log (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  period_month DATE NOT NULL,
+  is_commissionable BOOLEAN NOT NULL,
+  commission_rate DECIMAL(5,2),
+  changed_by VARCHAR(255),
+  reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(tenant_id, period_month)
+)`,
+      `CREATE INDEX IF NOT EXISTS idx_commissionable_log_tenant ON commissionable_status_log(tenant_id, period_month DESC)`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
@@ -2539,6 +2557,23 @@ export async function runMigrations() {
     updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     UNIQUE(period_month)
   )`);
+
+  // commissionable_001 — per-tenant commissionable flag + month-by-month history
+  if (!tenantCostCols.includes('is_commissionable'))
+    exec('ALTER TABLE tenants ADD COLUMN is_commissionable INTEGER NOT NULL DEFAULT 1');
+
+  exec(`CREATE TABLE IF NOT EXISTS commissionable_status_log (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    period_month TEXT NOT NULL,
+    is_commissionable INTEGER NOT NULL,
+    commission_rate REAL,
+    changed_by TEXT,
+    reason TEXT,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    UNIQUE(tenant_id, period_month)
+  )`);
+  exec('CREATE INDEX IF NOT EXISTS idx_commissionable_log_tenant ON commissionable_status_log(tenant_id, period_month)');
 
   // archive_001: conversation auto-archive — archived_at/archived_by on every
   // conversations table, archive_after_days on tenants

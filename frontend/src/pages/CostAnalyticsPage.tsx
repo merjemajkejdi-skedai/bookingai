@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, type ElementType } from 'react';
 import { TrendingUp, TrendingDown, MessageSquare, DollarSign, BarChart2, ChevronDown, ChevronUp, ArrowUpDown, Info } from 'lucide-react';
 import { analyticsApi, adminApi } from '../shared/lib/auth';
-import { Spinner } from '../components/ui';
+import { Spinner, Modal } from '../components/ui';
 import clsx from 'clsx';
 
 // ---------------------------------------------------------------------------
@@ -159,6 +159,65 @@ function PriceSlider({
 }
 
 // ---------------------------------------------------------------------------
+// Commissionable History modal — Part 5
+// ---------------------------------------------------------------------------
+function monthLabel(periodMonth: string): string {
+  const d = new Date(`${String(periodMonth).slice(0, 7)}-01T00:00:00Z`);
+  return d.toLocaleDateString(undefined, { month: 'short', year: 'numeric', timeZone: 'UTC' });
+}
+
+function CommissionableHistoryModal({ tenant, onClose }: { tenant: { id: string; name: string }; onClose: () => void }) {
+  const [rows, setRows] = useState<any[] | null>(null);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    adminApi.getCommissionableHistory(tenant.id)
+      .then(setRows)
+      .catch(e => setErr(e.message));
+  }, [tenant.id]);
+
+  return (
+    <Modal title={`Commissionable History — ${tenant.name}`} onClose={onClose} wide>
+      {err && <p className="text-sm text-red-500">{err}</p>}
+      {!rows && !err && <Spinner />}
+      {rows && rows.length === 0 && <p className="text-sm text-slate-400">No history recorded yet — a snapshot is created the first time a month is viewed.</p>}
+      {rows && rows.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-xs text-slate-400 border-b border-slate-200">
+                <th className="text-left py-2 pr-3">Month</th>
+                <th className="text-left py-2 pr-3">Status</th>
+                <th className="text-right py-2 pr-3">Rate</th>
+                <th className="text-left py-2 pr-3">Changed By</th>
+                <th className="text-left py-2">Reason</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {rows.map(row => (
+                <tr key={row.id}>
+                  <td className="py-2 pr-3 font-medium text-slate-700">{monthLabel(row.period_month)}</td>
+                  <td className="py-2 pr-3">
+                    {row.is_commissionable === true || row.is_commissionable === 1
+                      ? <span className="text-green-600">✅ Commissionable</span>
+                      : <span className="text-red-500">❌ Not Commissionable</span>}
+                  </td>
+                  <td className="py-2 pr-3 text-right tabular-nums text-slate-600">
+                    {row.commission_rate !== null && row.commission_rate !== undefined ? `${Number(row.commission_rate)}%` : '—'}
+                  </td>
+                  <td className="py-2 pr-3 text-slate-500">{row.changed_by || '—'}</td>
+                  <td className="py-2 text-slate-500 italic">{row.reason ? `"${row.reason}"` : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Metric card
 // ---------------------------------------------------------------------------
 function MetricCard({ label, value, sub, icon: Icon, color }: {
@@ -206,6 +265,12 @@ export function CostAnalyticsPage() {
   const [infraCost, setInfraCost]   = useState<{ amount: number; notes: string | null } | null>(null);
   const [infraInput, setInfraInput] = useState('');
   const [infraSaving, setInfraSaving] = useState(false);
+
+  // Commissionable flag — confirm modal + history modal
+  const [confirmToggle, setConfirmToggle] = useState<{ tenantId: string; tenantName: string; newStatus: boolean } | null>(null);
+  const [confirmReason, setConfirmReason] = useState('');
+  const [confirmSaving, setConfirmSaving] = useState(false);
+  const [historyTenant, setHistoryTenant] = useState<{ id: string; name: string } | null>(null);
 
   // Projection simulator (Part 9)
   const [projHotels,    setProjHotels]    = useState(10);
@@ -273,6 +338,21 @@ export function CostAnalyticsPage() {
     }
   }
 
+  async function confirmCommissionableToggle() {
+    if (!confirmToggle) return;
+    setConfirmSaving(true);
+    try {
+      await adminApi.setCommissionable(confirmToggle.tenantId, confirmToggle.newStatus, confirmReason || undefined);
+      setConfirmToggle(null);
+      setConfirmReason('');
+      load();
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setConfirmSaving(false);
+    }
+  }
+
   // ── Meta billing cutover (Part 3) ──────────────────────────────────────
   // Month mode: compare the selected calendar month to the cutover.
   // Relative periods (1d/7d/30d/all): these are rolling windows ending "now",
@@ -297,19 +377,29 @@ export function CostAnalyticsPage() {
   // ── Filter + sort ────────────────────────────────────────────────────────
   const allTypes = [...new Set(messages.map(r => r.tenant_type).filter(Boolean))].sort();
 
+  // A past month uses its locked commissionable_status_log snapshot instead of the
+  // tenant's current live settings — this is what makes history immune to later
+  // toggles (see the Commissionable Flag addendum, Part 4).
+  const isPastMonth = period === 'month' && month < currentMonthStr();
+
   const filtered = messages
     .filter(r => typeFilter === 'all' || r.tenant_type === typeFilter)
     .map(r => {
       const costs = calcCosts(r, params, metaBillable);
       const rev   = revenue(r);
       const infraAllocation = r.environment === 'live' ? infraCostPerTenant : 0;
+      const commissionable = period === 'month'
+        ? (r.snapshot_is_commissionable !== undefined ? !!r.snapshot_is_commissionable : !!r.is_commissionable)
+        : !!r.is_commissionable;
+      const commissionRate = period === 'month' && r.snapshot_commission_rate !== undefined && r.snapshot_commission_rate !== null
+        ? Number(r.snapshot_commission_rate)
+        : (Number(r.commission_rate) || 50);
       const netBeforeCommission = Math.max(0, rev - costs.totalVariableCost - infraAllocation);
-      const commissionRate = Number(r.commission_rate) || 50;
-      const commission = netBeforeCommission * (commissionRate / 100);
+      const commission = commissionable ? netBeforeCommission * (commissionRate / 100) : 0;
       const netAfterCommission = rev - costs.totalVariableCost - infraAllocation - commission;
       return {
         ...r, ...costs, revenue: rev, margin: margin(rev, costs.totalVariableCost),
-        infraAllocation, commissionRate, commission, netAfterCommission,
+        infraAllocation, commissionable, commissionRate, commission, netAfterCommission,
       };
     })
     .sort((a, b) => {
@@ -551,6 +641,7 @@ export function CostAnalyticsPage() {
                 <SortTh col="tenant_name" label="Shop"     align="left" />
                 <th className="px-3 py-2 text-xs font-medium text-slate-500 text-left">Type / Plan</th>
                 <th className="px-3 py-2 text-xs font-medium text-slate-500 text-left">Environment</th>
+                <th className="px-3 py-2 text-xs font-medium text-slate-500 text-left">Commissionable</th>
                 <SortTh col="total"       label="Messages" />
                 <th className="px-3 py-2 text-xs font-medium text-slate-500 text-right">Twilio $</th>
                 <SortTh col="metaCost"    label="Meta $" />
@@ -566,7 +657,7 @@ export function CostAnalyticsPage() {
             <tbody className="divide-y divide-slate-100">
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={12} className="text-center py-10 text-sm text-slate-400">
+                  <td colSpan={13} className="text-center py-10 text-sm text-slate-400">
                     No data for this period
                   </td>
                 </tr>
@@ -600,6 +691,28 @@ export function CostAnalyticsPage() {
                       <option value="test">Test</option>
                       <option value="live">Live</option>
                     </select>
+                  </td>
+                  <td className="px-3 py-3">
+                    {isPastMonth ? (
+                      <span className="text-xs text-slate-500 whitespace-nowrap">
+                        {r.commissionable ? '✅ Yes' : '❌ No'} <span title="Past months are locked">🔒</span>
+                      </span>
+                    ) : (
+                      <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={r.commissionable}
+                          onChange={() => setConfirmToggle({ tenantId: r.tenant_id, tenantName: r.tenant_name, newStatus: !r.commissionable })}
+                        />
+                        {r.commissionable ? 'Yes' : 'No'}
+                      </label>
+                    )}
+                    <button
+                      onClick={() => setHistoryTenant({ id: r.tenant_id, name: r.tenant_name })}
+                      className="block text-[10px] text-brand-500 hover:underline mt-0.5"
+                    >
+                      History
+                    </button>
                   </td>
                   <td className="px-3 py-3 text-right tabular-nums">
                     {Number(r.total).toLocaleString()}
@@ -656,15 +769,19 @@ export function CostAnalyticsPage() {
                     ${r.infraAllocation.toFixed(2)}
                   </td>
                   <td className="px-3 py-3 text-right tabular-nums text-slate-700">
-                    <div className="flex flex-col items-end gap-0.5">
-                      <span>${r.commission.toFixed(2)}</span>
-                      <InlineNumber
-                        value={r.commissionRate}
-                        placeholder="50"
-                        onSave={v => patchTenant(r.tenant_id, { commissionRate: v ?? 50 })}
-                      />
-                      <span className="text-[10px] text-slate-400">%</span>
-                    </div>
+                    {r.commissionable ? (
+                      <div className="flex flex-col items-end gap-0.5">
+                        <span>${r.commission.toFixed(2)}</span>
+                        <InlineNumber
+                          value={r.commissionRate}
+                          placeholder="50"
+                          onSave={v => patchTenant(r.tenant_id, { commissionRate: v ?? 50 })}
+                        />
+                        <span className="text-[10px] text-slate-400">%</span>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-slate-400 italic" title="Not commissionable">N/A</span>
+                    )}
                   </td>
                   <td className={clsx(
                     'px-3 py-3 text-right tabular-nums font-semibold',
@@ -678,7 +795,7 @@ export function CostAnalyticsPage() {
             {filtered.length > 0 && (
               <tfoot className="border-t-2 border-slate-200 bg-slate-50">
                 <tr>
-                  <td colSpan={3} className="px-3 py-3 text-xs font-semibold text-slate-600">
+                  <td colSpan={4} className="px-3 py-3 text-xs font-semibold text-slate-600">
                     Total ({filtered.length} shops)
                   </td>
                   <td className="px-3 py-3 text-right text-xs font-semibold tabular-nums">
@@ -792,6 +909,47 @@ export function CostAnalyticsPage() {
           </div>
         </div>
       </div>
+
+      {/* Commissionable toggle — confirm modal (Part 5) */}
+      {confirmToggle && (
+        <Modal title="Change commissionable status?" onClose={() => { setConfirmToggle(null); setConfirmReason(''); }}>
+          <div className="space-y-4">
+            <div className="text-sm text-slate-600 space-y-1">
+              <p>Tenant: <strong className="text-slate-800">{confirmToggle.tenantName}</strong></p>
+              <p>New status: <strong className={confirmToggle.newStatus ? 'text-green-600' : 'text-red-500'}>
+                {confirmToggle.newStatus ? 'Commissionable' : 'Not Commissionable'}
+              </strong></p>
+            </div>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="font-medium text-slate-700">Reason (optional)</span>
+              <input
+                type="text"
+                value={confirmReason}
+                onChange={e => setConfirmReason(e.target.value)}
+                placeholder="e.g. Partner handed back to house"
+                className="rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400/40"
+              />
+            </label>
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <button onClick={() => { setConfirmToggle(null); setConfirmReason(''); }} className="px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">
+                Cancel
+              </button>
+              <button
+                onClick={confirmCommissionableToggle}
+                disabled={confirmSaving}
+                className="px-3 py-1.5 text-sm font-medium rounded-lg bg-brand-500 text-white hover:bg-brand-600 disabled:opacity-40"
+              >
+                {confirmSaving ? 'Saving…' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Commissionable History modal */}
+      {historyTenant && (
+        <CommissionableHistoryModal tenant={historyTenant} onClose={() => setHistoryTenant(null)} />
+      )}
     </div>
   );
 }

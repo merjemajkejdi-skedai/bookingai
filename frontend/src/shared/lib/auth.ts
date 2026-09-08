@@ -237,4 +237,12 @@ export const adminApi = {
     }),
   getManualLeadBroughtByOptions: () =>
     adminFetch<{ teamMembers: string[]; existingTenants: string[] }>('/admin/manual-leads/brought-by-options'),
+  // ── Commissionable flag (Cost Analysis addendum) ───────────────────────
+  setCommissionable: (tenantId: string, isCommissionable: boolean, reason?: string) =>
+    adminFetch<{ tenant: any; logRow: any }>(`/admin/tenants/${tenantId}/commissionable`, {
+      method: 'PATCH',
+      body: JSON.stringify({ isCommissionable, reason }),
+    }),
+  getCommissionableHistory: (tenantId: string) =>
+    adminFetch<any[]>(`/admin/tenants/${tenantId}/commissionable-history`),
 };

@@ -36,6 +36,33 @@ function parseMonthParam(month: unknown): string | null {
 }
 
 /**
+ * Commissionable flag history — addendum to Cost Analysis v2.
+ * On first view of a given month for a tenant, snapshot that tenant's CURRENT
+ * is_commissionable/commission_rate into commissionable_status_log for that
+ * month. Never overwrites an existing row — once a month has a snapshot
+ * (whether from an earlier view or an explicit PATCH), it's locked to that
+ * value regardless of what the tenant's live settings become later.
+ */
+async function ensureCommissionableSnapshots(rows: any[], periodMonth: string): Promise<void> {
+  for (const row of rows) {
+    const existing = await dbGet(
+      `SELECT id FROM commissionable_status_log WHERE tenant_id = ? AND period_month = ?`,
+      [row.tenant_id, periodMonth],
+    );
+    if (!existing) {
+      await dbRun(
+        `INSERT INTO commissionable_status_log (id, tenant_id, period_month, is_commissionable, commission_rate)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (tenant_id, period_month) DO NOTHING`,
+        [crypto.randomUUID(), row.tenant_id, periodMonth,
+         isPg ? !!row.is_commissionable : (row.is_commissionable ? 1 : 0),
+         row.commission_rate],
+      ).catch((e: any) => console.warn('[commissionable snapshot] skipped:', e.message));
+    }
+  }
+}
+
+/**
  * Returns a WHERE-clause fragment (no leading WHERE) for message_log.created_at.
  * The table alias 'ml' is used to qualify the column.
  *
@@ -105,6 +132,7 @@ adminAnalyticsRouter.get('/messages', async (req: Request, res: Response) => {
         t.uses_twilio_flag AS uses_twilio_flag,
         t.monthly_price    AS monthly_price,
         t.commission_rate  AS commission_rate,
+        t.is_commissionable AS is_commissionable,
         COALESCE(SUM(CASE WHEN ml.direction = 'inbound'  THEN 1 ELSE 0 END), 0) AS inbound,
         COALESCE(SUM(CASE WHEN ml.direction = 'outbound' THEN 1 ELSE 0 END), 0) AS outbound,
         COALESCE(COUNT(ml.id), 0)                                                 AS total,
@@ -116,11 +144,35 @@ adminAnalyticsRouter.get('/messages', async (req: Request, res: Response) => {
       LEFT JOIN message_log ml ON ${joinCondition}
       WHERE t.deleted_at IS NULL
       GROUP BY t.id, t.name, t.type, t.plan, t.is_active,
-               t.provider, t.environment, t.uses_twilio_flag, t.monthly_price, t.commission_rate
+               t.provider, t.environment, t.uses_twilio_flag, t.monthly_price, t.commission_rate, t.is_commissionable
       ORDER BY total DESC
     `;
 
-    const rows = await dbAll(sql, []);
+    const rows = await dbAll(sql, []) as any[];
+
+    // Commissionable history — only meaningful for a specific calendar month.
+    // Snapshot-on-first-view, then attach that month's locked values to each row
+    // so the frontend uses historical status/rate for past months instead of
+    // whatever the tenant's live settings are today.
+    if (period === 'month' && month) {
+      const periodMonth = `${month}-01`;
+      await ensureCommissionableSnapshots(rows, periodMonth);
+      const tenantIds = rows.map(r => r.tenant_id);
+      const logRows = tenantIds.length
+        ? await dbAll(
+            `SELECT tenant_id, is_commissionable, commission_rate FROM commissionable_status_log
+             WHERE period_month = ? AND tenant_id IN (${tenantIds.map(() => '?').join(',')})`,
+            [periodMonth, ...tenantIds],
+          ) as any[]
+        : [];
+      const logByTenant = new Map(logRows.map(l => [l.tenant_id, l]));
+      for (const row of rows) {
+        const snap = logByTenant.get(row.tenant_id);
+        row.snapshot_is_commissionable = snap ? snap.is_commissionable : row.is_commissionable;
+        row.snapshot_commission_rate   = snap ? snap.commission_rate   : row.commission_rate;
+      }
+    }
+
     res.json({ success: true, data: rows });
   } catch (e: any) {
     console.error('[adminAnalytics/messages]', e.message);
