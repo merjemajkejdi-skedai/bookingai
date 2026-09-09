@@ -1691,6 +1691,216 @@ export async function runMigrations() {
   UNIQUE(tenant_id, period_month)
 )`,
       `CREATE INDEX IF NOT EXISTS idx_commissionable_log_tenant ON commissionable_status_log(tenant_id, period_month DESC)`,
+      // grand_hotel_faq_seed_001 — 68 fictional test FAQ entries for the Grand Hotel
+      // TEST tenant (bc45f6d0-2789-4e89-b7b9-2efcc389eb48) only. Deliberately opposite
+      // mechanisms from La Favorita's real AC/safe (remote-control AC, PIN-code safe)
+      // so any FAQ data bleeding across tenants would be immediately obvious in a
+      // live test. Guarded by NOT EXISTS on (tenant_id, question) — safe to re-run,
+      // never creates duplicates.
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'What is the WiFi network name and password?', 'Network: GrandHotel_Guest, Password: welcome2026', 'Climate & Comfort', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'What is the WiFi network name and password?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'How do I control the air conditioning?', 'There is a remote control on the nightstand. Press the red power button to turn it on or off, and use the up/down arrows to adjust temperature.', 'Climate & Comfort', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'How do I control the air conditioning?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Does the AC have a remote, or is it wall-mounted only?', 'Each room has a handheld remote control for the AC unit.', 'Climate & Comfort', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Does the AC have a remote, or is it wall-mounted only?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Is there heating in winter?', 'Yes, the same unit and remote control both heating and cooling — press the mode button to switch between them.', 'Climate & Comfort', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Is there heating in winter?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Can I get a fan instead of AC?', 'Yes, standing fans are available on request from housekeeping.', 'Climate & Comfort', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Can I get a fan instead of AC?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Do you have extra blankets or pillows?', 'Yes, extra blankets and pillows are in the wardrobe. Hypoallergenic pillows are available on request.', 'Climate & Comfort', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Do you have extra blankets or pillows?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'How does the room safe work?', 'The safe is operated by a 4-digit PIN code. Set your own code, close the door, and enter the code again to lock. To open, simply re-enter your code.', 'Safe & Security', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'How does the room safe work?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'What do I do if I forget my safe PIN?', 'Call reception at extension 0 and our staff will assist you with the override code.', 'Safe & Security', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'What do I do if I forget my safe PIN?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Will my laptop fit in the safe?', 'Yes, the safe fits a standard 15-inch laptop comfortably.', 'Safe & Security', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Will my laptop fit in the safe?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Is the room door a keycard or physical key?', 'All rooms use an electronic keycard.', 'Safe & Security', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Is the room door a keycard or physical key?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'What do I do if my keycard stops working?', 'Bring it to reception and we will reissue it immediately, free of charge.', 'Safe & Security', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'What do I do if my keycard stops working?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'How do I control the room lights?', 'There is a master switch panel by the entrance door, plus individual switches by the bed.', 'Electrical & Lighting', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'How do I control the room lights?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Does the keycard need to stay inserted for power to work?', 'Yes, insert your keycard into the slot by the door to activate power and lighting in the room.', 'Electrical & Lighting', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Does the keycard need to stay inserted for power to work?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Are there USB charging ports?', 'Yes, USB ports are built into the nightstand lamps on both sides of the bed.', 'Electrical & Lighting', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Are there USB charging ports?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'What type of power sockets does the hotel use?', 'European standard (Type C/F) sockets. Adapters are available at reception on loan.', 'Electrical & Lighting', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'What type of power sockets does the hotel use?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Is there hot water 24/7?', 'Yes, hot water is available around the clock.', 'Bathroom', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Is there hot water 24/7?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Is there a hairdryer in the room?', 'Yes, a hairdryer is provided in the bathroom drawer.', 'Bathroom', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Is there a hairdryer in the room?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Are toiletries provided?', 'Yes, shampoo, conditioner, shower gel and soap are provided and refilled daily.', 'Bathroom', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Are toiletries provided?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Is there a bathtub or shower only?', 'Standard rooms have a walk-in shower; suites include a bathtub.', 'Bathroom', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Is there a bathtub or shower only?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'How do I request fresh towels?', 'Housekeeping changes towels daily, or you can call extension 0 to request them any time.', 'Bathroom', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'How do I request fresh towels?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Do you offer laundry service?', 'Yes. Price list is in your room folder. Items collected before 09:00 are returned the same evening; after 09:00, next-day delivery.', 'Laundry', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Do you offer laundry service?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Is there an iron in the room?', 'Not as standard, but an iron and ironing board are available on request from housekeeping at no charge.', 'Laundry', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Is there an iron in the room?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Do you offer dry cleaning?', 'Yes, dry cleaning is available with next-day return.', 'Laundry', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Do you offer dry cleaning?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Does the TV have Netflix?', 'Yes, all rooms have a smart TV with Netflix, YouTube, and standard cable channels.', 'Technology & Entertainment', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Does the TV have Netflix?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Is there a minibar?', 'Yes, the minibar is paid — a price list is on top of the minibar in your room.', 'Technology & Entertainment', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Is there a minibar?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Is there a phone in the room to call reception?', 'Yes, dial 0 from the room phone to reach reception any time.', 'Technology & Entertainment', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Is there a phone in the room to call reception?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'What time is check-in?', 'Check-in is from 14:00.', 'General Facilities', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'What time is check-in?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'What time is check-out?', 'Check-out is by 12:00.', 'General Facilities', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'What time is check-out?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Can I request early check-in or late check-out?', 'Subject to availability. Late check-out until 15:00 is complimentary for loyalty members, otherwise a small fee applies — ask reception.', 'General Facilities', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Can I request early check-in or late check-out?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Can I store luggage before check-in or after check-out?', 'Yes, our luggage room is available free of charge for all guests.', 'General Facilities', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Can I store luggage before check-in or after check-out?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Is reception open 24 hours?', 'Yes, our front desk is staffed 24/7.', 'General Facilities', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Is reception open 24 hours?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Is the hotel wheelchair accessible?', 'Yes, we have a ramp at the main entrance, an accessible elevator, and two adapted rooms — please request one when booking.', 'General Facilities', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Is the hotel wheelchair accessible?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Are pets allowed?', 'Small pets under 10kg are welcome for a €15/night fee.', 'General Facilities', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Are pets allowed?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Is smoking allowed?', 'The hotel is non-smoking indoors. A designated smoking area is available on the terrace.', 'General Facilities', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Is smoking allowed?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Do you have a gym?', 'Yes, our fitness center is open 06:00–22:00 and free for all guests.', 'Gym & Wellness', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Do you have a gym?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Do you have a spa?', 'Yes, we have a small spa with sauna and massage treatments — book at reception, ideally a day in advance.', 'Gym & Wellness', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Do you have a spa?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Is there a swimming pool?', 'Yes, our rooftop pool is open 08:00–20:00. It is not heated.', 'Gym & Wellness', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Is there a swimming pool?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Are pool towels provided?', 'Yes, pool towels are available at the pool bar, no charge.', 'Gym & Wellness', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Are pool towels provided?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'What time is breakfast?', 'Breakfast buffet is served 07:00–10:30 in the Olive Terrace restaurant.', 'Food & Drink', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'What time is breakfast?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Is breakfast included?', 'Yes, breakfast is included in all room rates.', 'Food & Drink', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Is breakfast included?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Is there a restaurant on site?', 'Yes, Olive Terrace is open 12:00–22:00 for lunch and dinner.', 'Food & Drink', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Is there a restaurant on site?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Is there room service?', 'Yes, room service is available 24 hours — dial 0 to order from the in-room menu.', 'Food & Drink', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Is there room service?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Do you cater to dietary restrictions?', 'Yes, vegetarian, vegan, and gluten-free options are available at breakfast and in the restaurant — just let our staff know.', 'Food & Drink', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Do you cater to dietary restrictions?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Is there a bar?', 'Yes, our lobby bar is open 11:00–00:00.', 'Food & Drink', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Is there a bar?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Do you have a business center?', 'Yes, a small business corner in the lobby with free printing for guests.', 'Business & Events', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Do you have a business center?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Do you host weddings or events?', 'Yes, our rooftop terrace can be hired for private events — contact reception for details and pricing.', 'Business & Events', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Do you host weddings or events?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'What is the nearest hospital?', 'The nearest hospital is approximately 10 minutes away by car. Reception can call an ambulance or arrange transport if needed.', 'Safety & Emergencies', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'What is the nearest hospital?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'What do I do in case of fire?', 'Follow the illuminated exit signs to the nearest stairwell — do not use the elevator. Assembly point is the front car park.', 'Safety & Emergencies', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'What do I do in case of fire?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Is there a safe neighbourhood around the hotel?', 'Yes, the area is well-lit and safe, with police patrols nearby. We still recommend normal city precautions at night.', 'Safety & Emergencies', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Is there a safe neighbourhood around the hotel?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Is there parking?', 'Yes, on-site parking is available for €10/night.', 'Parking & Transport', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Is there parking?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Do you offer airport transfers?', 'Yes, €25 for up to 4 people. The airport is about 20 minutes away. Book at reception or in advance.', 'Parking & Transport', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Do you offer airport transfers?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Can you call a taxi for me?', 'Yes, reception can call a taxi any time — typically arrives within 10 minutes.', 'Parking & Transport', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Can you call a taxi for me?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'What is a fair taxi price to the city centre?', 'Approximately €5–7 from the hotel to the city centre, about a 10-minute ride.', 'Parking & Transport', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'What is a fair taxi price to the city centre?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Is public transport nearby?', 'Yes, a bus stop is 2 minutes'' walk from the hotel, with services to the city centre every 15 minutes.', 'Parking & Transport', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Is public transport nearby?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'What is within walking distance?', 'The old town, main square, and several restaurants are all within a 10-minute walk.', 'Local Area', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'What is within walking distance?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Can you recommend restaurants nearby?', 'Yes — ask reception for our curated list of local favourites, from traditional to international cuisine.', 'Local Area', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Can you recommend restaurants nearby?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Is there a supermarket nearby?', 'Yes, a supermarket is a 5-minute walk from the hotel.', 'Local Area', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Is there a supermarket nearby?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Is tap water safe to drink?', 'Yes, tap water is safe to drink, though bottled water is also available at reception.', 'Local Area', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Is tap water safe to drink?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Is tipping customary?', 'Not mandatory, but appreciated — around 5-10% in restaurants is common.', 'Local Area', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Is tipping customary?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Do you offer a honeymoon package?', 'Yes, our honeymoon package includes a room upgrade, champagne on arrival, and a late check-out — ask reception or your booking agent.', 'Packages & Upsells', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Do you offer a honeymoon package?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Do you have a romantic dinner setup?', 'Yes, we can arrange a private table setup on the rooftop terrace — please book at least 24 hours in advance.', 'Packages & Upsells', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Do you have a romantic dinner setup?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Is airport transfer included in any package?', 'Our Premium package includes complimentary round-trip airport transfer.', 'Packages & Upsells', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Is airport transfer included in any package?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'What is your cancellation policy?', 'Free cancellation up to 48 hours before arrival. Cancellations within 48 hours are charged one night''s stay.', 'Booking & Policies', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'What is your cancellation policy?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Is a security deposit required at check-in?', 'Yes, a €50 refundable deposit is taken via card at check-in.', 'Booking & Policies', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Is a security deposit required at check-in?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'What ID do I need at check-in?', 'A valid passport or national ID card for all guests staying in the room.', 'Booking & Policies', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'What ID do I need at check-in?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'What time is room cleaning?', 'Housekeeping services rooms between 09:00 and 15:00 daily.', 'Housekeeping', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'What time is room cleaning?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Can I request ''do not disturb''?', 'Yes, use the door hanger provided, or let reception know.', 'Housekeeping', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Can I request ''do not disturb''?')`,
+      `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
+       SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Something is broken in my room — how do I report it?', 'Call reception at extension 0 and our maintenance team will attend promptly.', 'Housekeeping', 1
+       WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Something is broken in my room — how do I report it?')`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
