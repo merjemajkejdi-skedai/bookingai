@@ -379,6 +379,10 @@ gbRouter.patch('/orders/:id', requireAuth, async (req: Request, res: Response) =
 gbRouter.get('/requests', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
   const rawStatus = (req.query.status as string) || 'open';
+  // "Resolved between X and Y" date filter — ISO datetime bounds, both optional,
+  // only applied on the resolved view.
+  const resolvedAfter  = (req.query.resolvedAfter  as string) || '';
+  const resolvedBefore = (req.query.resolvedBefore as string) || '';
   try {
     let rows: unknown[];
     if (rawStatus === 'all') {
@@ -389,6 +393,15 @@ gbRouter.get('/requests', requireAuth, async (req: Request, res: Response) => {
          ORDER BY CASE r.status WHEN 'open' THEN 0 WHEN 'in_progress' THEN 1 ELSE 2 END, r.created_at DESC`,
         tenantId,
       );
+    } else if (rawStatus === 'resolved' && (resolvedAfter || resolvedBefore)) {
+      let sql = `SELECT r.*, d.name as department_name FROM gb_requests r
+         LEFT JOIN gb_departments d ON r.department_id = ${isPg ? 'd.id::text' : 'd.id'}
+         WHERE r.tenant_id = ? AND r.status = 'resolved'`;
+      const params: any[] = [tenantId];
+      if (resolvedAfter)  { sql += ` AND r.resolved_at >= ?`; params.push(resolvedAfter); }
+      if (resolvedBefore) { sql += ` AND r.resolved_at <= ?`; params.push(resolvedBefore); }
+      sql += ` ORDER BY r.resolved_at DESC`;
+      rows = await dbAll(sql, ...params);
     } else {
       rows = await dbAll(
         `SELECT r.*, d.name as department_name FROM gb_requests r
@@ -410,6 +423,10 @@ gbRouter.patch('/requests/:id', requireAuth, async (req: Request, res: Response)
     const params: any[] = [];
     if (status) { sets.push('status = ?'); params.push(status); }
     if (staff_notes !== undefined) { sets.push('staff_notes = ?'); params.push(staff_notes); }
+    // Stamp the resolution moment when (re-)resolving; untouched otherwise
+    // (mirrors hotel_requests). A later reopen leaves the old resolved_at in
+    // place, harmless since the date filter always also matches status = resolved.
+    if (status === 'resolved') sets.push(isPg ? 'resolved_at = NOW()' : 'resolved_at = CURRENT_TIMESTAMP');
     sets.push(isPg ? 'updated_at = NOW()' : 'updated_at = CURRENT_TIMESTAMP');
     params.push(req.params.id, tenantId);
     await dbRun(`UPDATE gb_requests SET ${sets.join(', ')} WHERE id = ? AND tenant_id = ?`, ...params);

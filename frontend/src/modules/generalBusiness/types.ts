@@ -88,6 +88,7 @@ export interface GbRequest {
   staff_notes?: string;
   created_at: string;
   updated_at: string;
+  resolved_at?: string | null;
 }
 
 export interface GbConversation {

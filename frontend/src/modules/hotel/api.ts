@@ -35,8 +35,12 @@ async function req<T>(path: string, opts?: RequestInit): Promise<T> {
 
 export const api = {
   // Requests
-  getRequests: (status = 'pending') =>
-    req<HotelRequest[]>(`/hotel/requests?status=${status}`),
+  getRequests: (status = 'pending', opts?: { resolvedAfter?: string; resolvedBefore?: string }) => {
+    const p = new URLSearchParams({ status });
+    if (opts?.resolvedAfter)  p.set('resolvedAfter', opts.resolvedAfter);
+    if (opts?.resolvedBefore) p.set('resolvedBefore', opts.resolvedBefore);
+    return req<HotelRequest[]>(`/hotel/requests?${p.toString()}`);
+  },
   updateRequestStatus: (id: string, status: string) =>
     req(`/hotel/requests/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
 

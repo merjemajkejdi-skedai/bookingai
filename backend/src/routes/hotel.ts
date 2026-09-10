@@ -38,6 +38,10 @@ async function getTenantType(tenantId: string): Promise<string> {
 hotelRouter.get('/requests', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
   const rawStatus = (req.query.status as string) || 'pending';
+  // "Resolved between X and Y" date filter — ISO datetime bounds, both optional.
+  // Only applied on the resolved view; ignored for pending / in_progress / all.
+  const resolvedAfter  = (req.query.resolvedAfter  as string) || '';
+  const resolvedBefore = (req.query.resolvedBefore as string) || '';
   try {
     let rows: unknown[];
     if (rawStatus === 'all') {
@@ -46,6 +50,18 @@ hotelRouter.get('/requests', requireAuth, async (req: Request, res: Response) =>
          ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'in_progress' THEN 1 ELSE 2 END, created_at DESC`,
         tenantId,
       );
+    } else if (rawStatus === 'resolved' && (resolvedAfter || resolvedBefore)) {
+      // resolved_at is a TEXT column here and can hold either ISO (`...T...Z`,
+      // from new Date().toISOString()) or the space-separated CURRENT_TIMESTAMP
+      // form on backfilled rows — cast to timestamptz on PG so the comparison is
+      // format-agnostic; plain string compare is fine on the SQLite dev path.
+      const col = isPg ? '(resolved_at)::timestamptz' : 'resolved_at';
+      let sql = `SELECT * FROM hotel_requests WHERE tenant_id = ? AND status = 'resolved'`;
+      const params: any[] = [tenantId];
+      if (resolvedAfter)  { sql += ` AND ${col} >= ?`; params.push(resolvedAfter); }
+      if (resolvedBefore) { sql += ` AND ${col} <= ?`; params.push(resolvedBefore); }
+      sql += ` ORDER BY ${col} DESC`;
+      rows = await dbAll(sql, ...params);
     } else {
       rows = await dbAll(
         `SELECT * FROM hotel_requests WHERE tenant_id = ? AND status = ? ORDER BY created_at ASC`,

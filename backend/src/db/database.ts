@@ -2322,6 +2322,15 @@ export async function runMigrations() {
       `INSERT INTO hotel_faq (id, tenant_id, question, answer, category, is_active)
        SELECT gen_random_uuid()::text, 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48', 'Is there a designated area for video calls if my room WiFi is weak?', 'Yes, our business corner has strong WiFi and a quiet setting ideal for calls.', 'Miscellaneous 2', 1
        WHERE NOT EXISTS (SELECT 1 FROM hotel_faq WHERE tenant_id = 'bc45f6d0-2789-4e89-b7b9-2efcc389eb48' AND question = 'Is there a designated area for video calls if my room WiFi is weak?')`,
+      // requests_resolved_at_001 — dedicated resolution timestamp for the "resolved
+      // between X and Y" date filter on the Requests tab. hotel_requests.resolved_at
+      // already exists and is already populated on resolve (dashboard + WhatsApp
+      // "done" command); gb_requests needs the column. Backfill existing resolved
+      // rows from the best available approximation (gb has updated_at; hotel does
+      // not, so fall back to in_progress_at then created_at).
+      `ALTER TABLE gb_requests ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ DEFAULT NULL`,
+      `UPDATE gb_requests SET resolved_at = updated_at WHERE status = 'resolved' AND resolved_at IS NULL`,
+      `UPDATE hotel_requests SET resolved_at = COALESCE(in_progress_at, created_at) WHERE status = 'resolved' AND resolved_at IS NULL`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));

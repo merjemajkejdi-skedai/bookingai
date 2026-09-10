@@ -74,15 +74,33 @@ export function RequestsPage() {
   const [loading, setLoading]   = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
 
+  // "Resolved between X and Y" date filter — only meaningful on the Resolved tab.
+  const [resolvedFrom, setResolvedFrom] = useState('');
+  const [resolvedTo,   setResolvedTo]   = useState('');
+  const [dateFilter,   setDateFilter]   = useState<{ resolvedAfter?: string; resolvedBefore?: string } | null>(null);
+
   const load = useCallback(() => {
     setLoading(true);
-    api.getRequests(tab)
+    const opts = tab === 'resolved' && dateFilter ? dateFilter : undefined;
+    api.getRequests(tab, opts)
       .then(setRequests)
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [tab]);
+  }, [tab, dateFilter]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Reset the date filter whenever we leave the Resolved tab.
+  useEffect(() => {
+    if (tab !== 'resolved') { setResolvedFrom(''); setResolvedTo(''); setDateFilter(null); }
+  }, [tab]);
+
+  function applyDateFilter() {
+    const resolvedAfter  = resolvedFrom ? `${resolvedFrom}T00:00:00.000Z` : undefined;
+    const resolvedBefore = resolvedTo   ? `${resolvedTo}T23:59:59.999Z`   : undefined;
+    setDateFilter(resolvedAfter || resolvedBefore ? { resolvedAfter, resolvedBefore } : null);
+  }
+  function clearDateFilter() { setResolvedFrom(''); setResolvedTo(''); setDateFilter(null); }
 
   async function updateStatus(reqId: string, status: string) {
     setUpdating(reqId);
@@ -160,6 +178,26 @@ export function RequestsPage() {
           </button>
         ))}
       </div>
+
+      {/* Resolved-between date filter — Resolved tab only */}
+      {tab === 'resolved' && (
+        <div className="flex items-center gap-2 flex-wrap flex-shrink-0 text-xs text-slate-600 bg-white border border-slate-200 rounded-xl px-3 py-2">
+          <span className="font-medium">Resolved between:</span>
+          <input type="date" value={resolvedFrom} onChange={e => setResolvedFrom(e.target.value)}
+            className="border border-slate-200 rounded-lg px-2 py-1" />
+          <span>and</span>
+          <input type="date" value={resolvedTo} onChange={e => setResolvedTo(e.target.value)}
+            className="border border-slate-200 rounded-lg px-2 py-1" />
+          <button onClick={applyDateFilter}
+            className="px-2.5 py-1 rounded-lg bg-brand-500 text-white font-medium hover:bg-brand-600">Apply</button>
+          {dateFilter && (
+            <button onClick={clearDateFilter} className="px-2.5 py-1 rounded-lg text-slate-500 hover:bg-slate-100">Clear</button>
+          )}
+          {dateFilter && !loading && (
+            <span className="text-slate-400 ml-auto">{requests.length} result{requests.length === 1 ? '' : 's'}</span>
+          )}
+        </div>
+      )}
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto min-h-0">

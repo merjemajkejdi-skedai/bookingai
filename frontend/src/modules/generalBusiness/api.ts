@@ -82,7 +82,12 @@ export const gbApi = {
   updateOrder: (id: string, data: { status?: string; notes?: string }) =>
     req<GbOrder>('/gb/orders/' + id, { method: 'PATCH', body: JSON.stringify(data) }),
 
-  getRequests: (status = 'all') => req<GbRequest[]>(`/gb/requests?status=${status}`),
+  getRequests: (status = 'all', opts?: { resolvedAfter?: string; resolvedBefore?: string }) => {
+    const p = new URLSearchParams({ status });
+    if (opts?.resolvedAfter)  p.set('resolvedAfter', opts.resolvedAfter);
+    if (opts?.resolvedBefore) p.set('resolvedBefore', opts.resolvedBefore);
+    return req<GbRequest[]>(`/gb/requests?${p.toString()}`);
+  },
   updateRequest: (id: string, data: { status?: string; staff_notes?: string }) =>
     req<GbRequest>('/gb/requests/' + id, { method: 'PATCH', body: JSON.stringify(data) }),
 
