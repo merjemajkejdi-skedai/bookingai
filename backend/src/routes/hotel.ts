@@ -118,12 +118,17 @@ interface ReqRow {
   status: string;
   department: string | null;
   created_at: string;
+  // Epoch millis for created_at, computed in SQL (created_at::timestamptz) — the
+  // TEXT column's Postgres CURRENT_TIMESTAMP serialization is not reliably
+  // parseable in JS, so all created_at date math goes through this instead.
+  created_ms: number;
   resolved_at: string | null;
   resolved_by: string | null;
 }
 
-// Parse a stored timestamp (ISO `…Z` from new Date().toISOString(), or the
-// SQLite CURRENT_TIMESTAMP form `YYYY-MM-DD HH:MM:SS` in UTC) to epoch ms.
+// Parse an app-written ISO timestamp (new Date().toISOString(), or the SQLite
+// CURRENT_TIMESTAMP form `YYYY-MM-DD HH:MM:SS`) to epoch ms. Used for resolved_at
+// only — created_at is handled in SQL via ReqRow.created_ms.
 function tsToMs(s: string | null | undefined): number | null {
   if (!s) return null;
   let v = s.includes('T') ? s : s.replace(' ', 'T');
@@ -132,16 +137,15 @@ function tsToMs(s: string | null | undefined): number | null {
   return Number.isNaN(t) ? null : t;
 }
 
-// UTC day key `YYYY-MM-DD` for a stored timestamp.
-function dayKey(s: string): string {
-  const ms = tsToMs(s);
-  return ms === null ? '' : new Date(ms).toISOString().slice(0, 10);
+// UTC day key `YYYY-MM-DD` for an epoch-millis value.
+function dayKey(ms: number): string {
+  return new Date(ms).toISOString().slice(0, 10);
 }
 
 function resolutionMinutes(r: ReqRow): number | null {
-  const start = tsToMs(r.created_at);
+  const start = r.created_ms;
   const end = tsToMs(r.resolved_at);
-  if (start === null || end === null) return null;
+  if (start == null || end === null) return null;
   return (end - start) / 60000;
 }
 
@@ -174,14 +178,28 @@ function targetFor(r: ReqRow, t: { byType: Map<string, number>; byName: Map<stri
   return t.byType.get(r.request_type) ?? (r.department ? t.byName.get(r.department) : undefined) ?? 30;
 }
 
-// Fetch all of a tenant's requests once; period filtering happens in JS so the
-// mixed timestamp formats above are compared as numbers, not strings.
-async function loadRequests(tenantId: string): Promise<ReqRow[]> {
-  return await dbAll(
-    `SELECT request_type, description, status, department, created_at, resolved_at, resolved_by
-       FROM hotel_requests WHERE tenant_id = ?`,
-    tenantId,
-  ) as unknown as ReqRow[];
+// Fetch a tenant's requests created within the last `days`. The period filter and
+// the created_at→epoch conversion both happen in SQL: created_at is a TEXT column
+// whose Postgres CURRENT_TIMESTAMP serialization (`… +00`) is not reliably parseable
+// in JS. Postgres's own ::timestamptz cast handles every stored format correctly.
+async function loadRequests(tenantId: string, days: number): Promise<ReqRow[]> {
+  if (isPg) {
+    return await query(
+      `SELECT request_type, description, status, department, created_at, resolved_at, resolved_by,
+              (EXTRACT(EPOCH FROM created_at::timestamptz) * 1000)::float8 AS created_ms
+         FROM hotel_requests
+        WHERE tenant_id = $1
+          AND created_at::timestamptz >= NOW() - make_interval(days => $2::int)`,
+      [tenantId, days],
+    ) as unknown as ReqRow[];
+  }
+  return prepare(
+    `SELECT request_type, description, status, department, created_at, resolved_at, resolved_by,
+            (julianday(created_at) - 2440587.5) * 86400000.0 AS created_ms
+       FROM hotel_requests
+      WHERE tenant_id = ?
+        AND created_at >= datetime('now', ?)`,
+  ).all(tenantId, `-${days} days`) as unknown as ReqRow[];
 }
 
 function parseDays(req: Request): number {
@@ -194,17 +212,14 @@ hotelRouter.get('/requests/analytics/summary', requireAuth, async (req: Request,
   const tenantId = resolveTenantId(req);
   const days = parseDays(req);
   try {
-    const all = await loadRequests(tenantId);
+    const all = await loadRequests(tenantId, days * 2);
     const targets = await loadDeptTargets(tenantId);
     const now = Date.now();
     const periodMs = days * 86400000;
     const curStart = now - periodMs;
     const prevStart = now - periodMs * 2;
 
-    const inRange = (r: ReqRow, from: number, to: number) => {
-      const c = tsToMs(r.created_at);
-      return c !== null && c >= from && c < to;
-    };
+    const inRange = (r: ReqRow, from: number, to: number) => r.created_ms >= from && r.created_ms < to;
 
     const cur = all.filter(r => inRange(r, curStart, now));
     const prev = all.filter(r => inRange(r, prevStart, curStart));
@@ -246,9 +261,9 @@ hotelRouter.get('/requests/analytics/breakdown', requireAuth, async (req: Reques
   const tenantId = resolveTenantId(req);
   const days = parseDays(req);
   try {
-    const all = await loadRequests(tenantId);
     const cutoff = Date.now() - days * 86400000;
-    const cur = all.filter(r => { const c = tsToMs(r.created_at); return c !== null && c >= cutoff; });
+    const all = await loadRequests(tenantId, days);
+    const cur = all.filter(r => r.created_ms >= cutoff);
 
     const tally = (rows: ReqRow[], key: (r: ReqRow) => string | null) => {
       const m = new Map<string, number>();
@@ -270,8 +285,7 @@ hotelRouter.get('/requests/analytics/breakdown', requireAuth, async (req: Reques
     // Daily — created per day + resolved (created in window and now resolved)
     const dailyMap = new Map<string, { created: number; resolved: number }>();
     for (const r of cur) {
-      const day = dayKey(r.created_at);
-      if (!day) continue;
+      const day = dayKey(r.created_ms);
       const d = dailyMap.get(day) || { created: 0, resolved: 0 };
       d.created += 1;
       if (r.status === 'resolved') d.resolved += 1;
@@ -284,9 +298,7 @@ hotelRouter.get('/requests/analytics/breakdown', requireAuth, async (req: Reques
     // Hourly distribution (UTC hour of created_at)
     const hourMap = new Map<number, number>();
     for (const r of cur) {
-      const ms = tsToMs(r.created_at);
-      if (ms === null) continue;
-      const h = new Date(ms).getUTCHours();
+      const h = new Date(r.created_ms).getUTCHours();
       hourMap.set(h, (hourMap.get(h) || 0) + 1);
     }
     const hourly = [...hourMap.entries()].sort((a, b) => a[0] - b[0]).map(([hour, count]) => ({ hour, count }));
@@ -300,10 +312,10 @@ hotelRouter.get('/requests/analytics/resolution', requireAuth, async (req: Reque
   const tenantId = resolveTenantId(req);
   const days = parseDays(req);
   try {
-    const all = await loadRequests(tenantId);
-    const targets = await loadDeptTargets(tenantId);
     const cutoff = Date.now() - days * 86400000;
-    const cur = all.filter(r => { const c = tsToMs(r.created_at); return c !== null && c >= cutoff; });
+    const all = await loadRequests(tenantId, days);
+    const targets = await loadDeptTargets(tenantId);
+    const cur = all.filter(r => r.created_ms >= cutoff);
 
     // By department — avg resolution time, counts, target
     const deptMap = new Map<string, { mins: number[]; resolved: number; total: number; targets: number[] }>();
@@ -333,8 +345,7 @@ hotelRouter.get('/requests/analytics/resolution', requireAuth, async (req: Reque
     for (const r of cur) {
       const m = resolutionMinutes(r);
       if (m === null) continue;
-      const day = dayKey(r.created_at);
-      if (!day) continue;
+      const day = dayKey(r.created_ms);
       const arr = trendMap.get(day) || [];
       arr.push(m);
       trendMap.set(day, arr);
