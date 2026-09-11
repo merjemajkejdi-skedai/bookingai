@@ -73,7 +73,7 @@ Hotels & hospitality:
   - Standard  €129/mo — up to 70 rooms
   - Pro       €299/mo — up to 150 rooms, custom AI persona, priority support`;
 
-  const demoLink = calendlyUrl || 'https://calendly.com/skedai/demo';
+  const demoLink = calendlyUrl || 'https://calendly.com/skedai-support/30min';
 
   return `You are the SkedAI sales assistant — an AI booking platform for Albanian businesses.
 You are friendly, concise, and knowledgeable. You answer questions about SkedAI and help people book a demo.
