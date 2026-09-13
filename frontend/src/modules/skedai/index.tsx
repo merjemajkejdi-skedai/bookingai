@@ -24,7 +24,12 @@ const EMPTY: SkedAIConfig = {
 };
 
 export function SkedAIModule({ onLogout }: { onLogout: () => void }) {
-  const [tab,     setTab]     = useState<Tab>('admin');
+  // A 'new conversation' alert email links here with ?openGuestPhone=<phone> —
+  // this dashboard has no client-side router, so on load we jump straight to
+  // the Conversations tab and dispatch the same 'hotel:open-conversation'
+  // event the desktop-notification click handler already uses to select it.
+  const openGuestPhone = new URLSearchParams(window.location.search).get('openGuestPhone');
+  const [tab,     setTab]     = useState<Tab>(openGuestPhone ? 'conversations' : 'admin');
   const [config,  setConfig]  = useState<SkedAIConfig>(EMPTY);
   const [loading, setLoading] = useState(true);
 
@@ -34,6 +39,18 @@ export function SkedAIModule({ onLogout }: { onLogout: () => void }) {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!openGuestPhone) return;
+    // Give ConversationsPage's initial fetch a moment to land before the
+    // 'open this conversation' event fires (it's a no-op if the target
+    // conversation hasn't loaded into its list yet).
+    const t = setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('hotel:open-conversation', { detail: { guestPhone: openGuestPhone } }));
+    }, 1500);
+    window.history.replaceState({}, '', window.location.pathname);
+    return () => clearTimeout(t);
+  }, [openGuestPhone]);
 
   function handleLogout() { clearAuth(); onLogout(); }
 

@@ -16,6 +16,7 @@ import { runArtClassAgent } from '../modules/art_class/agent.js';
 import { runRestaurantAgent } from '../modules/restaurant/agent.js';
 import { sendEmailFallback } from '../utils/emailFallback.js';
 import { alertError } from '../utils/errorMonitor.js';
+import { maybeSendNewConversationAlert } from '../skedai/conversationAlert.js';
 
 const metaRouter = Router();
 
@@ -57,12 +58,16 @@ async function persistConversation(
         JSON.stringify(updated), now, now, now, guestName ?? null, tenantId, phone,
       );
     } else {
+      const id = crypto.randomUUID();
       await dbRun(
         `INSERT INTO ${table}
            (id, tenant_id, guest_phone, guest_name, messages, last_message, channel, updated_at, last_guest_message_at)
          VALUES (?,?,?,?,?,?,?,?,?)`,
-        crypto.randomUUID(), tenantId, phone, guestName ?? null, JSON.stringify(updated), now, 'whatsapp', now, now,
+        id, tenantId, phone, guestName ?? null, JSON.stringify(updated), now, 'whatsapp', now, now,
       );
+      if (table === 'skedai_conversations') {
+        maybeSendNewConversationAlert(tenantId, { id, channel: 'whatsapp', guestPhone: phone, createdAt: now });
+      }
     }
   } catch (e: any) {
     console.warn(`[Conversations] Meta DB persist failed for ${table}:`, e.message);

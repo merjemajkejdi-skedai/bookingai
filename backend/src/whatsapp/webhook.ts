@@ -14,6 +14,7 @@ import { sendWhatsAppMessage } from './twilio.js';
 import { logMessage } from './messageLog.js';
 import { alertError } from '../utils/errorMonitor.js';
 import { getConversationsTable } from '../utils/conversationsTable.js';
+import { maybeSendNewConversationAlert } from '../skedai/conversationAlert.js';
 
 export const whatsappRouter = Router();
 
@@ -132,6 +133,9 @@ async function persistConversation(
          VALUES (?,?,?,?,?,?,?,?,?)`,
         id, tenantId, phone, guestName ?? null, JSON.stringify(updated), now, 'whatsapp', now, now,
       );
+      if (table === 'skedai_conversations') {
+        maybeSendNewConversationAlert(tenantId, { id, channel: 'whatsapp', guestPhone: phone, createdAt: now });
+      }
     }
   } catch (e: any) {
     console.warn(`[Conversations] DB persist failed for ${table}:`, e.message);
@@ -183,6 +187,9 @@ async function persistGuestMessage(
          VALUES (?,?,?,?,?,?,?,?,?)`,
         id, tenantId, phone, guestName ?? null, JSON.stringify(updated), now, 'whatsapp', now, now,
       );
+      if (table === 'skedai_conversations') {
+        maybeSendNewConversationAlert(tenantId, { id, channel: 'whatsapp', guestPhone: phone, createdAt: now });
+      }
     }
   } catch (e: any) {
     console.warn(`[Conversations] Guest message persist failed for ${table}:`, e.message);
