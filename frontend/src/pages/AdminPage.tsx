@@ -553,6 +553,22 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
   const [sendModeConfirm, setSendModeConfirm]     = useState<{ id: string; mode: 'resend' | 'graph' } | null>(null);
   const [saving, setSaving]                   = useState(false);
   const [error, setError]                     = useState('');
+  // Owner performance report
+  const [ownerName, setOwnerName]             = useState(tenant.owner_name || '');
+  const [ownerEmail, setOwnerEmail]           = useState(tenant.owner_email || '');
+  const [reportFrequency, setReportFrequency] = useState(tenant.report_frequency || 'off');
+  const [reportDayOfWeek, setReportDayOfWeek] = useState(tenant.report_day_of_week || 1);
+  const [reportDayOfMonth, setReportDayOfMonth] = useState(tenant.report_day_of_month || 1);
+  const [reportSaving, setReportSaving]       = useState(false);
+  const [reportSaved, setReportSaved]         = useState(false);
+  const [reportError, setReportError]         = useState('');
+  const [reportHistoryOpen, setReportHistoryOpen] = useState(false);
+  const [reportHistory, setReportHistory]     = useState<any[]>([]);
+  const [reportHistoryLoading, setReportHistoryLoading] = useState(false);
+  const [sendNowDays, setSendNowDays]         = useState(7);
+  const [sendNowLoading, setSendNowLoading]   = useState(false);
+  const [sendNowError, setSendNowError]       = useState('');
+  const [sendNowSuccess, setSendNowSuccess]   = useState(false);
 
   useEffect(() => {
     adminApi.getTenant(tenant.id)
@@ -871,6 +887,40 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
     finally { setSaving(false); }
   }
 
+  async function saveReportConfig() {
+    setReportSaving(true); setReportError(''); setReportSaved(false);
+    try {
+      await adminApi.updateReportConfig(tenant.id, {
+        owner_name: ownerName || null,
+        owner_email: ownerEmail || null,
+        report_frequency: reportFrequency,
+        report_day_of_week: Number(reportDayOfWeek),
+        report_day_of_month: Number(reportDayOfMonth),
+      });
+      setReportSaved(true);
+      setTimeout(() => setReportSaved(false), 3000);
+    } catch (e: any) { setReportError(e.message); }
+    finally { setReportSaving(false); }
+  }
+
+  async function loadReportHistory() {
+    setReportHistoryLoading(true);
+    try {
+      setReportHistory(await adminApi.getReportHistory(tenant.id));
+    } catch { /* history is a convenience view, not worth surfacing an error for */ }
+    finally { setReportHistoryLoading(false); }
+  }
+
+  async function handleSendReportNow() {
+    setSendNowLoading(true); setSendNowError(''); setSendNowSuccess(false);
+    try {
+      await adminApi.sendReportNow(tenant.id, Number(sendNowDays));
+      setSendNowSuccess(true);
+      if (reportHistoryOpen) loadReportHistory();
+    } catch (e: any) { setSendNowError(e.message); }
+    finally { setSendNowLoading(false); }
+  }
+
   return (
     <Modal title={`Edit — ${tenant.name}`} onClose={onClose} wide>
       <div className="space-y-4">
@@ -1050,6 +1100,85 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
           {emailFallbackEnabled && notificationEmail && (
             <p className="text-xs text-teal-700 font-medium">✓ Active — undelivered messages will be forwarded to <strong>{notificationEmail}</strong>.</p>
           )}
+        </div>
+
+        {/* Owner performance report — opt-in, off by default */}
+        <div className="border border-slate-200 rounded-lg p-4 space-y-3">
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Owner performance report</p>
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="Owner name" value={ownerName} onChange={(e: any) => setOwnerName(e.target.value)} placeholder="Jane Doe" />
+            <Input label="Owner email" type="email" value={ownerEmail} onChange={(e: any) => setOwnerEmail(e.target.value)} placeholder="owner@hotel.com" />
+          </div>
+          <div className="flex items-center gap-4">
+            {(['off', 'weekly', 'monthly'] as const).map(freq => (
+              <label key={freq} className="flex items-center gap-1.5 text-sm text-slate-700 cursor-pointer select-none">
+                <input type="radio" name="reportFrequency" checked={reportFrequency === freq} onChange={() => setReportFrequency(freq)} />
+                {freq === 'off' ? 'Off' : freq === 'weekly' ? 'Weekly' : 'Monthly'}
+              </label>
+            ))}
+          </div>
+          {reportFrequency === 'weekly' && (
+            <Select label="Send on" value={reportDayOfWeek} onChange={(e: any) => setReportDayOfWeek(Number(e.target.value))}>
+              {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((d, i) => (
+                <option key={i} value={i + 1}>{d}</option>
+              ))}
+            </Select>
+          )}
+          {reportFrequency === 'monthly' && (
+            <Select label="Send on day of month" value={reportDayOfMonth} onChange={(e: any) => setReportDayOfMonth(Number(e.target.value))}>
+              {Array.from({ length: 28 }, (_, i) => i + 1).map(d => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </Select>
+          )}
+          {reportFrequency !== 'off' && !ownerEmail && (
+            <p className="text-xs text-amber-600 font-medium">⚠️ Enter an owner email above — reports won't send without one.</p>
+          )}
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={saveReportConfig} disabled={reportSaving}>
+              {reportSaving ? 'Saving…' : 'Save report settings'}
+            </Button>
+            {reportSaved && <span className="text-xs text-teal-700 font-medium">✓ Saved</span>}
+          </div>
+          {reportError && <p className="text-xs text-red-500">{reportError}</p>}
+
+          <div className="pt-3 border-t border-slate-100 space-y-2">
+            <div className="flex items-center gap-2">
+              <Input
+                type="number" min={1} max={90} value={sendNowDays}
+                onChange={(e: any) => setSendNowDays(e.target.value)}
+                className="w-20"
+              />
+              <span className="text-xs text-slate-500">days back</span>
+              <Button size="sm" variant="outline" onClick={handleSendReportNow} disabled={sendNowLoading || !ownerEmail}>
+                {sendNowLoading ? 'Sending…' : 'Send report now'}
+              </Button>
+            </div>
+            {sendNowError && <p className="text-xs text-red-500">{sendNowError}</p>}
+            {sendNowSuccess && <p className="text-xs text-teal-700 font-medium">✓ Report sent to {ownerEmail}</p>}
+
+            <button
+              type="button"
+              className="text-xs text-slate-500 underline"
+              onClick={() => { if (!reportHistoryOpen) loadReportHistory(); setReportHistoryOpen(v => !v); }}
+            >
+              {reportHistoryOpen ? 'Hide report history' : 'View report history'}
+            </button>
+            {reportHistoryOpen && (
+              reportHistoryLoading ? <Spinner /> : reportHistory.length === 0 ? (
+                <p className="text-xs text-slate-400">No reports sent yet.</p>
+              ) : (
+                <div className="max-h-40 overflow-y-auto space-y-1">
+                  {reportHistory.map((r: any) => (
+                    <div key={r.id} className="text-xs text-slate-600 flex items-center justify-between border-b border-slate-100 py-1">
+                      <span>{r.period_start} → {r.period_end}{r.manual ? ' (manual)' : ''}</span>
+                      <span className={r.status === 'sent' ? 'text-teal-700' : 'text-red-500'}>{r.status}</span>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+          </div>
         </div>
 
         {/* Channels */}

@@ -2331,6 +2331,46 @@ export async function runMigrations() {
       `ALTER TABLE gb_requests ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ DEFAULT NULL`,
       `UPDATE gb_requests SET resolved_at = updated_at WHERE status = 'resolved' AND resolved_at IS NULL`,
       `UPDATE hotel_requests SET resolved_at = COALESCE(in_progress_at, created_at) WHERE status = 'resolved' AND resolved_at IS NULL`,
+      // owner_report_001 — automated owner performance report (weekly/monthly),
+      // opt-in per tenant, default 'off' for every existing and new tenant.
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS owner_name VARCHAR(255) DEFAULT NULL`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS owner_email VARCHAR(255) DEFAULT NULL`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS report_frequency VARCHAR(20) NOT NULL DEFAULT 'off'`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS report_day_of_week INTEGER NOT NULL DEFAULT 1`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS report_day_of_month INTEGER NOT NULL DEFAULT 1`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS last_report_sent_at TIMESTAMPTZ DEFAULT NULL`,
+      `CREATE TABLE IF NOT EXISTS owner_report_log (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  period_start DATE NOT NULL,
+  period_end DATE NOT NULL,
+  frequency VARCHAR(20) NOT NULL,
+  sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  recipient_email VARCHAR(255) NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'sent',
+  error_message TEXT,
+  manual BOOLEAN NOT NULL DEFAULT false,
+  UNIQUE(tenant_id, period_start, period_end)
+)`,
+      `CREATE INDEX IF NOT EXISTS idx_owner_report_log_tenant ON owner_report_log(tenant_id, sent_at DESC)`,
+      // owner_report_002 — created_at on the conversations tables that don't already
+      // have one (shop_conversations already does). Needed for the report's "new
+      // conversations started in the period" metric. Added nullable first, backfilled
+      // from updated_at (best available historical proxy) for existing rows, THEN
+      // given a DEFAULT NOW() — in that order, so the one-time ALTER doesn't stamp
+      // every pre-existing conversation with the migration's own timestamp. No INSERT
+      // statement anywhere lists created_at explicitly, so every future insert
+      // picks up the column default automatically — zero changes to message
+      // handling on any channel.
+      `ALTER TABLE hotel_conversations ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ`,
+      `UPDATE hotel_conversations SET created_at = updated_at::timestamptz WHERE created_at IS NULL`,
+      `ALTER TABLE hotel_conversations ALTER COLUMN created_at SET DEFAULT NOW()`,
+      `ALTER TABLE gb_conversations ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ`,
+      `UPDATE gb_conversations SET created_at = updated_at::timestamptz WHERE created_at IS NULL AND updated_at IS NOT NULL`,
+      `ALTER TABLE gb_conversations ALTER COLUMN created_at SET DEFAULT NOW()`,
+      `ALTER TABLE art_class_conversations ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ`,
+      `UPDATE art_class_conversations SET created_at = updated_at::timestamptz WHERE created_at IS NULL AND updated_at IS NOT NULL`,
+      `ALTER TABLE art_class_conversations ALTER COLUMN created_at SET DEFAULT NOW()`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));

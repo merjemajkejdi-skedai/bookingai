@@ -245,4 +245,20 @@ export const adminApi = {
     }),
   getCommissionableHistory: (tenantId: string) =>
     adminFetch<any[]>(`/admin/tenants/${tenantId}/commissionable-history`),
+  // ── Owner performance report (opt-in, off by default) ────────────────────
+  updateReportConfig: (tenantId: string, data: {
+    owner_name?: string | null; owner_email?: string | null; report_frequency?: string;
+    report_day_of_week?: number; report_day_of_month?: number;
+  }) =>
+    adminFetch<any>(`/admin/tenants/${tenantId}/report-config`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  getReportHistory: (tenantId: string) =>
+    adminFetch<any[]>(`/admin/tenants/${tenantId}/report-history`),
+  sendReportNow: (tenantId: string, periodDays: number) =>
+    adminFetch<{ sent: boolean }>(`/admin/tenants/${tenantId}/send-report-now`, {
+      method: 'POST',
+      body: JSON.stringify({ periodDays }),
+    }),
 };

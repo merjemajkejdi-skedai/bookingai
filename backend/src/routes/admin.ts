@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { encrypt, decrypt } from '../utils/encryption.js';
+import { sendManualOwnerReport } from '../reports/reportCron.js';
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth, requireAdmin);
@@ -346,6 +347,88 @@ adminRouter.get('/tenants/:id/commissionable-history', async (req: Request, res:
     ok(res, rows);
   } catch (e: any) {
     console.error('[Admin] commissionable-history error:', e.message);
+    err(res, e.message, 500);
+  }
+});
+
+// PATCH /admin/tenants/:id/report-config — owner contact + report schedule.
+// report_frequency defaults to 'off' for every tenant (set in the owner_report_001
+// migration), so this endpoint is the only way a tenant's automated report ever
+// turns on — zero behaviour change until an admin explicitly configures it here.
+adminRouter.patch('/tenants/:id/report-config', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const {
+      owner_name, owner_email, report_frequency,
+      report_day_of_week, report_day_of_month,
+    } = req.body as {
+      owner_name?: string | null; owner_email?: string | null; report_frequency?: string;
+      report_day_of_week?: number; report_day_of_month?: number;
+    };
+
+    const VALID_FREQUENCIES = ["off","weekly","monthly"];
+    if (report_frequency !== undefined && !VALID_FREQUENCIES.includes(report_frequency))
+      return err(res, `report_frequency must be one of: ${VALID_FREQUENCIES.join(', ')}`);
+    if (report_day_of_week !== undefined && (report_day_of_week < 1 || report_day_of_week > 7))
+      return err(res, 'report_day_of_week must be between 1 (Monday) and 7 (Sunday)');
+    if (report_day_of_month !== undefined && (report_day_of_month < 1 || report_day_of_month > 31))
+      return err(res, 'report_day_of_month must be between 1 and 31');
+
+    const tenant = await dbGet('SELECT id FROM tenants WHERE id = ?', id) as any;
+    if (!tenant) return err(res, 'Tenant not found', 404);
+
+    const sets: string[] = [];
+    const params: any[] = [];
+    if (owner_name !== undefined)          { sets.push('owner_name = ?'); params.push(owner_name); }
+    if (owner_email !== undefined)         { sets.push('owner_email = ?'); params.push(owner_email); }
+    if (report_frequency !== undefined)    { sets.push('report_frequency = ?'); params.push(report_frequency); }
+    if (report_day_of_week !== undefined)  { sets.push('report_day_of_week = ?'); params.push(report_day_of_week); }
+    if (report_day_of_month !== undefined) { sets.push('report_day_of_month = ?'); params.push(report_day_of_month); }
+
+    if (sets.length === 0) return err(res, 'No fields to update');
+
+    params.push(id);
+    await dbRun(`UPDATE tenants SET ${sets.join(', ')} WHERE id = ?`, ...params);
+
+    ok(res, await dbGet('SELECT * FROM tenants WHERE id = ?', id));
+  } catch (e: any) {
+    console.error('[Admin] report-config PATCH error:', e.message);
+    err(res, e.message, 500);
+  }
+});
+
+// GET /admin/tenants/:id/report-history
+adminRouter.get('/tenants/:id/report-history', async (req: Request, res: Response) => {
+  try {
+    const rows = await dbAll(
+      `SELECT * FROM owner_report_log WHERE tenant_id = ? ORDER BY sent_at DESC LIMIT 100`,
+      req.params.id,
+    );
+    ok(res, rows);
+  } catch (e: any) {
+    console.error('[Admin] report-history error:', e.message);
+    err(res, e.message, 500);
+  }
+});
+
+// POST /admin/tenants/:id/send-report-now — manual send, bypasses the
+// owner_report_log UNIQUE(tenant_id, period_start, period_end) dedupe (upserts
+// instead of skipping) so an admin can re-send or generate an ad-hoc report on demand.
+adminRouter.post('/tenants/:id/send-report-now', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const periodDays = Number(req.body?.periodDays) || 7;
+
+    const tenant = await dbGet('SELECT id, name, type, owner_email FROM tenants WHERE id = ?', id) as any;
+    if (!tenant) return err(res, 'Tenant not found', 404);
+    if (!tenant.owner_email) return err(res, 'Tenant has no owner_email configured');
+
+    const result = await sendManualOwnerReport(tenant, periodDays);
+    if (!result.success) return err(res, result.error || 'Failed to send report', 500);
+
+    ok(res, { sent: true });
+  } catch (e: any) {
+    console.error('[Admin] send-report-now error:', e.message);
     err(res, e.message, 500);
   }
 });
