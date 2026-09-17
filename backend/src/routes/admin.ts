@@ -1059,15 +1059,21 @@ adminRouter.get('/debug/gb-schema-check', async (req: Request, res: Response) =>
 
     const tables = ['gb_locations', 'gb_faqs', 'gb_documents', 'gb_departments', 'gb_business_config'];
     const tenantIdColumns: Record<string, any> = {};
-    const rowCounts: Record<string, number> = {};
+    const rowCounts: Record<string, number | string> = {};
+    const tableExists: Record<string, boolean> = {};
     for (const t of tables) {
       const rows = await dbAll(
         `SELECT column_name, data_type, udt_name FROM information_schema.columns WHERE table_name = ? AND column_name = 'tenant_id'`,
         t,
       );
       tenantIdColumns[t] = rows[0] ?? null;
-      const countRow = await dbGet(`SELECT COUNT(*)::int AS count FROM ${t}`) as any;
-      rowCounts[t] = countRow?.count ?? 0;
+      tableExists[t] = rows.length > 0;
+      try {
+        const countRow = await dbGet(`SELECT COUNT(*)::int AS count FROM ${t}`) as any;
+        rowCounts[t] = countRow?.count ?? 0;
+      } catch (e: any) {
+        rowCounts[t] = `error: ${e.message}`;
+      }
     }
 
     const fkConstraints = await dbAll(
@@ -1077,7 +1083,7 @@ adminRouter.get('/debug/gb-schema-check', async (req: Request, res: Response) =>
       tables,
     );
 
-    ok(res, { tenantsIdType, tenantIdColumns, rowCounts, fkConstraints });
+    ok(res, { tenantsIdType, tenantIdColumns, tableExists, rowCounts, fkConstraints });
   } catch (e: any) {
     console.error('[Admin] gb-schema-check error:', e.message);
     err(res, e.message, 500);
