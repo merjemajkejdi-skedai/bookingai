@@ -1046,3 +1046,40 @@ adminRouter.post('/manual-leads/:id/convert', async (req: Request, res: Response
     err(res, e.message, 500);
   }
 });
+
+// ── TEMP DIAGNOSTIC — remove after use ───────────────────────────────
+// One-off schema check for gb_* tables' tenant_id FK constraint failures.
+adminRouter.get('/debug/gb-schema-check', async (req: Request, res: Response) => {
+  try {
+    if (!isPg) return err(res, 'Only meaningful against Postgres', 400);
+
+    const tenantsIdType = await dbGet(
+      `SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'tenants' AND column_name = 'id'`,
+    );
+
+    const tables = ['gb_locations', 'gb_faqs', 'gb_documents', 'gb_departments', 'gb_business_config'];
+    const tenantIdColumns: Record<string, any> = {};
+    const rowCounts: Record<string, number> = {};
+    for (const t of tables) {
+      const rows = await dbAll(
+        `SELECT column_name, data_type, udt_name FROM information_schema.columns WHERE table_name = ? AND column_name = 'tenant_id'`,
+        t,
+      );
+      tenantIdColumns[t] = rows[0] ?? null;
+      const countRow = await dbGet(`SELECT COUNT(*)::int AS count FROM ${t}`) as any;
+      rowCounts[t] = countRow?.count ?? 0;
+    }
+
+    const fkConstraints = await dbAll(
+      `SELECT tc.table_name, tc.constraint_name, tc.constraint_type
+       FROM information_schema.table_constraints tc
+       WHERE tc.table_name = ANY(?) AND tc.constraint_type = 'FOREIGN KEY'`,
+      tables,
+    );
+
+    ok(res, { tenantsIdType, tenantIdColumns, rowCounts, fkConstraints });
+  } catch (e: any) {
+    console.error('[Admin] gb-schema-check error:', e.message);
+    err(res, e.message, 500);
+  }
+});
