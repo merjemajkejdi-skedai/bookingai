@@ -1476,7 +1476,7 @@ export async function runMigrations() {
       // gb_001 — General Business: business config
       `CREATE TABLE IF NOT EXISTS gb_business_config (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   business_name VARCHAR(255) NOT NULL,
   business_description TEXT,
   phone VARCHAR(50),
@@ -1493,7 +1493,7 @@ export async function runMigrations() {
       // gb_002 — General Business: locations
       `CREATE TABLE IF NOT EXISTS gb_locations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   name VARCHAR(255) NOT NULL,
   address TEXT NOT NULL,
   phone VARCHAR(50),
@@ -1505,7 +1505,7 @@ export async function runMigrations() {
       // gb_003 — General Business: FAQs
       `CREATE TABLE IF NOT EXISTS gb_faqs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   question TEXT NOT NULL,
   answer TEXT NOT NULL,
   is_active BOOLEAN NOT NULL DEFAULT true,
@@ -1515,7 +1515,7 @@ export async function runMigrations() {
       // gb_004 — General Business: documents
       `CREATE TABLE IF NOT EXISTS gb_documents (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   name VARCHAR(255) NOT NULL,
   file_type VARCHAR(50) NOT NULL,
   r2_key TEXT NOT NULL,
@@ -1527,7 +1527,7 @@ export async function runMigrations() {
       // gb_005 — General Business: departments
       `CREATE TABLE IF NOT EXISTS gb_departments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   name VARCHAR(255) NOT NULL,
   whatsapp_number VARCHAR(50),
   request_types TEXT[] NOT NULL DEFAULT '{}',
