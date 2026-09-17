@@ -15,6 +15,7 @@ import { logMessage } from './messageLog.js';
 import { alertError } from '../utils/errorMonitor.js';
 import { getConversationsTable } from '../utils/conversationsTable.js';
 import { maybeSendNewConversationAlert } from '../skedai/conversationAlert.js';
+import { RaceState, sendLateFollowUp } from './raceState.js';
 
 export const whatsappRouter = Router();
 
@@ -369,15 +370,16 @@ async function runAgent(
   phone: string,
   tenantId: string,
   tenantType: string,
+  raceState?: RaceState,
 ): Promise<string> {
-  if (tenantType === 'hotel')            return runHotelAgent(message, history, phone, tenantId);
-  if (tenantType === 'art_class')        return runArtClassAgent(message, history, phone, tenantId);
-  if (tenantType === 'art_event')        return runArtEventAgent(message, history, phone, tenantId);
-  if (tenantType === 'restaurant')       return runRestaurantAgent(message, history, phone, tenantId);
-  if (tenantType === 'general_business') return runGbAgent(message, history, phone, tenantId);
+  if (tenantType === 'hotel')            return runHotelAgent(message, history, phone, tenantId, null, null, raceState);
+  if (tenantType === 'art_class')        return runArtClassAgent(message, history, phone, tenantId, raceState);
+  if (tenantType === 'art_event')        return runArtEventAgent(message, history, phone, tenantId, raceState);
+  if (tenantType === 'restaurant')       return runRestaurantAgent(message, history, phone, tenantId, raceState);
+  if (tenantType === 'general_business') return runGbAgent(message, history, phone, tenantId, raceState);
   // happy_ POS tenants use the POS app — WhatsApp is an optional bolt-on, never route to a generic agent
   if (tenantType.startsWith('happy_')) return '';
-  return runBookingAgent(message, history, phone, tenantId);
+  return runBookingAgent(message, history, phone, tenantId, raceState);
 }
 
 // ---------------------------------------------------------------------------
@@ -437,10 +439,12 @@ async function handleMetaWebhook(req: Request, res: Response) {
         return;
       }
 
+      const raceState: RaceState = { raceLost: false, tenant };
       try {
-        reply = await withTimeout(runSkedAIAgent(body, customerPhone, tenant.id), 15_000);
+        reply = await withTimeout(runSkedAIAgent(body, customerPhone, tenant.id, raceState), 25_000);
       } catch (agentErr: any) {
         console.error('[Meta] ❌ SkedAI agent error/timeout:', agentErr?.message ?? agentErr);
+        raceState.raceLost = true;
         const fallback = await getFallbackMessage(tenant);
         await sendWhatsAppMessage(customerPhone, fallback, tenant)
           .catch((e: any) => console.error('[Meta] fallback send failed:', e.message));
@@ -449,12 +453,14 @@ async function handleMetaWebhook(req: Request, res: Response) {
     } else if (tenantType === 'shop') {
       cancelOrderReminder(tenant.id, customerPhone);
       let shopToolsUsed: string[] = [];
+      const raceState: RaceState = { raceLost: false, tenant };
       try {
-        const agentResult = await withTimeout(runShopAgent(body, customerPhone, tenant.id), 15_000);
+        const agentResult = await withTimeout(runShopAgent(body, customerPhone, tenant.id, undefined, false, raceState), 25_000);
         reply = agentResult.reply;
         shopToolsUsed = agentResult.toolsUsed;
       } catch (agentErr: any) {
         console.error('[Meta] ❌ Shop agent error/timeout:', agentErr?.message ?? agentErr);
+        raceState.raceLost = true;
         const fallback = await getFallbackMessage(tenant);
         await sendWhatsAppMessage(customerPhone, fallback, tenant)
           .catch((e: any) => console.error('[Meta] fallback send failed:', e.message));
@@ -499,13 +505,15 @@ async function handleMetaWebhook(req: Request, res: Response) {
       }
 
       const history = getSession(customerPhone);
+      const raceState: RaceState = { raceLost: false, tenant };
       try {
         reply = await withTimeout(
-          runAgent(body, history, customerPhone, tenant.id, tenantType),
-          15_000,
+          runAgent(body, history, customerPhone, tenant.id, tenantType, raceState),
+          25_000,
         );
       } catch (agentErr: any) {
         console.error('[Meta] ❌ Agent error/timeout:', agentErr?.message ?? agentErr);
+        raceState.raceLost = true;
         const fallback = await getFallbackMessage(tenant);
         await sendWhatsAppMessage(customerPhone, fallback, tenant)
           .catch((e: any) => console.error('[Meta] fallback send failed:', e.message));
@@ -665,10 +673,12 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
       }
 
       let skedReply: string;
+      const raceState: RaceState = { raceLost: false, tenant };
       try {
-        skedReply = await withTimeout(runSkedAIAgent(messageText, phone, tenant.id), 15_000);
+        skedReply = await withTimeout(runSkedAIAgent(messageText, phone, tenant.id, raceState), 25_000);
       } catch (agentErr: any) {
         console.error('❌ SkedAI agent error/timeout:', agentErr?.message ?? agentErr);
+        raceState.raceLost = true;
         const fallback = await getFallbackMessage(tenant);
         await sendWhatsAppMessage(phone, fallback, tenant)
           .catch((e: any) => console.error('❌ SkedAI fallback send failed:', e.message));
@@ -709,12 +719,14 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
       cancelOrderReminder(tenant.id, phone);
       let shopReply = '';
       let shopToolsUsed: string[] = [];
+      const raceState: RaceState = { raceLost: false, tenant };
       try {
-        const agentResult = await withTimeout(runShopAgent(messageText, phone, tenant.id), 15_000);
+        const agentResult = await withTimeout(runShopAgent(messageText, phone, tenant.id, undefined, false, raceState), 25_000);
         shopReply = agentResult.reply;
         shopToolsUsed = agentResult.toolsUsed;
       } catch (agentErr: any) {
         console.error('❌ Shop agent error/timeout:', agentErr?.message ?? agentErr);
+        raceState.raceLost = true;
         const fallback = await getFallbackMessage(tenant);
         await sendWhatsAppMessage(phone, fallback, tenant)
           .catch((e: any) => console.error('❌ Shop fallback send failed:', e.message));
@@ -788,6 +800,7 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
 
     // Hotel: pass media context directly so photos reach the agent
     let reply: string;
+    const raceState: RaceState = { raceLost: false, tenant };
     try {
       if (tenantType === 'hotel') {
         // Buffer for 5 s — combines rapid successive messages before processing
@@ -795,17 +808,18 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
         if (combined === null) return; // another message reset the timer; that call will process
 
         reply = await withTimeout(
-          runHotelAgent(combined, history, phone, tenant.id, mediaUrl, mediaMime),
-          15_000,
+          runHotelAgent(combined, history, phone, tenant.id, mediaUrl, mediaMime, raceState),
+          25_000,
         );
       } else {
         reply = await withTimeout(
-          runAgent(messageText, history, phone, tenant.id, tenantType),
-          15_000,
+          runAgent(messageText, history, phone, tenant.id, tenantType, raceState),
+          25_000,
         );
       }
     } catch (agentErr: any) {
       console.error('❌ Agent error/timeout:', agentErr?.message ?? agentErr);
+      raceState.raceLost = true;
       const fallback = await getFallbackMessage(tenant);
       await sendWhatsAppMessage(phone, fallback, tenant)
         .catch((e: any) => console.error('❌ Fallback send failed:', e.message));

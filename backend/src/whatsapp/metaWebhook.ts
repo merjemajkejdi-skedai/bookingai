@@ -17,6 +17,7 @@ import { runRestaurantAgent } from '../modules/restaurant/agent.js';
 import { sendEmailFallback } from '../utils/emailFallback.js';
 import { alertError } from '../utils/errorMonitor.js';
 import { maybeSendNewConversationAlert } from '../skedai/conversationAlert.js';
+import { RaceState } from './raceState.js';
 
 const metaRouter = Router();
 
@@ -206,13 +207,15 @@ metaRouter.post('/meta/webhook', async (req: Request, res: Response) => {
 
             const history = getSession(customerPhone);
             let reply = '';
+            const raceState: RaceState = { raceLost: false, tenant };
             try {
               reply = await withTimeout(
-                runHotelAgent(combined, history, customerPhone, tenant.id, photoUrl, mediaMime || null),
-                15_000,
+                runHotelAgent(combined, history, customerPhone, tenant.id, photoUrl, mediaMime || null, raceState),
+                25_000,
               );
             } catch (agentErr: any) {
               console.error('[Meta] Hotel agent error:', agentErr.message);
+              raceState.raceLost = true;
               reply = "Sorry, I'm having a technical issue. Please try again in a moment.";
             }
 
@@ -277,27 +280,29 @@ metaRouter.post('/meta/webhook', async (req: Request, res: Response) => {
           // Cancel any pending reminder — customer sent a new message
           if (tenantType === 'shop') cancelOrderReminder(tenant.id, customerPhone);
 
+          const raceState: RaceState = { raceLost: false, tenant };
           try {
             if (tenantType === 'skedai') {
-              reply = await withTimeout(runSkedAIAgent(textToAgent, customerPhone, tenant.id), 15_000);
+              reply = await withTimeout(runSkedAIAgent(textToAgent, customerPhone, tenant.id, raceState), 25_000);
             } else if (tenantType === 'shop') {
-              const agentResult = await withTimeout(runShopAgent(textToAgent, customerPhone, tenant.id), 15_000);
+              const agentResult = await withTimeout(runShopAgent(textToAgent, customerPhone, tenant.id, undefined, false, raceState), 25_000);
               reply = agentResult.reply;
               shopToolsUsed = agentResult.toolsUsed;
             } else if (tenantType === 'art_event') {
-              reply = await withTimeout(runArtEventAgent(textToAgent, history, customerPhone, tenant.id), 15_000);
+              reply = await withTimeout(runArtEventAgent(textToAgent, history, customerPhone, tenant.id, raceState), 25_000);
             } else if (tenantType === 'art_class') {
-              reply = await withTimeout(runArtClassAgent(textToAgent, history, customerPhone, tenant.id), 15_000);
+              reply = await withTimeout(runArtClassAgent(textToAgent, history, customerPhone, tenant.id, raceState), 25_000);
             } else if (tenantType === 'restaurant') {
-              reply = await withTimeout(runRestaurantAgent(textToAgent, history, customerPhone, tenant.id), 15_000);
+              reply = await withTimeout(runRestaurantAgent(textToAgent, history, customerPhone, tenant.id, raceState), 25_000);
             } else if (tenantType.startsWith('happy_')) {
               // happy_ POS tenants use the POS app — WhatsApp is an optional bolt-on, stay silent by default
               reply = '';
             } else {
-              reply = await withTimeout(runBookingAgent(textToAgent, history, customerPhone, tenant.id), 15_000);
+              reply = await withTimeout(runBookingAgent(textToAgent, history, customerPhone, tenant.id, raceState), 25_000);
             }
           } catch (agentErr: any) {
             console.error(`[Meta] Agent error (${tenantType}):`, agentErr.message);
+            raceState.raceLost = true;
             reply = "Sorry, I'm having a technical issue. Please try again in a moment.";
           }
 

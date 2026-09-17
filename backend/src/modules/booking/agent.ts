@@ -4,6 +4,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { format } from 'date-fns';
 import { prepare, isPg, query, queryOne, queryRun } from '../../db/database.js';
+import { RaceState, sendLateFollowUp } from '../../whatsapp/raceState.js';
 
 async function dbAll(sql: string, ...p: unknown[]) { return isPg ? query(sql, p) : prepare(sql).all(...p); }
 async function dbGet(sql: string, ...p: unknown[]) { return isPg ? queryOne(sql, p) : prepare(sql).get(...p); }
@@ -439,6 +440,7 @@ export async function runBookingAgent(
   conversationHistory: Anthropic.MessageParam[],
   customerPhone: string,
   tenantId: string,
+  raceState?: RaceState,  // set by the webhook if its timeout already fired
 ): Promise<string> {
   const messages: Anthropic.MessageParam[] = [
     ...conversationHistory,
@@ -477,8 +479,10 @@ export async function runBookingAgent(
     }
 
     const textBlock = response.content.find(b => b.type === 'text');
-    return textBlock && textBlock.type === 'text'
+    const reply = textBlock && textBlock.type === 'text'
       ? textBlock.text
       : 'Sorry, I had trouble processing that. Please try again.';
+    await sendLateFollowUp(raceState, customerPhone, reply);
+    return reply;
   }
 }

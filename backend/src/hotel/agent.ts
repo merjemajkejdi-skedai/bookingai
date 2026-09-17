@@ -4,6 +4,7 @@ import { buildHotelSystemPrompt } from './prompts.js';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { getHotelHistory, saveHotelConversation, saveGuestMessage } from './session.js';
 import { alertError } from '../utils/errorMonitor.js';
+import { RaceState, sendLateFollowUp } from '../whatsapp/raceState.js';
 
 async function dbGet(sql: string, ...p: unknown[]) {
   return isPg ? queryOne(sql, p) : prepare(sql).get(...p);
@@ -148,6 +149,7 @@ export async function runHotelAgent(
   tenantId: string,
   mediaUrl:  string | null = null,  // photo sent by guest (Twilio MediaUrl0)
   mediaMime: string | null = null,  // MIME type e.g. "image/jpeg"
+  raceState?: RaceState,             // set by the webhook if its timeout already fired
 ): Promise<string> {
 
   // Safety guard — ensure the message is never empty so Claude never
@@ -433,6 +435,7 @@ export async function runHotelAgent(
     }
 
     await saveHotelConversation(tenantId, customerPhone, safeMessage, reply, roomNumber);
+    await sendLateFollowUp(raceState, customerPhone, reply);
 
     return reply;
   }

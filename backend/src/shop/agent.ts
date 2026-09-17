@@ -5,6 +5,7 @@ import { buildShopSystemPrompt } from './prompts.js';
 import { shopTools, executeShopTool } from './tools.js';
 import { sendWhatsAppMedia } from '../whatsapp/twilio.js';
 import { alertError } from '../utils/errorMonitor.js';
+import { RaceState, sendLateFollowUp } from '../whatsapp/raceState.js';
 
 const anthropic = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
 
@@ -42,6 +43,7 @@ export async function runShopAgent(
   tenantId:       string,
   _mediaUrl?:     string,
   isReminderMode: boolean = false,
+  raceState?:     RaceState,  // set by the webhook if its timeout already fired
 ): Promise<{ reply: string; toolsUsed: string[] }> {
   console.log('[Shop] *** runShopAgent called, tenantId:', tenantId, 'phone:', guestPhone);
   console.log(`[Shop] runShopAgent tenantId=${tenantId} phone=${guestPhone}`);
@@ -216,6 +218,7 @@ export async function runShopAgent(
       `UPDATE shop_conversations SET messages = ?, updated_at = ? WHERE tenant_id = ? AND guest_phone = ?`,
       JSON.stringify(updatedHistory), new Date().toISOString(), tenantId, guestPhone,
     );
+    await sendLateFollowUp(raceState, guestPhone, finalReply);
 
     return { reply: finalReply, toolsUsed };
 

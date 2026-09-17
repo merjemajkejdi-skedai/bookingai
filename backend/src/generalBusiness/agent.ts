@@ -4,6 +4,7 @@ import { buildGbSystemPrompt } from './prompts.js';
 import { getGbHistory, saveGbConversation, saveGbGuestMessage } from './session.js';
 import { isPg, prepare, queryOne } from '../db/database.js';
 import { alertError } from '../utils/errorMonitor.js';
+import { RaceState, sendLateFollowUp } from '../whatsapp/raceState.js';
 
 async function dbGet(sql: string, ...p: unknown[]) {
   return isPg ? queryOne(sql, p) : prepare(sql).get(...p);
@@ -17,6 +18,7 @@ export async function runGbAgent(
   _conversationHistory: Anthropic.MessageParam[],
   customerPhone: string,
   tenantId: string,
+  raceState?: RaceState,  // set by the webhook if its timeout already fired
 ): Promise<string> {
   const safeMessage = customerMessage.trim() || '[Empty message]';
 
@@ -103,6 +105,7 @@ export async function runGbAgent(
         : 'I will connect you with our team right away.';
 
       await saveGbConversation(tenantId, customerPhone, safeMessage, reply);
+      await sendLateFollowUp(raceState, customerPhone, reply);
       return reply;
     }
   } catch (e: any) {

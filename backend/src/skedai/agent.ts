@@ -15,6 +15,7 @@ import {
   notifySalesLead,
   type ServiceStatus,
 } from './notify.js';
+import { RaceState, sendLateFollowUp } from '../whatsapp/raceState.js';
 
 async function dbGet(sql: string, ...p: unknown[]) {
   return isPg ? queryOne(sql, p) : prepare(sql).get(...p);
@@ -125,6 +126,7 @@ export async function runSkedAIAgent(
   message: string,
   phone: string,
   tenantId: string,
+  raceState?: RaceState,  // set by the webhook if its timeout already fired
 ): Promise<string> {
   const now = format(new Date(), "EEEE d MMMM yyyy, HH:mm");
   console.log(`[SkedAI] ${now} — message from ${phone}: "${message.slice(0, 80)}"`);
@@ -192,6 +194,8 @@ export async function runSkedAIAgent(
         { role: 'assistant', content: reply,   ts: new Date().toISOString() },
       ],
     });
+
+    await sendLateFollowUp(raceState, phone, reply);
 
     return reply;
 
