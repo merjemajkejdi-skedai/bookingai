@@ -14,6 +14,7 @@ import { runBookingAgent } from '../modules/booking/agent.js';
 import { runArtEventAgent } from '../modules/art_event/agent.js';
 import { runArtClassAgent } from '../modules/art_class/agent.js';
 import { runRestaurantAgent } from '../modules/restaurant/agent.js';
+import { runGbAgent } from '../generalBusiness/agent.js';
 import { sendEmailFallback } from '../utils/emailFallback.js';
 import { alertError } from '../utils/errorMonitor.js';
 import { maybeSendNewConversationAlert } from '../skedai/conversationAlert.js';
@@ -294,6 +295,8 @@ metaRouter.post('/meta/webhook', async (req: Request, res: Response) => {
               reply = await withTimeout(runArtClassAgent(textToAgent, history, customerPhone, tenant.id, raceState), 25_000);
             } else if (tenantType === 'restaurant') {
               reply = await withTimeout(runRestaurantAgent(textToAgent, history, customerPhone, tenant.id, raceState), 25_000);
+            } else if (tenantType === 'general_business') {
+              reply = await withTimeout(runGbAgent(textToAgent, history, customerPhone, tenant.id, raceState), 25_000);
             } else if (tenantType.startsWith('happy_')) {
               // happy_ POS tenants use the POS app — WhatsApp is an optional bolt-on, stay silent by default
               reply = '';
