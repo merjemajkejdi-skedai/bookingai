@@ -5,7 +5,6 @@ import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { encrypt, decrypt } from '../utils/encryption.js';
 import { sendManualOwnerReport } from '../reports/reportCron.js';
-import { getUnansweredQuestionsForReport } from '../faqGap/getReportQuestions.js';
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth, requireAdmin);
@@ -1044,38 +1043,6 @@ adminRouter.post('/manual-leads/:id/convert', async (req: Request, res: Response
     ok(res, await dbGet('SELECT * FROM manual_leads WHERE id = ?', id));
   } catch (e: any) {
     console.error('[Admin] manual-leads convert error:', e.message);
-    err(res, e.message, 500);
-  }
-});
-
-// TEMP DIAGNOSTIC — remove after use. Runs the exact production
-// getUnansweredQuestionsForReport() query for a given tenant/period, to
-// confirm whether the report's FAQ-gap section would include rows that
-// are visible on the FAQ dashboard for the same tenant.
-adminRouter.get('/debug/faq-gap-report-check', async (req: Request, res: Response) => {
-  try {
-    if (!isPg) return err(res, 'Only meaningful against Postgres', 400);
-    const { tenantId, start, end } = req.query as { tenantId?: string; start?: string; end?: string };
-    if (!tenantId || !start || !end) return err(res, 'tenantId, start, end (YYYY-MM-DD) are required');
-
-    const periodStart = new Date(start + 'T00:00:00.000Z');
-    const periodEnd = new Date(end + 'T00:00:00.000Z');
-
-    const reportRows = await getUnansweredQuestionsForReport(tenantId, periodStart, periodEnd);
-
-    const allNewRows = await dbAll(
-      `SELECT id, guest_question, status, created_at FROM unanswered_questions WHERE tenant_id = ? ORDER BY created_at DESC`,
-      tenantId,
-    );
-
-    ok(res, {
-      periodStart: periodStart.toISOString(),
-      periodEnd: periodEnd.toISOString(),
-      reportWouldInclude: reportRows,
-      allRowsForTenant: allNewRows,
-    });
-  } catch (e: any) {
-    console.error('[Admin] faq-gap-report-check error:', e.message);
     err(res, e.message, 500);
   }
 });
