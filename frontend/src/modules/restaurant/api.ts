@@ -3,6 +3,8 @@ import type { Zone, RestaurantTable, Reservation, ZoneAvailability } from './typ
 
 const BASE = `${import.meta.env.VITE_API_URL || ''}/api`;
 
+import { redirectToLoginOnSessionExpired } from '../../shared/lib/sessionExpiry.js';
+
 function injectTenantId(path: string): string {
   const raw = localStorage.getItem('bookingai_admin_tenant');
   const user = JSON.parse(localStorage.getItem('bookingai_user') || 'null');
@@ -24,6 +26,10 @@ async function req<T>(path: string, opts?: RequestInit): Promise<T> {
       ...(extraHeaders ?? {}),
     },
   });
+  if (res.status === 401) {
+    redirectToLoginOnSessionExpired();
+    throw new Error('Session expired');
+  }
   const text = await res.text();
   if (!text) throw new Error('Empty response from server');
   let json: any;

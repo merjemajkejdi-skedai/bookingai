@@ -30,9 +30,11 @@ export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) 
   const [confirmName, setConfirmName] = useState('');
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError]     = useState('');
+  const [loadError, setLoadError]         = useState('');
 
   async function load() {
     setLoading(true);
+    setLoadError('');
     try {
       const [t, s] = await Promise.all([
         adminApi.getTenants({ showDeleted }),
@@ -40,6 +42,11 @@ export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) 
       ]);
       setTenants(t); setStats(s);
       if (!showDeleted) onTenantsLoaded?.(t.map((x: any) => ({ id: x.id, name: x.name, type: x.type })));
+    } catch (err: any) {
+      // authFetch/adminFetch already redirect to login on a 401 before this
+      // catch is reached — anything landing here is a genuine other failure.
+      console.error('[Admin] Failed to load tenants:', err);
+      setLoadError('Failed to load tenants. Please refresh the page.');
     } finally { setLoading(false); }
   }
 
@@ -154,6 +161,11 @@ export function AdminPage({ onViewShop, onTenantsLoaded }: AdminPageProps = {}) 
             <Archive size={12} />
             {showDeleted ? 'Showing deleted' : 'Show deleted'}
           </button>
+        </div>
+      )}
+      {adminTab === 'shops' && loadError && (
+        <div className="mb-3 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+          {loadError}
         </div>
       )}
       {adminTab === 'shops' && (loading ? <Spinner /> : (

@@ -1,4 +1,5 @@
 import type { ShopConfig, ShopCategory, ShopItem, ShopOrder, ShopFaq, ShopConversation, UnansweredQuestion } from './types';
+import { redirectToLoginOnSessionExpired } from '../../shared/lib/sessionExpiry.js';
 
 const BASE = (import.meta.env.VITE_API_URL as string) || '';
 
@@ -32,6 +33,10 @@ async function rawReq(path: string, opts: RequestInit = {}): Promise<any> {
       ...(opts.headers as object ?? {}),
     },
   });
+  if (res.status === 401) {
+    redirectToLoginOnSessionExpired();
+    return { success: false, error: 'Session expired' };
+  }
   try { return await res.json(); } catch { return { success: false, error: `Server error ${res.status}` }; }
 }
 
@@ -49,6 +54,10 @@ async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
       ...(opts.headers as object ?? {}),
     },
   });
+  if (res.status === 401) {
+    redirectToLoginOnSessionExpired();
+    throw new Error('Session expired');
+  }
 
   let json: any;
   try { json = JSON.parse(await res.text()); } catch { throw new Error(`Server error ${res.status}`); }

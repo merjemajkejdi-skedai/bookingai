@@ -1,4 +1,5 @@
 import { getToken, getAdminTenant } from '../../shared/lib/auth';
+import { redirectToLoginOnSessionExpired } from '../../shared/lib/sessionExpiry';
 import type { SkedAIConfig } from './types';
 
 function base() {
@@ -18,6 +19,10 @@ function headers() {
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${base()}/api${path}`, { ...init, headers: headers() });
+  if (res.status === 401) {
+    redirectToLoginOnSessionExpired();
+    throw new Error('Session expired');
+  }
   const json = await res.json();
   if (!json.success) throw new Error(json.error || 'Request failed');
   return json.data as T;

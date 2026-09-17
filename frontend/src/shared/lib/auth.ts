@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+import { redirectToLoginOnSessionExpired } from './sessionExpiry.js';
 const TOKEN_KEY        = 'bookingai_token';
 const USER_KEY         = 'bookingai_user';
 const ADMIN_TENANT_KEY = 'bookingai_admin_tenant';
@@ -78,6 +79,10 @@ async function authFetch<T>(path: string, opts?: RequestInit): Promise<T> {
       ...(extraHeaders ?? {}),
     },
   });
+  if (res.status === 401) {
+    redirectToLoginOnSessionExpired();
+    throw new Error('Session expired');
+  }
   const text = await res.text();
   if (!text) throw new Error('Empty response from server');
   let json: any;
@@ -100,6 +105,10 @@ async function adminFetch<T>(path: string, opts?: RequestInit): Promise<T> {
       ...(extraHeaders ?? {}),
     },
   });
+  if (res.status === 401) {
+    redirectToLoginOnSessionExpired();
+    throw new Error('Session expired');
+  }
   const text = await res.text();
   if (!text) throw new Error('Empty response from server');
   let json: any;

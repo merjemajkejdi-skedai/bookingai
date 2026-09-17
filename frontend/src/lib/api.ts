@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+import { redirectToLoginOnSessionExpired } from '../shared/lib/sessionExpiry';
 import type { Specialist, Service, ServiceGroup, Booking, TimeSlot, ArtEvent, EventRegistration } from '../types';
 
 const BASE = `${import.meta.env.VITE_API_URL || ''}/api`;
@@ -14,6 +15,10 @@ async function req<T>(path: string, opts?: RequestInit): Promise<T> {
       ...(extraHeaders ?? {}),
     },
   });
+  if (res.status === 401) {
+    redirectToLoginOnSessionExpired();
+    throw new Error('Session expired');
+  }
 
   const text = await res.text();
   if (!text) throw new Error('Empty response from server');

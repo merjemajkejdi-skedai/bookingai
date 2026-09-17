@@ -9,7 +9,10 @@ RUN npm install --production=false
 # Copy source code
 COPY . .
 
-# Create data directory (used by SQLite in local dev — ignored in production)
+# Create data directory — used by SQLite in local dev, and as a fallback JWT
+# secret store. This app has no persistent volume configured on Railway, so
+# nothing written here survives a redeploy/restart — set JWT_SECRET as a
+# real env var in production instead of relying on this fallback.
 RUN mkdir -p data
 
 EXPOSE 3001

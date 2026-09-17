@@ -9,6 +9,7 @@ export function LoginPage({ onLogin }: Props) {
   const [password, setPassword] = useState('');
   const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(false);
+  const sessionExpired = new URLSearchParams(window.location.search).get('reason') === 'session_expired';
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -38,6 +39,11 @@ export function LoginPage({ onLogin }: Props) {
           <h1 className="text-base font-semibold text-slate-800 mb-1">Sign in</h1>
           <p className="text-sm text-slate-400 mb-6">Enter your credentials to continue</p>
 
+          {sessionExpired && (
+            <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+              Your session expired. Please log in again.
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="space-y-4">
             <label className="flex flex-col gap-1.5 text-sm">
               <span className="font-medium text-slate-700">Email</span>
