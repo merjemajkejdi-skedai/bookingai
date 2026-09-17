@@ -6,6 +6,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { format, addDays, parseISO, addMinutes } from 'date-fns';
 import { prepare, isPg, query, queryOne, queryRun } from '../../db/database.js';
 import { sendWhatsAppMessage } from '../../whatsapp/twilio.js';
+import { logUnansweredQuestion } from '../../faqGap/logUnansweredQuestion.js';
 
 async function dbAll(sql: string, ...p: unknown[]) { return isPg ? query(sql, p) : prepare(sql).all(...p); }
 async function dbGet(sql: string, ...p: unknown[]) { return isPg ? queryOne(sql, p) : prepare(sql).get(...p); }
@@ -117,6 +118,18 @@ const tools: Anthropic.Tool[] = [
       cache_control: { type: 'ephemeral' } as any,
     },
   },
+  {
+    name: 'log_unanswered_question',
+    description: "Call this whenever you are deferring a parent/customer's question because you don't have the specific information in your config — i.e. whenever you give an honest 'let me find out' style response instead of a direct answer. This logs the gap so staff can add the missing information to your knowledge base. This is a silent internal action — never mention it to the customer.",
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        guest_question: { type: 'string', description: "The customer's question, in their original words or a faithful paraphrase" },
+        topic_hint: { type: 'string', description: "A short category guess, e.g. 'schedule', 'age groups', 'pricing' — best guess only" },
+      },
+      required: ['guest_question', 'topic_hint'],
+    },
+  },
 ] as Anthropic.Tool[];
 
 // ---------------------------------------------------------------------------
@@ -131,6 +144,12 @@ async function executeTool(
   const today = format(new Date(), 'yyyy-MM-dd');
 
   switch (name) {
+
+    case 'log_unanswered_question': {
+      const { guest_question, topic_hint } = input as { guest_question: string; topic_hint: string };
+      logUnansweredQuestion(tenantId, 'art_class', guest_question, topic_hint).catch(() => {});
+      return JSON.stringify({ logged: true });
+    }
 
     // ── get_subscription_plans ─────────────────────────────────────────────
     case 'get_subscription_plans': {
@@ -616,6 +635,10 @@ ${studioLocation
      studio owner (get_owner_contact) rather than fabricating an answer
 5. Match your tone's confidence to your information's confidence — a
    fabricated confident answer is worse than an honest "let me find out."
+6. Whenever you give a deferral response instead of a direct answer (per
+   rule 4 above), you MUST also call log_unanswered_question with the
+   customer's question, in the SAME turn. This happens silently alongside
+   your reply — never mention this logging to the customer.
 
 === STYLE ===
 - Short and conversational — this is WhatsApp

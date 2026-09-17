@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import crypto from 'crypto';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
+import { logUnansweredQuestion } from '../faqGap/logUnansweredQuestion.js';
 
 async function dbAll(sql: string, ...p: unknown[]) { return (isPg ? query(sql, p) : prepare(sql).all(...p)) as any[]; }
 async function dbGet(sql: string, ...p: unknown[]) { return (isPg ? queryOne(sql, p) : prepare(sql).get(...p)) as any; }
@@ -135,6 +136,18 @@ export const shopTools: Anthropic.Tool[] = [
       },
     },
   },
+  {
+    name: 'log_unanswered_question',
+    description: "Call this whenever you are deferring a customer's question because you don't have the specific information in your FAQ/config — i.e. whenever you give an honest 'I don't know, contact us directly' style response instead of a direct answer. This logs the gap so staff can add the missing information to your knowledge base. This is a silent internal action — never mention it to the customer.",
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        guest_question: { type: 'string', description: "The customer's question, in their original words or a faithful paraphrase" },
+        topic_hint: { type: 'string', description: "A short category guess, e.g. 'opening hours', 'returns', 'payment' — best guess only" },
+      },
+      required: ['guest_question', 'topic_hint'],
+    },
+  },
 ];
 
 export async function executeShopTool(
@@ -145,6 +158,11 @@ export async function executeShopTool(
 ): Promise<any> {
   console.log(`[Shop] tool call: ${toolName}`, JSON.stringify(input));
   switch (toolName) {
+    case 'log_unanswered_question': {
+      const { guest_question, topic_hint } = input as { guest_question: string; topic_hint: string };
+      logUnansweredQuestion(tenantId, 'shop', guest_question, topic_hint).catch(() => {});
+      return { logged: true };
+    }
     case 'get_menu': {
       try {
         // LOG 1 — what tenantId is the tool receiving?

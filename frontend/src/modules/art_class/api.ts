@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import type { Specialist, ArtEvent, EventRegistration, EventTemplate, SubscriptionPlan, SpecialEvent } from './types';
+import type { Specialist, ArtEvent, EventRegistration, EventTemplate, SubscriptionPlan, SpecialEvent, ArtClassFaq, UnansweredQuestion } from './types';
 
 const BASE = `${import.meta.env.VITE_API_URL || ''}/api`;
 
@@ -88,6 +88,20 @@ export const api = {
     req<{ archive_after_days: number }>('/art-class/archive-settings', {
       method: 'PUT', body: JSON.stringify({ archive_after_days }),
     }),
+
+  // FAQ
+  getFaq: () => req<ArtClassFaq[]>('/art-class/faq'),
+  createFaq: (data: { question: string; answer: string }) =>
+    req<ArtClassFaq>('/art-class/faq', { method: 'POST', body: JSON.stringify(data) }),
+  updateFaq: (id: string, data: { question: string; answer: string }) =>
+    req<ArtClassFaq>(`/art-class/faq/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteFaq: (id: string) => req(`/art-class/faq/${id}`, { method: 'DELETE' }),
+
+  // Suggested FAQs — questions the AI could not answer. Note: BASE already
+  // ends in '/api', so this hits /api/tenant/... not /api/api/tenant/....
+  getUnansweredQuestions: () => req<UnansweredQuestion[]>('/tenant/unanswered-questions?status=new'),
+  updateUnansweredQuestion: (id: string, data: { action: 'add_to_faq' | 'dismiss'; editedAnswer?: string }) =>
+    req(`/tenant/unanswered-questions/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 
   // Subscription plans
   getPlans: () => req<SubscriptionPlan[]>('/subscription-plans'),

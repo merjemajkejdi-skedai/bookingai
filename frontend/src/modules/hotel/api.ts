@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import type { GuestStay, HotelRequest, FaqEntry, HotelConfig, Department, DepartmentSchedule, Conversation, BlockedNumber, HotelReview, ReviewStats, ReviewConfig, ChannelSetting, EmailAccount, EmailConversation, EmailMessage } from './types';
+import type { GuestStay, HotelRequest, FaqEntry, HotelConfig, Department, DepartmentSchedule, Conversation, BlockedNumber, HotelReview, ReviewStats, ReviewConfig, ChannelSetting, EmailAccount, EmailConversation, EmailMessage, UnansweredQuestion } from './types';
 
 const BASE = `${import.meta.env.VITE_API_URL || ''}`;
 
@@ -90,6 +90,11 @@ export const api = {
     req<FaqEntry>(`/hotel/faq/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteFaq: (id: string) =>
     req(`/hotel/faq/${id}`, { method: 'DELETE' }),
+
+  // Suggested FAQs — questions the AI could not answer
+  getUnansweredQuestions: () => req<UnansweredQuestion[]>('/api/tenant/unanswered-questions?status=new'),
+  updateUnansweredQuestion: (id: string, data: { action: 'add_to_faq' | 'dismiss'; editedAnswer?: string }) =>
+    req(`/api/tenant/unanswered-questions/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 
   // Departments
   getDepartments: () => req<Department[]>('/hotel/departments'),

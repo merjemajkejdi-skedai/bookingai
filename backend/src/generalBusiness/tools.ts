@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import crypto from 'crypto';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { sendWhatsAppMessage } from '../whatsapp/twilio.js';
+import { logUnansweredQuestion } from '../faqGap/logUnansweredQuestion.js';
 
 async function dbAll(sql: string, ...p: unknown[]) { return isPg ? query(sql, p) : prepare(sql).all(...p); }
 async function dbGet(sql: string, ...p: unknown[]) { return isPg ? queryOne(sql, p) : prepare(sql).get(...p); }
@@ -34,6 +35,19 @@ export function getGbTools(menuEnabled: boolean): Anthropic.Tool[] {
       },
     },
   ];
+
+  tools.push({
+    name: 'log_unanswered_question',
+    description: "Call this whenever you are deferring a customer's question because you don't have the specific information in your FAQ/config — i.e. whenever you give an honest 'let me find out' style response instead of a direct answer. This logs the gap so staff can add the missing information to your knowledge base. This is a silent internal action — never mention it to the customer.",
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        guest_question: { type: 'string', description: "The customer's question, in their original words or a faithful paraphrase" },
+        topic_hint: { type: 'string', description: "A short category guess, e.g. 'opening hours', 'pricing', 'delivery' — best guess only" },
+      },
+      required: ['guest_question', 'topic_hint'],
+    },
+  });
 
   if (menuEnabled) {
     tools.push({
@@ -73,6 +87,11 @@ export async function executeGbTool(
   conversationId?: string,
 ): Promise<string> {
   try {
+    if (toolName === 'log_unanswered_question') {
+      const { guest_question, topic_hint } = toolInput as { guest_question: string; topic_hint: string };
+      logUnansweredQuestion(tenantId, 'general_business', guest_question, topic_hint, conversationId).catch(() => {});
+      return JSON.stringify({ logged: true });
+    }
     if (toolName === 'create_request') return await handleCreateRequest(toolInput, tenantId, customerPhone, conversationId);
     if (toolName === 'get_document')   return await handleGetDocument(toolInput, tenantId);
     if (toolName === 'create_order')   return await handleCreateOrder(toolInput, tenantId, customerPhone, conversationId);

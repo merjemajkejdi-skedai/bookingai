@@ -1,4 +1,4 @@
-import type { ShopConfig, ShopCategory, ShopItem, ShopOrder, ShopFaq, ShopConversation } from './types';
+import type { ShopConfig, ShopCategory, ShopItem, ShopOrder, ShopFaq, ShopConversation, UnansweredQuestion } from './types';
 
 const BASE = (import.meta.env.VITE_API_URL as string) || '';
 
@@ -86,6 +86,11 @@ export const shopApi = {
   createFaq:    (d: Partial<ShopFaq>)    => req<{ id: string }>('/shop/faq', { method: 'POST', body: JSON.stringify(d) }),
   updateFaq:    (id: string, d: Partial<ShopFaq>) => req<void>(`/shop/faq/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
   deleteFaq:    (id: string)             => req<void>(`/shop/faq/${id}`, { method: 'DELETE' }),
+
+  // Suggested FAQs — questions the AI could not answer
+  getUnansweredQuestions: () => req<UnansweredQuestion[]>('/api/tenant/unanswered-questions?status=new'),
+  updateUnansweredQuestion: (id: string, data: { action: 'add_to_faq' | 'dismiss'; editedAnswer?: string }) =>
+    req(`/api/tenant/unanswered-questions/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 
   getConversations:   (status: 'active' | 'archived' = 'active') =>
     req<ShopConversation[]>(`/shop/conversations?status=${status}`),

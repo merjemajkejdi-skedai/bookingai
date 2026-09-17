@@ -460,6 +460,51 @@ artClassRouter.put('/art-class/archive-settings', requireAuth, async (req: Reque
   } catch (e: any) { err(res, e.message, 500); }
 });
 
+// ── FAQ ──────────────────────────────────────────────────────────────────────────────────
+
+artClassRouter.get('/art-class/faq', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    const rows = await dbAll('SELECT * FROM art_class_faq WHERE tenant_id = ? ORDER BY sort_order ASC, created_at ASC', tenantId);
+    ok(res, rows);
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+artClassRouter.post('/art-class/faq', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const { question, answer } = req.body as { question?: string; answer?: string };
+  if (!question?.trim() || !answer?.trim()) return err(res, 'question and answer are required');
+  const id = crypto.randomUUID();
+  try {
+    await dbRun('INSERT INTO art_class_faq (id, tenant_id, question, answer) VALUES (?, ?, ?, ?)', id, tenantId, question.trim(), answer.trim());
+    const row = await dbGet('SELECT * FROM art_class_faq WHERE id = ?', id);
+    ok(res, row);
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+artClassRouter.put('/art-class/faq/:id', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const { question, answer } = req.body as { question?: string; answer?: string };
+  if (!question?.trim() || !answer?.trim()) return err(res, 'question and answer are required');
+  try {
+    await dbRun(
+      'UPDATE art_class_faq SET question = ?, answer = ? WHERE id = ? AND tenant_id = ?',
+      question.trim(), answer.trim(), req.params.id, tenantId,
+    );
+    const row = await dbGet('SELECT * FROM art_class_faq WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
+    if (!row) return err(res, 'FAQ entry not found', 404);
+    ok(res, row);
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+artClassRouter.delete('/art-class/faq/:id', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    await dbRun('DELETE FROM art_class_faq WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
+    ok(res, { deleted: true });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
 // ── SUBSCRIPTION PLANS ────────────────────────────────────────────────────────
 
 artClassRouter.get('/subscription-plans', requireAuth, async (req: Request, res: Response) => {

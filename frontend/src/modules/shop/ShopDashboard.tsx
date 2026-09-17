@@ -3,7 +3,7 @@ import { ShoppingBag, Package, MessageSquare, HelpCircle, Settings, Plus, Trash2
 import { QRCodeCanvas } from 'qrcode.react';
 import jsPDF from 'jspdf';
 import { shopApi, setViewTenantId } from './api';
-import type { ShopOrder, ShopItem, ShopCategory, ShopFaq, ShopConversation, ShopConfig } from './types';
+import type { ShopOrder, ShopItem, ShopCategory, ShopFaq, ShopConversation, ShopConfig, UnansweredQuestion } from './types';
 import { ShopReports } from './ShopReports';
 import { ShopUsers } from './ShopUsers';
 import { ShopInventory } from './ShopInventory';
@@ -1439,12 +1439,19 @@ function FaqTab() {
   const [q, setQ] = useState('');
   const [a, setA] = useState('');
   const [busy, setBusy] = useState(false);
+  const [suggestions, setSuggestions] = useState<UnansweredQuestion[]>([]);
+  const [draftAnswers, setDraftAnswers] = useState<Record<string, string>>({});
+  const [suggestionSaving, setSuggestionSaving] = useState<string | null>(null);
+
+  function loadSuggestions() {
+    shopApi.getUnansweredQuestions().then(setSuggestions).catch(() => {});
+  }
 
   async function load() {
     setLoading(true);
     try { setFaqs(await shopApi.getFaq()); } catch { /* ignore */ } finally { setLoading(false); }
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); loadSuggestions(); }, []);
 
   function openNew() { setEditing(null); setQ(''); setA(''); }
   function openEdit(f: ShopFaq) { setEditing(f); setQ(f.question); setA(f.answer); }
@@ -1464,6 +1471,25 @@ function FaqTab() {
     await shopApi.deleteFaq(id); load();
   }
 
+  async function handleSaveSuggestion(id: string) {
+    setSuggestionSaving(id);
+    try {
+      await shopApi.updateUnansweredQuestion(id, { action: 'add_to_faq', editedAnswer: draftAnswers[id] });
+      setSuggestions(s => s.filter(x => x.id !== id));
+      load();
+    } catch { /* leave the card in place so staff can retry */ }
+    finally { setSuggestionSaving(null); }
+  }
+
+  async function handleDismissSuggestion(id: string) {
+    setSuggestionSaving(id);
+    try {
+      await shopApi.updateUnansweredQuestion(id, { action: 'dismiss' });
+      setSuggestions(s => s.filter(x => x.id !== id));
+    } catch { /* leave the card in place so staff can retry */ }
+    finally { setSuggestionSaving(null); }
+  }
+
   return (
     <div className="flex flex-col gap-4 h-full overflow-auto">
       <div className="flex justify-between items-center">
@@ -1472,6 +1498,42 @@ function FaqTab() {
           <Plus size={14} /> Add FAQ
         </button>
       </div>
+
+      {suggestions.length > 0 && (
+        <div className="border border-amber-200 bg-amber-50 rounded-xl p-3 space-y-2">
+          <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">
+            Suggested FAQs — {suggestions.length} question{suggestions.length !== 1 ? 's' : ''} the AI couldn't answer
+          </p>
+          {suggestions.map(sq => (
+            <div key={sq.id} className="bg-white rounded-lg border border-amber-100 p-3 space-y-2">
+              <p className="text-sm font-medium text-slate-800">"{sq.guest_question}"</p>
+              <textarea
+                value={draftAnswers[sq.id] ?? sq.suggested_answer ?? ''}
+                onChange={e => setDraftAnswers(d => ({ ...d, [sq.id]: e.target.value }))}
+                rows={2}
+                placeholder="Write the answer to save…"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm resize-none"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleSaveSuggestion(sq.id)}
+                  disabled={suggestionSaving === sq.id}
+                  className="px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-medium hover:bg-brand-700 disabled:opacity-50"
+                >
+                  {suggestionSaving === sq.id ? 'Saving…' : 'Save as FAQ'}
+                </button>
+                <button
+                  onClick={() => handleDismissSuggestion(sq.id)}
+                  disabled={suggestionSaving === sq.id}
+                  className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-xs font-medium hover:bg-slate-200 disabled:opacity-50"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {loading ? <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">Loading…</div> : (
         <div className="space-y-3">

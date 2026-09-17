@@ -144,6 +144,19 @@ export interface ShopFaq {
   created_at: string;
 }
 
+export interface UnansweredQuestion {
+  id: string;
+  tenant_id: string;
+  conversation_id: string | null;
+  guest_question: string;
+  topic_hint: string | null;
+  suggested_answer: string | null;
+  status: string;
+  added_faq_id: string | null;
+  created_at: string;
+  reviewed_at: string | null;
+}
+
 export interface ShopConversation {
   id: string;
   guest_phone: string;

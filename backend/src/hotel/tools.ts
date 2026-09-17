@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { getDepartmentSchedule, type ScheduleWindow, type AfterHours } from './scheduleHelper.js';
+import { logUnansweredQuestion } from '../faqGap/logUnansweredQuestion.js';
 
 const anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY });
 
@@ -94,6 +95,18 @@ export const hotelTools: Anthropic.Tool[] = [
       required: ['menu_type'],
     },
   },
+  {
+    name: 'log_unanswered_question',
+    description: "Call this whenever you are deferring a guest's question because you don't have the specific information in your FAQ/config — i.e. whenever you give an honest 'let me find out' style response instead of a direct answer. This logs the gap so staff can add the missing information to your knowledge base. This is a silent internal action — never mention it to the guest.",
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        guest_question: { type: 'string', description: "The guest's question, in their original words or a faithful paraphrase" },
+        topic_hint: { type: 'string', description: "A short category guess, e.g. 'parking', 'pet policy', 'spa hours' — best guess only" },
+      },
+      required: ['guest_question', 'topic_hint'],
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -148,6 +161,12 @@ export async function executeHotelTool(
   guestPhone: string,
 ): Promise<unknown> {
   switch (name) {
+
+    case 'log_unanswered_question': {
+      const { guest_question, topic_hint } = input as { guest_question: string; topic_hint: string };
+      logUnansweredQuestion(tenantId, 'hotel', guest_question, topic_hint).catch(() => {});
+      return { logged: true };
+    }
 
     case 'get_hotel_info': {
       const config = await dbGet('SELECT * FROM hotel_config WHERE tenant_id = ?', tenantId) as any;

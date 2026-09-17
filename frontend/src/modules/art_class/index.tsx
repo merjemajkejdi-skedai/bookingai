@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Users, Shield, LogOut, BookTemplate, BarChart2, CreditCard, Star, Settings, MessageSquare } from 'lucide-react';
+import { Calendar, Users, Shield, LogOut, BookTemplate, BarChart2, CreditCard, Star, Settings, MessageSquare, BookOpen } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from './api';
 import type { Specialist } from './types';
@@ -10,11 +10,12 @@ import { AnalyticsPage } from './components/AnalyticsPage';
 import { SubscriptionPlansPage } from './components/SubscriptionPlansPage';
 import { SpecialEventsPage } from './components/SpecialEventsPage';
 import { ConfigPage } from './components/ConfigPage';
+import { FaqPage } from './components/FaqPage';
 import { ConversationsPage } from '../hotel/components/ConversationsPage';
 import { AdminPage } from '../../pages/AdminPage';
 import { isAdmin, getStoredUser, clearAuth } from '../../shared/lib/auth';
 
-type Page = 'conversations' | 'classes' | 'templates' | 'specialists' | 'plans' | 'special-events' | 'analytics' | 'config' | 'admin';
+type Page = 'conversations' | 'classes' | 'templates' | 'specialists' | 'plans' | 'special-events' | 'faq' | 'analytics' | 'config' | 'admin';
 interface Props { onLogout: () => void; }
 
 export function ArtClassModule({ onLogout }: Props) {
@@ -45,6 +46,7 @@ export function ArtClassModule({ onLogout }: Props) {
     { id: 'plans',          label: 'Subscriptions',  icon: <CreditCard size={16} /> },
     { id: 'special-events', label: 'Special Events', icon: <Star size={16} /> },
     ...(hasAnalytics ? [{ id: 'analytics' as Page, label: 'Analytics', icon: <BarChart2 size={16} /> }] : []),
+    { id: 'faq',            label: 'FAQ',            icon: <BookOpen size={16} /> },
     { id: 'config' as Page, label: 'Settings',  icon: <Settings size={16} /> },
     ...(isAdmin() ? [{ id: 'admin' as Page, label: 'Admin', icon: <Shield size={16} /> }] : []),
   ];
@@ -110,6 +112,7 @@ export function ArtClassModule({ onLogout }: Props) {
         {page === 'plans'          && <SubscriptionPlansPage />}
         {page === 'special-events' && <SpecialEventsPage specialists={specialists} />}
         {page === 'analytics'      && <AnalyticsPage />}
+        {page === 'faq'            && <FaqPage />}
         {page === 'config'         && <ConfigPage />}
         {page === 'admin'          && <AdminPage />}
       </main>

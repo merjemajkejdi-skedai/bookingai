@@ -23,6 +23,8 @@ import { startEmailWorker } from './channels/email/worker.js';
 import { startInstagramTokenRefresh } from './channels/instagramTokenRefresh.js';
 import { startArchiveCron } from './conversations/archiveCron.js';
 import { startReportCron } from './reports/reportCron.js';
+import { reportActionsRouter } from './routes/reportActions.js';
+import { unansweredQuestionsRouter } from './routes/unansweredQuestions.js';
 import { adminAnalyticsRouter } from './routes/adminAnalytics.js';
 import { whatsappSignupRouter } from './routes/whatsappSignup.js';
 import { instagramSignupRouter } from './routes/instagramSignup.js';
@@ -134,6 +136,8 @@ app.use('/', instagramRouter);
 app.use('/', messengerRouter);
 app.use('/', emailWebhookRouter);
 app.use('/gb', gbRouter);
+app.use('/report-actions', reportActionsRouter);
+app.use('/api/tenant', unansweredQuestionsRouter);
 
 app.get('/test-alert', (_req, res) => {
   alertError(new Error('Test alert from /test-alert endpoint'), 'test');

@@ -2371,6 +2371,38 @@ export async function runMigrations() {
       `ALTER TABLE art_class_conversations ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ`,
       `UPDATE art_class_conversations SET created_at = updated_at::timestamptz WHERE created_at IS NULL AND updated_at IS NOT NULL`,
       `ALTER TABLE art_class_conversations ALTER COLUMN created_at SET DEFAULT NOW()`,
+      // faq_gap_001 — "questions your AI couldn't answer" detection, extends the
+      // owner report. tenant_id is TEXT (tenants.id is TEXT, not UUID — a UUID FK
+      // column here would fail silently and take the whole CREATE TABLE down with
+      // it, per the owner_report_log lesson above).
+      `CREATE TABLE IF NOT EXISTS unanswered_questions (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  conversation_id TEXT,
+  guest_question TEXT NOT NULL,
+  topic_hint VARCHAR(100),
+  suggested_answer TEXT,
+  status VARCHAR(20) NOT NULL DEFAULT 'new',
+  added_faq_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  reviewed_at TIMESTAMPTZ
+)`,
+      `CREATE INDEX IF NOT EXISTS idx_unanswered_questions_tenant ON unanswered_questions(tenant_id, status, created_at DESC)`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS faq_gap_recipient VARCHAR(20) NOT NULL DEFAULT 'owner'`,
+      // art_class has no FAQ table at all (unlike hotel_faq/shop_faq/gb_faqs) —
+      // its agent relies entirely on hardcoded config/prompt blocks. Added here so
+      // "Add to FAQ" from a suggested-question has somewhere to write for this
+      // tenant type too.
+      `CREATE TABLE IF NOT EXISTS art_class_faq (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  question TEXT NOT NULL,
+  answer TEXT NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)`,
+      `CREATE INDEX IF NOT EXISTS idx_art_class_faq_tenant ON art_class_faq(tenant_id, is_active)`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));

@@ -419,7 +419,7 @@ adminRouter.post('/tenants/:id/send-report-now', async (req: Request, res: Respo
     const { id } = req.params;
     const periodDays = Number(req.body?.periodDays) || 7;
 
-    const tenant = await dbGet('SELECT id, name, type, owner_email FROM tenants WHERE id = ?', id) as any;
+    const tenant = await dbGet('SELECT id, name, type, owner_email, faq_gap_recipient FROM tenants WHERE id = ?', id) as any;
     if (!tenant) return err(res, 'Tenant not found', 404);
     if (!tenant.owner_email) return err(res, 'Tenant has no owner_email configured');
 

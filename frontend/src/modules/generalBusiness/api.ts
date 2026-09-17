@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import type { GbConfig, GbLocation, GbDepartment, GbFaq, GbDocument, GbMenuItem, GbOrder, GbRequest, GbConversation } from './types';
+import type { GbConfig, GbLocation, GbDepartment, GbFaq, GbDocument, GbMenuItem, GbOrder, GbRequest, GbConversation, UnansweredQuestion } from './types';
 
 const BASE = `${import.meta.env.VITE_API_URL || ''}`;
 
@@ -61,6 +61,11 @@ export const gbApi = {
     req<GbFaq>('/gb/faqs/' + id, { method: 'PUT', body: JSON.stringify(data) }),
   deleteFaq: (id: string) =>
     req<any>('/gb/faqs/' + id, { method: 'DELETE' }),
+
+  // Suggested FAQs — questions the AI could not answer
+  getUnansweredQuestions: () => req<UnansweredQuestion[]>('/api/tenant/unanswered-questions?status=new'),
+  updateUnansweredQuestion: (id: string, data: { action: 'add_to_faq' | 'dismiss'; editedAnswer?: string }) =>
+    req('/api/tenant/unanswered-questions/' + id, { method: 'PATCH', body: JSON.stringify(data) }),
 
   getDocuments: () => req<GbDocument[]>('/gb/documents'),
   createDocument: (data: { name: string; file_type: string; r2_key: string; file_size_bytes?: number; extracted_text?: string }) =>

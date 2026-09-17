@@ -5,6 +5,8 @@
 // caller has already confirmed a tenant is due, or on an explicit manual send.
 import { Resend } from 'resend';
 import type { OwnerReportStats } from './computeReportStats.js';
+import type { ReportQuestion } from '../faqGap/getReportQuestions.js';
+import { buildReportActionUrl } from '../faqGap/reportActionTokens.js';
 
 const FROM_EMAIL = 'SkedAI Reports <alerts@skedai.net>';
 
@@ -65,10 +67,44 @@ function channelBreakdownLine(byChannel: Record<string, number>): string {
     .join(' · ');
 }
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function unansweredQuestionsSection(questions: ReportQuestion[]): string {
+  if (questions.length === 0) return '';
+
+  const items = questions.map((q, i) => {
+    const addUrl = buildReportActionUrl(q.id, 'add');
+    const dismissUrl = buildReportActionUrl(q.id, 'dismiss');
+    const answerLine = q.suggested_answer
+      ? `<p style="margin:4px 0 0;font-size:13px;color:#475569;">Suggested answer: ${escapeHtml(q.suggested_answer)}</p>`
+      : '';
+    return `
+    <div style="padding:12px 0;${i > 0 ? 'border-top:1px solid #f1f5f9;' : ''}">
+      <p style="margin:0;font-size:14px;color:#0f172a;font-weight:600;">${i + 1}. "${escapeHtml(q.guest_question)}"</p>
+      ${answerLine}
+      <div style="margin-top:8px;">
+        <a href="${addUrl}" style="display:inline-block;background:#0D9488;color:#fff;text-decoration:none;
+           padding:5px 12px;border-radius:5px;font-size:12px;font-weight:600;margin-right:8px;">Add to FAQ</a>
+        <a href="${dismissUrl}" style="display:inline-block;background:#f1f5f9;color:#64748b;text-decoration:none;
+           padding:5px 12px;border-radius:5px;font-size:12px;font-weight:600;">Dismiss</a>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `
+    <div style="margin-top:20px;padding-top:16px;border-top:1px solid #e2e8f0;">
+      <p style="margin:0 0 8px;font-size:15px;color:#0f172a;">📋 <strong>${questions.length}</strong> question${questions.length !== 1 ? 's' : ''} your AI couldn't answer this period — want to add ${questions.length !== 1 ? 'them' : 'it'}?</p>
+      ${items}
+    </div>`;
+}
+
 export async function sendOwnerReportEmail(
   tenant: ReportTenant,
   stats: OwnerReportStats,
   frequency: ReportFrequency,
+  unansweredQuestions: ReportQuestion[] = [],
 ): Promise<{ success: boolean; error?: string }> {
   if (!tenant.owner_email) return { success: false, error: 'No owner_email configured' };
 
@@ -99,6 +135,7 @@ export async function sendOwnerReportEmail(
     <p style="margin:0 0 10px;font-size:15px;color:#0f172a;">🆕 <strong>${stats.newConversations}</strong> new conversation${stats.newConversations !== 1 ? 's' : ''}</p>
     <p style="margin:0 0 10px;font-size:15px;color:#0f172a;">📡 ${channelBreakdownLine(stats.conversationsByChannel)}</p>
     ${requestsLine}
+    ${unansweredQuestionsSection(unansweredQuestions)}
     <div style="margin-top:20px;text-align:center;">
       <a href="https://app.skedai.net"
          style="display:inline-block;background:#0D9488;color:#fff;text-decoration:none;

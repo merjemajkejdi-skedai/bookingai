@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Save, Plus, Pencil, Trash2, RefreshCw, ToggleLeft, ToggleRight, Building, MapPin, Users, HelpCircle, FileText, Radio, Archive } from 'lucide-react';
 import clsx from 'clsx';
 import { gbApi } from '../api';
-import type { GbConfig, GbLocation, GbDepartment, GbFaq, GbDocument } from '../types';
+import type { GbConfig, GbLocation, GbDepartment, GbFaq, GbDocument, UnansweredQuestion } from '../types';
 
 type SubTab = 'config' | 'locations' | 'departments' | 'faqs' | 'documents' | 'channels';
 
@@ -359,6 +359,33 @@ function FaqsTab() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  const [suggestions, setSuggestions] = useState<UnansweredQuestion[]>([]);
+  const [draftAnswers, setDraftAnswers] = useState<Record<string, string>>({});
+  const [suggestionSaving, setSuggestionSaving] = useState<string | null>(null);
+  const loadSuggestions = useCallback(async () => {
+    try { setSuggestions(await gbApi.getUnansweredQuestions()); } catch {}
+  }, []);
+  useEffect(() => { loadSuggestions(); }, [loadSuggestions]);
+
+  async function handleSaveSuggestion(id: string) {
+    setSuggestionSaving(id);
+    try {
+      await gbApi.updateUnansweredQuestion(id, { action: 'add_to_faq', editedAnswer: draftAnswers[id] });
+      setSuggestions(s => s.filter(x => x.id !== id));
+      await load();
+    } catch (e: any) { alert(e.message); }
+    finally { setSuggestionSaving(null); }
+  }
+
+  async function handleDismissSuggestion(id: string) {
+    setSuggestionSaving(id);
+    try {
+      await gbApi.updateUnansweredQuestion(id, { action: 'dismiss' });
+      setSuggestions(s => s.filter(x => x.id !== id));
+    } catch (e: any) { alert(e.message); }
+    finally { setSuggestionSaving(null); }
+  }
+
   async function handleSave() {
     try {
       if (editing) await gbApi.updateFaq(editing.id, form);
@@ -397,6 +424,43 @@ function FaqsTab() {
           </div>
         </div>
       )}
+
+      {suggestions.length > 0 && (
+        <div className="border border-amber-200 bg-amber-50 rounded-xl p-3 space-y-2">
+          <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">
+            Suggested FAQs — {suggestions.length} question{suggestions.length !== 1 ? 's' : ''} the AI couldn't answer
+          </p>
+          {suggestions.map(sq => (
+            <div key={sq.id} className="bg-white rounded-lg border border-amber-100 p-3 space-y-2">
+              <p className="text-sm font-medium text-slate-800">"{sq.guest_question}"</p>
+              <textarea
+                value={draftAnswers[sq.id] ?? sq.suggested_answer ?? ''}
+                onChange={e => setDraftAnswers(d => ({ ...d, [sq.id]: e.target.value }))}
+                rows={2}
+                placeholder="Write the answer to save…"
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-brand-300"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleSaveSuggestion(sq.id)}
+                  disabled={suggestionSaving === sq.id}
+                  className="px-3 py-1.5 rounded-lg bg-brand-500 text-white text-xs font-medium hover:bg-brand-600 disabled:opacity-40"
+                >
+                  {suggestionSaving === sq.id ? 'Saving…' : 'Save as FAQ'}
+                </button>
+                <button
+                  onClick={() => handleDismissSuggestion(sq.id)}
+                  disabled={suggestionSaving === sq.id}
+                  className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-xs font-medium hover:bg-slate-200 disabled:opacity-40"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {faqs.map(f => (
         <div key={f.id} className="bg-white rounded-xl border border-slate-200 px-4 py-3">
           <div className="flex items-start justify-between">

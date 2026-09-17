@@ -11,8 +11,24 @@ import { randomUUID } from 'crypto';
 import { isPg, query, queryOne, queryRun } from '../db/database.js';
 import { computeReportStats } from './computeReportStats.js';
 import { sendOwnerReportEmail } from './sendOwnerReport.js';
+import { getUnansweredQuestionsForReport } from '../faqGap/getReportQuestions.js';
 
 const TZ = { timezone: 'Europe/Tirane' };
+
+// faq_gap_recipient = 'admin' routes the WHOLE report (not just the FAQ-gap
+// section) to Kejdi instead of the tenant owner — for hands-on accounts where
+// Kejdi reviews AI performance directly rather than the owner. Same address
+// already used for other internal alerts (errorMonitor.ts, conversationAlert.ts).
+const ADMIN_EMAIL = 'Merjemajkejdi@gmail.com';
+
+interface ReportTenantRow {
+  id: string;
+  name: string;
+  type: string;
+  owner_email: string;
+  report_frequency?: string;
+  faq_gap_recipient?: string;
+}
 
 function startOfUtcDay(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
@@ -36,12 +52,12 @@ function monthlyPeriod(today: Date): { periodStart: Date; periodEnd: Date } {
   return { periodStart, periodEnd };
 }
 
-async function findDueTenants(today: Date): Promise<any[]> {
+async function findDueTenants(today: Date): Promise<ReportTenantRow[]> {
   const weekday = isoWeekday(today);
   const dayOfMonth = today.getUTCDate();
 
   return query(
-    `SELECT id, name, type, owner_email, report_frequency, report_day_of_week, report_day_of_month
+    `SELECT id, name, type, owner_email, report_frequency, report_day_of_week, report_day_of_month, faq_gap_recipient
      FROM tenants
      WHERE deleted_at IS NULL
        AND owner_email IS NOT NULL AND owner_email <> ''
@@ -51,7 +67,7 @@ async function findDueTenants(today: Date): Promise<any[]> {
          (report_frequency = 'monthly' AND report_day_of_month = ?)
        )`,
     [weekday, dayOfMonth],
-  ) as Promise<any[]>;
+  ) as unknown as Promise<ReportTenantRow[]>;
 }
 
 /**
@@ -61,7 +77,7 @@ async function findDueTenants(today: Date): Promise<any[]> {
  * admin endpoint (bypasses the dedupe by upserting instead of skipping).
  */
 async function sendAndLog(
-  tenant: { id: string; name: string; type: string; owner_email: string },
+  tenant: ReportTenantRow,
   frequency: 'weekly' | 'monthly' | 'custom',
   periodStart: Date,
   periodEnd: Date,
@@ -78,8 +94,18 @@ async function sendAndLog(
     if (existing) return { success: false, skipped: true };
   }
 
-  const stats = await computeReportStats(tenant.id, tenant.type, periodStart, periodEnd);
-  const result = await sendOwnerReportEmail(tenant, stats, frequency);
+  const recipientEmail = tenant.faq_gap_recipient === 'admin' ? ADMIN_EMAIL : tenant.owner_email;
+
+  const [stats, unansweredQuestions] = await Promise.all([
+    computeReportStats(tenant.id, tenant.type, periodStart, periodEnd),
+    getUnansweredQuestionsForReport(tenant.id, periodStart, periodEnd),
+  ]);
+  const result = await sendOwnerReportEmail(
+    { id: tenant.id, name: tenant.name, owner_email: recipientEmail },
+    stats,
+    frequency,
+    unansweredQuestions,
+  );
 
   if (manual) {
     await queryRun(
@@ -89,7 +115,7 @@ async function sendAndLog(
        ON CONFLICT (tenant_id, period_start, period_end)
        DO UPDATE SET sent_at = NOW(), recipient_email = EXCLUDED.recipient_email,
                      status = EXCLUDED.status, error_message = EXCLUDED.error_message, manual = true`,
-      [randomUUID(), tenant.id, periodStartStr, periodEndStr, frequency, tenant.owner_email,
+      [randomUUID(), tenant.id, periodStartStr, periodEndStr, frequency, recipientEmail,
        result.success ? 'sent' : 'failed', result.error ?? null],
     );
   } else {
@@ -97,7 +123,7 @@ async function sendAndLog(
       `INSERT INTO owner_report_log
          (id, tenant_id, period_start, period_end, frequency, recipient_email, status, error_message, manual)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, false)`,
-      [randomUUID(), tenant.id, periodStartStr, periodEndStr, frequency, tenant.owner_email,
+      [randomUUID(), tenant.id, periodStartStr, periodEndStr, frequency, recipientEmail,
        result.success ? 'sent' : 'failed', result.error ?? null],
     );
   }
@@ -112,7 +138,7 @@ async function sendAndLog(
 export async function sendDueOwnerReports(now: Date = new Date()): Promise<void> {
   if (!isPg) return; // report job only runs against the Postgres (production) DB
 
-  let tenants: any[] = [];
+  let tenants: ReportTenantRow[] = [];
   try {
     tenants = await findDueTenants(now);
   } catch (e: any) {
@@ -140,7 +166,7 @@ export async function sendDueOwnerReports(now: Date = new Date()): Promise<void>
 
 /** Manual "send now" — always sends and upserts the log row, bypassing the dedupe. */
 export async function sendManualOwnerReport(
-  tenant: { id: string; name: string; type: string; owner_email: string },
+  tenant: ReportTenantRow,
   periodDays: number,
 ): Promise<{ success: boolean; error?: string }> {
   const periodEnd = startOfUtcDay(new Date());
