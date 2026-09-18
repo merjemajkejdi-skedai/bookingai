@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { ChevronDown, ArrowLeft, LogOut, BarChart2 } from 'lucide-react';
+import { ChevronDown, ArrowLeft, LogOut, BarChart2, HeartPulse } from 'lucide-react';
 import { isAuthenticated, getStoredUser, clearAuth, getAdminTenant, setAdminTenant } from './shared/lib/auth';
 import type { AdminTenant } from './shared/lib/auth';
 import { LoginPage } from './pages/LoginPage';
 import { AdminPage } from './pages/AdminPage';
 import { CostAnalyticsPage } from './pages/CostAnalyticsPage';
+import { AdminHealthPage } from './pages/AdminHealthPage';
 import { BookingModule } from './modules/booking';
 import { ArtEventModule } from './modules/art_event';
 import { ArtClassModule } from './modules/art_class';
@@ -97,7 +98,7 @@ function AdminShell({
   onViewShop: (t: AdminTenant) => void;
   onTenantsLoaded: (ts: AdminTenant[]) => void;
 }) {
-  const [adminTab, setAdminTab] = useState<'shops' | 'analytics'>('shops');
+  const [adminTab, setAdminTab] = useState<'shops' | 'analytics' | 'health'>('shops');
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="h-14 bg-white border-b border-slate-200 flex items-center px-6 gap-4">
@@ -124,6 +125,15 @@ function AdminShell({
             }`}>
             <BarChart2 size={13} /> Cost Analytics
           </button>
+          <button
+            onClick={() => setAdminTab('health')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+              adminTab === 'health'
+                ? 'bg-brand-50 text-brand-700'
+                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+            }`}>
+            <HeartPulse size={13} /> Health
+          </button>
         </div>
 
         <button
@@ -137,6 +147,7 @@ function AdminShell({
         <AdminPage onViewShop={onViewShop} onTenantsLoaded={onTenantsLoaded} />
       )}
       {adminTab === 'analytics' && <CostAnalyticsPage />}
+      {adminTab === 'health' && <AdminHealthPage />}
     </div>
   );
 }

@@ -19,6 +19,7 @@ import { sendEmailFallback } from '../utils/emailFallback.js';
 import { alertError } from '../utils/errorMonitor.js';
 import { maybeSendNewConversationAlert } from '../skedai/conversationAlert.js';
 import { RaceState } from './raceState.js';
+import { logAgentError } from '../monitoring/logAgentError.js';
 
 const metaRouter = Router();
 
@@ -216,6 +217,7 @@ metaRouter.post('/meta/webhook', async (req: Request, res: Response) => {
               );
             } catch (agentErr: any) {
               console.error('[Meta] Hotel agent error:', agentErr.message);
+              logAgentError(tenant.id, 'hotel', agentErr.message);
               raceState.raceLost = true;
               reply = "Sorry, I'm having a technical issue. Please try again in a moment.";
             }
@@ -305,6 +307,7 @@ metaRouter.post('/meta/webhook', async (req: Request, res: Response) => {
             }
           } catch (agentErr: any) {
             console.error(`[Meta] Agent error (${tenantType}):`, agentErr.message);
+            logAgentError(tenant.id, tenantType, agentErr.message);
             raceState.raceLost = true;
             reply = "Sorry, I'm having a technical issue. Please try again in a moment.";
           }

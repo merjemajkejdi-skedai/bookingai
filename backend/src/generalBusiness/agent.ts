@@ -5,6 +5,7 @@ import { getGbHistory, saveGbConversation, saveGbGuestMessage } from './session.
 import { isPg, prepare, queryOne } from '../db/database.js';
 import { alertError } from '../utils/errorMonitor.js';
 import { RaceState, sendLateFollowUp } from '../whatsapp/raceState.js';
+import { logAgentError } from '../monitoring/logAgentError.js';
 
 async function dbGet(sql: string, ...p: unknown[]) {
   return isPg ? queryOne(sql, p) : prepare(sql).get(...p);
@@ -111,6 +112,7 @@ export async function runGbAgent(
   } catch (e: any) {
     alertError(e, 'gbAgent');
     console.error('[GB] Agent error:', e.message);
+    logAgentError(tenantId, 'general_business', e?.message ?? String(e));
     const fallbackMsg = (config as any)?.fallback_message
       || 'Sorry, I am temporarily unavailable. Please try again shortly.';
     return fallbackMsg;

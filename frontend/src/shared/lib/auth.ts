@@ -246,6 +246,16 @@ export const adminApi = {
     }),
   getManualLeadBroughtByOptions: () =>
     adminFetch<{ teamMembers: string[]; existingTenants: string[] }>('/admin/manual-leads/brought-by-options'),
+
+  // ── Internal system health dashboard ──────────────────────────────────
+  getHealth: () =>
+    adminFetch<{
+      summary: { openCritical: number; openWarning: number };
+      byCheckType: Record<string, any[]>;
+      recentlyResolved: any[];
+    }>('/admin/health'),
+  resolveHealthAlert: (id: string) =>
+    adminFetch<{ resolved: boolean }>(`/admin/health/${id}/resolve`, { method: 'POST' }),
   // ── Commissionable flag (Cost Analysis addendum) ───────────────────────
   setCommissionable: (tenantId: string, isCommissionable: boolean, reason?: string) =>
     adminFetch<{ tenant: any; logRow: any }>(`/admin/tenants/${tenantId}/commissionable`, {

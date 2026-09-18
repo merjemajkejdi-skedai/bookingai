@@ -1,6 +1,7 @@
 import twilio from 'twilio';
 import { logMessage } from './messageLog.js';
 import { alertError } from '../utils/errorMonitor.js';
+import { logWhatsAppSend } from '../monitoring/logWhatsAppSend.js';
 
 // ── Download Twilio media and upload to Cloudflare R2 ─────────────────────────
 // Twilio media URLs require HTTP Basic Auth — external services cannot access
@@ -190,7 +191,7 @@ export async function sendWhatsAppMessage(
     const tenant = tenantOrFromNumber;
     if (tenant?.provider === 'meta') {
       await sendViaMeta(to, message, tenant);
-      if (tenant?.id) logMessage(tenant.id, 'outbound', 'meta');
+      if (tenant?.id) { logMessage(tenant.id, 'outbound', 'meta'); logWhatsAppSend(tenant.id, 'meta', true); }
     } else {
       // Twilio — use tenant's WhatsApp number; tenant credentials if set
       const fromNumber =
@@ -198,9 +199,11 @@ export async function sendWhatsAppMessage(
         process.env.TWILIO_WHATSAPP_FROM ||
         'whatsapp:+14155238886';
       await sendViaTwilio(to, message, fromNumber, tenant);
-      if (tenant?.id) logMessage(tenant.id, 'outbound', 'twilio');
+      if (tenant?.id) { logMessage(tenant.id, 'outbound', 'twilio'); logWhatsAppSend(tenant.id, 'twilio', true); }
     }
-  } catch (err) {
+  } catch (err: any) {
+    const tenant = typeof tenantOrFromNumber === 'object' ? tenantOrFromNumber : undefined;
+    if (tenant?.id) logWhatsAppSend(tenant.id, tenant.provider === 'meta' ? 'meta' : 'twilio', false, err?.message);
     alertError(err, 'sendWhatsAppMessage');
     console.error('[sendWhatsAppMessage error]', err);
     throw err;

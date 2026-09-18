@@ -2403,6 +2403,61 @@ export async function runMigrations() {
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 )`,
       `CREATE INDEX IF NOT EXISTS idx_art_class_faq_tenant ON art_class_faq(tenant_id, is_active)`,
+      // health_001 — internal system health monitoring (dashboard + email
+      // alerts). Every tenant_id here is TEXT to match tenants.id, and every
+      // timestamp is TIMESTAMPTZ — both are hard lessons from bugs fixed
+      // earlier (hotel_conversations.updated_at, hotel_requests.created_at,
+      // and the gb_* UUID/TEXT FK mismatch family all cost real debugging time).
+      `CREATE TABLE IF NOT EXISTS health_alert_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  check_type TEXT NOT NULL,
+  tenant_id TEXT,
+  severity TEXT NOT NULL,
+  message TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open',
+  first_detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  resolved_at TIMESTAMPTZ,
+  email_sent_at TIMESTAMPTZ
+)`,
+      `CREATE INDEX IF NOT EXISTS idx_health_alert_log_open ON health_alert_log(check_type, status)`,
+      // Postgres treats NULL as distinct in a UNIQUE constraint, so this only
+      // fully dedupes tenant-scoped checks; platform-wide checks (tenant_id
+      // IS NULL) are deduped explicitly in application code instead.
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_health_alert_log_unique_tenant ON health_alert_log(check_type, tenant_id, severity) WHERE tenant_id IS NOT NULL`,
+      // health_002 — agent error events, written wherever the webhook/agent
+      // “agent error/timeout” console.error lines already fire. Needed
+      // because logs aren't queryable for the per-tenant error-rate check.
+      `CREATE TABLE IF NOT EXISTS agent_error_log (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  tenant_id TEXT NOT NULL,
+  tenant_type TEXT NOT NULL,
+  error_message TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)`,
+      `CREATE INDEX IF NOT EXISTS idx_agent_error_log_tenant ON agent_error_log(tenant_id, created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_agent_error_log_created ON agent_error_log(created_at DESC)`,
+      // health_003 — WhatsApp outbound send outcomes. message_log only ever
+      // recorded successful sends (logMessage is called after the send
+      // resolves, never in the catch branch) and is scoped to cost analytics
+      // — kept untouched. This is a dedicated table for health monitoring.
+      `CREATE TABLE IF NOT EXISTS whatsapp_send_log (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  tenant_id TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  success BOOLEAN NOT NULL,
+  error_message TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)`,
+      `CREATE INDEX IF NOT EXISTS idx_whatsapp_send_log_tenant ON whatsapp_send_log(tenant_id, created_at DESC)`,
+      // health_004 — one row per well-known key. Used today to record whether
+      // getJwtSecret() is reading a real env var or falling back to a
+      // generated, non-persisted secret — read by the JWT health check.
+      `CREATE TABLE IF NOT EXISTS system_status (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));

@@ -16,6 +16,7 @@ import { alertError } from '../utils/errorMonitor.js';
 import { getConversationsTable } from '../utils/conversationsTable.js';
 import { maybeSendNewConversationAlert } from '../skedai/conversationAlert.js';
 import { RaceState, sendLateFollowUp } from './raceState.js';
+import { logAgentError } from '../monitoring/logAgentError.js';
 
 export const whatsappRouter = Router();
 
@@ -444,6 +445,7 @@ async function handleMetaWebhook(req: Request, res: Response) {
         reply = await withTimeout(runSkedAIAgent(body, customerPhone, tenant.id, raceState), 25_000);
       } catch (agentErr: any) {
         console.error('[Meta] ❌ SkedAI agent error/timeout:', agentErr?.message ?? agentErr);
+        logAgentError(tenant.id, 'skedai', agentErr?.message ?? String(agentErr));
         raceState.raceLost = true;
         const fallback = await getFallbackMessage(tenant);
         await sendWhatsAppMessage(customerPhone, fallback, tenant)
@@ -460,6 +462,7 @@ async function handleMetaWebhook(req: Request, res: Response) {
         shopToolsUsed = agentResult.toolsUsed;
       } catch (agentErr: any) {
         console.error('[Meta] ❌ Shop agent error/timeout:', agentErr?.message ?? agentErr);
+        logAgentError(tenant.id, 'shop', agentErr?.message ?? String(agentErr));
         raceState.raceLost = true;
         const fallback = await getFallbackMessage(tenant);
         await sendWhatsAppMessage(customerPhone, fallback, tenant)
@@ -513,6 +516,7 @@ async function handleMetaWebhook(req: Request, res: Response) {
         );
       } catch (agentErr: any) {
         console.error('[Meta] ❌ Agent error/timeout:', agentErr?.message ?? agentErr);
+        logAgentError(tenant.id, tenantType, agentErr?.message ?? String(agentErr));
         raceState.raceLost = true;
         const fallback = await getFallbackMessage(tenant);
         await sendWhatsAppMessage(customerPhone, fallback, tenant)
@@ -678,6 +682,7 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
         skedReply = await withTimeout(runSkedAIAgent(messageText, phone, tenant.id, raceState), 25_000);
       } catch (agentErr: any) {
         console.error('❌ SkedAI agent error/timeout:', agentErr?.message ?? agentErr);
+        logAgentError(tenant.id, 'skedai', agentErr?.message ?? String(agentErr));
         raceState.raceLost = true;
         const fallback = await getFallbackMessage(tenant);
         await sendWhatsAppMessage(phone, fallback, tenant)
@@ -726,6 +731,7 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
         shopToolsUsed = agentResult.toolsUsed;
       } catch (agentErr: any) {
         console.error('❌ Shop agent error/timeout:', agentErr?.message ?? agentErr);
+        logAgentError(tenant.id, 'shop', agentErr?.message ?? String(agentErr));
         raceState.raceLost = true;
         const fallback = await getFallbackMessage(tenant);
         await sendWhatsAppMessage(phone, fallback, tenant)
@@ -819,6 +825,7 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
       }
     } catch (agentErr: any) {
       console.error('❌ Agent error/timeout:', agentErr?.message ?? agentErr);
+      logAgentError(tenant.id, tenantType, agentErr?.message ?? String(agentErr));
       raceState.raceLost = true;
       const fallback = await getFallbackMessage(tenant);
       await sendWhatsAppMessage(phone, fallback, tenant)

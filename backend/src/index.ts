@@ -23,6 +23,7 @@ import { startEmailWorker } from './channels/email/worker.js';
 import { startInstagramTokenRefresh } from './channels/instagramTokenRefresh.js';
 import { startArchiveCron } from './conversations/archiveCron.js';
 import { startReportCron } from './reports/reportCron.js';
+import { startHealthCron } from './monitoring/healthCron.js';
 import { reportActionsRouter } from './routes/reportActions.js';
 import { unansweredQuestionsRouter } from './routes/unansweredQuestions.js';
 import { adminAnalyticsRouter } from './routes/adminAnalytics.js';
@@ -168,6 +169,7 @@ async function start() {
   startInstagramTokenRefresh();
   startArchiveCron();
   startReportCron();
+  startHealthCron();
   app.listen(Number(PORT), '0.0.0.0', () => {
     console.log(`\n🚀 BookingAI backend running at http://localhost:${PORT}`);
     console.log(`   API:       http://localhost:${PORT}/api`);

@@ -13,11 +13,28 @@ const SECRET_FILE = path.join(process.cwd(), 'data', '.jwt_secret');
 // existing session's token.
 let loggedSource = false;
 
+// Fire-and-forget — getJwtSecret() is called synchronously from jwt.sign/
+// jwt.verify call sites, so this can't be awaited here. Read by the JWT
+// health check (monitoring/healthChecks.ts) instead of re-parsing logs.
+function recordJwtSecretSource(source: 'environment' | 'fallback'): void {
+  import('../db/database.js')
+    .then(({ isPg, queryRun }) => {
+      if (!isPg) return;
+      return queryRun(
+        `INSERT INTO system_status (key, value, updated_at) VALUES ('jwt_secret_source', ?, NOW())
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+        [source],
+      );
+    })
+    .catch((e: any) => console.warn('[system_status] jwt_secret_source write failed:', e.message));
+}
+
 export function getJwtSecret(): string {
   if (process.env.JWT_SECRET) {
     if (!loggedSource) {
       console.log(`[Auth] JWT_SECRET source: environment variable (length: ${process.env.JWT_SECRET.length})`);
       loggedSource = true;
+      recordJwtSecretSource('environment');
     }
     return process.env.JWT_SECRET;
   }
@@ -25,6 +42,7 @@ export function getJwtSecret(): string {
   if (!loggedSource) {
     console.warn('[Auth] ⚠️ JWT_SECRET not set in environment — generating a temporary secret. All existing sessions will be invalidated on next restart.');
     loggedSource = true;
+    recordJwtSecretSource('fallback');
   }
 
   // Try to load persisted secret

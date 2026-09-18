@@ -5,6 +5,7 @@ import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { encrypt, decrypt } from '../utils/encryption.js';
 import { sendManualOwnerReport } from '../reports/reportCron.js';
+import { manuallyResolveAlert } from '../monitoring/healthAlertEngine.js';
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth, requireAdmin);
@@ -1043,6 +1044,64 @@ adminRouter.post('/manual-leads/:id/convert', async (req: Request, res: Response
     ok(res, await dbGet('SELECT * FROM manual_leads WHERE id = ?', id));
   } catch (e: any) {
     console.error('[Admin] manual-leads convert error:', e.message);
+    err(res, e.message, 500);
+  }
+});
+
+// ── Internal system health dashboard ────────────────────────────────────────
+// GET /admin/health — open issues grouped by check_type, summary counts, and
+// the last 20 resolved issues. Admin-only (same auth gate as the rest of
+// /admin) — nothing here is tenant-facing.
+adminRouter.get('/health', async (_req: Request, res: Response) => {
+  try {
+    const openRows = await dbAll(`
+      SELECT hal.id, hal.check_type, hal.tenant_id, t.name AS tenant_name,
+             hal.severity, hal.message, hal.first_detected_at, hal.last_seen_at
+      FROM health_alert_log hal
+      LEFT JOIN tenants t ON t.id = hal.tenant_id
+      WHERE hal.status = 'open'
+      ORDER BY hal.severity ASC, hal.first_detected_at ASC
+    `);
+
+    const resolvedRows = await dbAll(`
+      SELECT hal.id, hal.check_type, hal.tenant_id, t.name AS tenant_name,
+             hal.severity, hal.message, hal.first_detected_at, hal.resolved_at
+      FROM health_alert_log hal
+      LEFT JOIN tenants t ON t.id = hal.tenant_id
+      WHERE hal.status = 'resolved'
+      ORDER BY hal.resolved_at DESC
+      LIMIT 20
+    `);
+
+    const byCheckType: Record<string, any[]> = {};
+    let openCritical = 0;
+    let openWarning = 0;
+    for (const row of openRows) {
+      if (!byCheckType[row.check_type]) byCheckType[row.check_type] = [];
+      byCheckType[row.check_type].push(row);
+      if (row.severity === 'critical') openCritical++;
+      else openWarning++;
+    }
+
+    ok(res, {
+      summary: { openCritical, openWarning },
+      byCheckType,
+      recentlyResolved: resolvedRows,
+    });
+  } catch (e: any) {
+    console.error('[Admin] health fetch error:', e.message);
+    err(res, e.message, 500);
+  }
+});
+
+// POST /admin/health/:id/resolve — manually mark an open issue resolved
+adminRouter.post('/health/:id/resolve', async (req: Request, res: Response) => {
+  try {
+    const resolved = await manuallyResolveAlert(req.params.id);
+    if (!resolved) return err(res, 'Issue not found or already resolved', 404);
+    ok(res, { resolved: true });
+  } catch (e: any) {
+    console.error('[Admin] health resolve error:', e.message);
     err(res, e.message, 500);
   }
 });

@@ -6,6 +6,7 @@ import { shopTools, executeShopTool } from './tools.js';
 import { sendWhatsAppMedia } from '../whatsapp/twilio.js';
 import { alertError } from '../utils/errorMonitor.js';
 import { RaceState, sendLateFollowUp } from '../whatsapp/raceState.js';
+import { logAgentError } from '../monitoring/logAgentError.js';
 
 const anthropic = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
 
@@ -225,6 +226,7 @@ export async function runShopAgent(
   } catch (err: any) {
     alertError(err, 'runShopAgent', { tenantId, guestPhone });
     console.error('[Shop] Agent error:', err.message);
+    logAgentError(tenantId, 'shop', err?.message ?? String(err));
 
     try {
       const cfg = await dbGet(
