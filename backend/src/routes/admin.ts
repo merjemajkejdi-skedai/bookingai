@@ -41,6 +41,32 @@ adminRouter.get('/debug/phone-lookup', async (req: Request, res: Response) => {
   } catch (e: any) { err(res, e.message, 500); }
 });
 
+// TEMPORARY one-off fix — clears the stale meta_* fields left on the
+// "Bar - 1" tenant (92441ff7-...) from a past Meta connection that was never
+// cleared when it switched to provider='twilio'. Those leftover fields
+// collided with "Bega" (3421f5f6-...), which legitimately holds this same
+// meta_phone_number_id/meta_waba_id today via a real Meta Embedded Signup
+// connection. provider stays 'twilio' — untouched. Remove after use.
+adminRouter.post('/debug/fix-phone-collision', async (req: Request, res: Response) => {
+  try {
+    const id = '92441ff7-6f12-4a0c-a821-477e56583287';
+    await dbRun(
+      `UPDATE tenants SET
+         meta_phone_number_id = NULL,
+         meta_waba_id = NULL,
+         meta_access_token = NULL
+       WHERE id = ?`,
+      id,
+    );
+    const row = await dbGet(
+      `SELECT id, name, provider, meta_phone_number_id, meta_waba_id, whatsapp_number
+       FROM tenants WHERE id = ?`,
+      id,
+    );
+    ok(res, { fixed: true, row });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
 const PROTECTED_TENANT_IDS = [
   '41b10744-891e-439a-a976-3aff28c51afe', // La Favorita
   '1a7ef18c-394b-441e-8376-fc57238b7dcc', // Bloom Matcha
