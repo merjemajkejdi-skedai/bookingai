@@ -275,3 +275,183 @@ airbnbRouter.post('/conversations/:id/resume', requireAuth, async (req: Request,
     ok(res, { resumed: true });
   } catch (e: any) { err(res, e.message, 500); }
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DEPARTMENTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+airbnbRouter.get('/departments', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    const rows = await dbAll('SELECT * FROM airbnb_departments WHERE tenant_id = ? ORDER BY created_at ASC', tenantId);
+    ok(res, rows);
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+airbnbRouter.post('/departments', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const { name, notification_number } = req.body;
+  if (!name || !notification_number) return err(res, 'name and notification_number are required');
+  try {
+    const id = crypto.randomUUID();
+    await dbRun(
+      `INSERT INTO airbnb_departments (id, tenant_id, name, notification_number) VALUES (?,?,?,?)`,
+      id, tenantId, name, notification_number,
+    );
+    const row = await dbGet('SELECT * FROM airbnb_departments WHERE id = ?', id);
+    ok(res, row);
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+airbnbRouter.put('/departments/:id', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const { name, notification_number, is_active } = req.body;
+  try {
+    await dbRun(
+      `UPDATE airbnb_departments SET
+         name = COALESCE(?, name),
+         notification_number = COALESCE(?, notification_number),
+         is_active = COALESCE(?, is_active)
+       WHERE id = ? AND tenant_id = ?`,
+      name ?? null, notification_number ?? null, is_active ?? null, req.params.id, tenantId,
+    );
+    const row = await dbGet('SELECT * FROM airbnb_departments WHERE id = ?', req.params.id);
+    ok(res, row);
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+airbnbRouter.delete('/departments/:id', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    await dbRun('DELETE FROM airbnb_departments WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
+    ok(res, { deleted: true });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BLOCKED NUMBERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+airbnbRouter.get('/blocked', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    const rows = await dbAll('SELECT * FROM airbnb_blocked_numbers WHERE tenant_id = ? ORDER BY created_at DESC', tenantId);
+    ok(res, rows);
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+airbnbRouter.post('/blocked', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const { phone_number, reason } = req.body;
+  if (!phone_number) return err(res, 'phone_number is required');
+  try {
+    const id = crypto.randomUUID();
+    await dbRun(
+      `INSERT INTO airbnb_blocked_numbers (id, tenant_id, phone_number, reason) VALUES (?,?,?,?)
+       ON CONFLICT (tenant_id, phone_number) DO UPDATE SET reason = excluded.reason`,
+      id, tenantId, phone_number, reason ?? null,
+    );
+    const row = await dbGet('SELECT * FROM airbnb_blocked_numbers WHERE tenant_id = ? AND phone_number = ?', tenantId, phone_number);
+    ok(res, row);
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+airbnbRouter.delete('/blocked/:id', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    await dbRun('DELETE FROM airbnb_blocked_numbers WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
+    ok(res, { deleted: true });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GUEST SURVEY (checkout trigger)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function lastGuestMessage(messages: any[]): any | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role === 'user') return messages[i];
+  }
+  return null;
+}
+
+// POST /airbnb/conversations/:id/checkout — marks the conversation checked
+// out and, if the guest's last message was within 24h, immediately sends a
+// post-stay survey (idempotent via survey_sent_at).
+airbnbRouter.post('/conversations/:id/checkout', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    const conv = await dbGet(
+      'SELECT * FROM airbnb_conversations WHERE id = ? AND tenant_id = ?',
+      req.params.id, tenantId,
+    ) as any;
+    if (!conv) return err(res, 'Conversation not found', 404);
+
+    await dbRun('UPDATE airbnb_conversations SET checked_out_at = NOW() WHERE id = ?', conv.id);
+
+    if (conv.survey_sent_at) {
+      return ok(res, { checked_out: true, survey_sent: false, reason: 'already_sent' });
+    }
+
+    const messages: any[] = Array.isArray(conv.messages)
+      ? conv.messages
+      : (() => { try { return JSON.parse(conv.messages || '[]'); } catch { return []; } })();
+
+    const lastGuestMsg = lastGuestMessage(messages);
+    if (!lastGuestMsg?.ts) {
+      return ok(res, { checked_out: true, survey_sent: false, reason: 'no_guest_messages' });
+    }
+
+    const gapMs = Date.now() - new Date(lastGuestMsg.ts).getTime();
+    if (gapMs > 24 * 60 * 60 * 1000) {
+      return ok(res, { checked_out: true, survey_sent: false, reason: 'outside_24h_window' });
+    }
+
+    const tenant = await dbGet('SELECT * FROM tenants WHERE id = ?', tenantId) as any;
+    const listing = conv.listing_id
+      ? await dbGet('SELECT name FROM airbnb_listings WHERE id = ?', conv.listing_id) as any
+      : null;
+    const listingName = listing?.name || tenant?.name || 'your stay';
+
+    const surveyMessage = [
+      `Thank you for staying at *${listingName}*! 🏡`,
+      ``,
+      `We hope you had a wonderful time.`,
+      ``,
+      `On a scale of *1 to 10*, how would you rate your experience?`,
+      ``,
+      `_(1 = very poor, 10 = exceptional)_`,
+    ].join('\n');
+
+    const channel = (conv.channel || 'whatsapp').toLowerCase();
+    try {
+      if (channel === 'whatsapp') {
+        await sendWhatsAppMessage(conv.channel_user_id, surveyMessage, tenant);
+      } else if (channel === 'instagram') {
+        const accessToken = (tenant?.ig_access_token || '') as string;
+        if (accessToken) await sendInstagramMessage(conv.channel_user_id, surveyMessage, accessToken);
+      } else if (channel === 'messenger' || channel === 'facebook') {
+        const encryptedToken = (tenant?.messenger_access_token_encrypted || '') as string;
+        if (encryptedToken && tenant?.messenger_page_id) {
+          await sendMessengerMessage(tenant.messenger_page_id, conv.channel_user_id, surveyMessage, encryptedToken);
+        }
+      }
+    } catch (sendErr: any) {
+      console.error('[Airbnb] Survey send failed:', sendErr.message);
+      return ok(res, { checked_out: true, survey_sent: false, reason: 'send_failed', error: sendErr.message });
+    }
+
+    // Only mark sent + log the message after the send actually succeeds —
+    // mirrors hotel's checkout-survey route, avoids a stuck
+    // checked_out+survey_sent-with-no-message state.
+    const now = new Date().toISOString();
+    const updatedMessages = [...messages, { role: 'assistant', content: surveyMessage, ts: now }];
+    await dbRun(
+      'UPDATE airbnb_conversations SET survey_sent_at = NOW(), messages = ? WHERE id = ?',
+      JSON.stringify(updatedMessages), conv.id,
+    );
+
+    ok(res, { checked_out: true, survey_sent: true });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+

@@ -36,6 +36,26 @@ export async function runAirbnbAgent(
 ): Promise<string> {
   const safeMessage = customerMessage.trim() || '[Empty message]';
 
+  // Blocklist guard — checked before anything else is created or written,
+  // so a blocked number leaves no conversation row and gets no response at
+  // all. Only meaningful for the whatsapp channel, since airbnb_blocked_numbers
+  // stores phone numbers, not Instagram/Messenger PSIDs.
+  if (channel === 'whatsapp') {
+    try {
+      const normalised = channelUserId.startsWith('whatsapp:') ? channelUserId : `whatsapp:${channelUserId}`;
+      const blocked = await dbGet(
+        'SELECT id FROM airbnb_blocked_numbers WHERE tenant_id = ? AND (phone_number = ? OR phone_number = ?)',
+        tenantId, channelUserId, normalised,
+      );
+      if (blocked) {
+        console.log(`[Airbnb] 🚫 Blocked number ${channelUserId} — not responding`);
+        return '';
+      }
+    } catch (e: any) {
+      console.warn('[Airbnb] blocklist check failed:', e.message);
+    }
+  }
+
   const conv = await getOrCreateConversation(tenantId, channel, channelUserId);
 
   // Pause check — must be first, mirrors every other agent's takeover guard.

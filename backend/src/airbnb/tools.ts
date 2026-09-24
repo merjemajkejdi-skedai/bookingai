@@ -181,6 +181,28 @@ async function handleGetFaq(
   return JSON.stringify({ faqs, count: faqs.length });
 }
 
+// Finds the department whose name matches the request category
+// (e.g. category 'cleaning' -> department named "Cleaning"), case-insensitive,
+// matching either direction. No explicit request-type mapping column exists
+// on airbnb_departments (unlike hotel_departments' request_types array) —
+// the schema pairs category values with department name examples 1:1
+// ('maintenance'/"Maintenance", 'cleaning'/"Cleaning"), so name matching is
+// the intended mechanism here.
+async function findMatchingDepartment(tenantId: string, category: string): Promise<any | null> {
+  const depts = await dbAll(
+    'SELECT * FROM airbnb_departments WHERE tenant_id = ? AND is_active = true',
+    tenantId,
+  ) as any[];
+  if (depts.length === 0) return null;
+
+  const needle = category.toLowerCase().trim();
+  const matched = depts.find(d => {
+    const name = String(d.name).toLowerCase().trim();
+    return name === needle || name.includes(needle) || needle.includes(name);
+  });
+  return matched ?? null;
+}
+
 async function handleCreateRequest(
   input: { listing_id?: string; category: string; description: string },
   tenantId: string,
@@ -189,25 +211,30 @@ async function handleCreateRequest(
   const listingId = await resolveListingId(input.listing_id, tenantId, conversationId);
   if (!listingId) return JSON.stringify({ error: 'No listing identified yet — call identify_listing first.' });
 
-  const id = crypto.randomUUID();
-  await dbRun(
-    `INSERT INTO airbnb_requests (id, tenant_id, listing_id, conversation_id, category, description, status)
-     VALUES (?,?,?,?,?,?,'open')`,
-    id, tenantId, listingId, conversationId, input.category, input.description,
-  );
-
-  const [tenant, listing] = await Promise.all([
+  const [tenant, listing, matchedDept] = await Promise.all([
     dbGet('SELECT * FROM tenants WHERE id = ?', tenantId) as Promise<any>,
     dbGet('SELECT name FROM airbnb_listings WHERE id = ?', listingId) as Promise<any>,
+    findMatchingDepartment(tenantId, input.category),
   ]);
 
-  if (tenant?.owner_phone) {
+  const id = crypto.randomUUID();
+  await dbRun(
+    `INSERT INTO airbnb_requests (id, tenant_id, listing_id, conversation_id, category, description, status, department_id)
+     VALUES (?,?,?,?,?,?,'open',?)`,
+    id, tenantId, listingId, conversationId, input.category, input.description, matchedDept?.id ?? null,
+  );
+
+  // Departments configured and matched -> notify that department. Otherwise
+  // (no departments configured, or none match this category) fall back to
+  // the host's own number — unchanged from before this feature existed.
+  const notifyNumber = matchedDept?.notification_number || tenant?.owner_phone;
+  if (notifyNumber) {
     const msg = [
       `🏠 New ${input.category} request — ${listing?.name || 'listing'}`,
       `Details: ${input.description}`,
       'Please check and confirm with the guest directly.',
     ].join('\n');
-    sendWhatsAppMessage(tenant.owner_phone, msg, tenant)
+    sendWhatsAppMessage(notifyNumber, msg, tenant)
       .catch((e: any) => console.error('[Airbnb] Host notification failed:', e.message));
   }
 

@@ -2508,6 +2508,34 @@ export async function runMigrations() {
 )`,
       `CREATE INDEX IF NOT EXISTS idx_airbnb_requests_tenant ON airbnb_requests(tenant_id, status)`,
       `CREATE INDEX IF NOT EXISTS idx_airbnb_requests_listing ON airbnb_requests(listing_id)`,
+      // airbnb_002 — departments, blocked numbers, guest survey (delta spec).
+      // tenant_id stays TEXT, every new timestamp stays TIMESTAMPTZ — same
+      // hard-won lessons as airbnb_001.
+      `CREATE TABLE IF NOT EXISTS airbnb_departments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  notification_number TEXT NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)`,
+      `CREATE INDEX IF NOT EXISTS idx_airbnb_departments_tenant ON airbnb_departments(tenant_id, is_active)`,
+      `ALTER TABLE airbnb_requests ADD COLUMN IF NOT EXISTS department_id UUID REFERENCES airbnb_departments(id)`,
+      // Genuine guest blocklist (phone_number + reason, no staff fields) —
+      // NOT the same concept as hotel_blocked_numbers, which despite its name
+      // is actually a staff-numbers registry for routing staff messages away
+      // from the guest AI, not a guest-blocking feature. This table blocks a
+      // number from getting any AI response at all.
+      `CREATE TABLE IF NOT EXISTS airbnb_blocked_numbers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  phone_number TEXT NOT NULL,
+  reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(tenant_id, phone_number)
+)`,
+      `ALTER TABLE airbnb_conversations ADD COLUMN IF NOT EXISTS checked_out_at TIMESTAMPTZ`,
+      `ALTER TABLE airbnb_conversations ADD COLUMN IF NOT EXISTS survey_sent_at TIMESTAMPTZ`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));

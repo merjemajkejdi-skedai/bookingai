@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import type { AirbnbListing, AirbnbFaq, AirbnbRequest, AirbnbConversation } from './types';
+import type { AirbnbListing, AirbnbFaq, AirbnbRequest, AirbnbConversation, AirbnbDepartment, AirbnbBlockedNumber } from './types';
 import { redirectToLoginOnSessionExpired } from '../../shared/lib/sessionExpiry.js';
 
 const BASE = `${import.meta.env.VITE_API_URL || ''}`;
@@ -73,4 +73,20 @@ export const airbnbApi = {
     req<any>('/airbnb/conversations/' + id + '/takeover', { method: 'POST', body: JSON.stringify({ minutes }) }),
   resumeConversation: (id: string) =>
     req<any>('/airbnb/conversations/' + id + '/resume', { method: 'POST' }),
+  checkoutConversation: (id: string) =>
+    req<{ checked_out: boolean; survey_sent: boolean; reason?: string }>('/airbnb/conversations/' + id + '/checkout', { method: 'POST' }),
+
+  getDepartments: () => req<AirbnbDepartment[]>('/airbnb/departments'),
+  createDepartment: (data: { name: string; notification_number: string }) =>
+    req<AirbnbDepartment>('/airbnb/departments', { method: 'POST', body: JSON.stringify(data) }),
+  updateDepartment: (id: string, data: Partial<AirbnbDepartment>) =>
+    req<AirbnbDepartment>('/airbnb/departments/' + id, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteDepartment: (id: string) =>
+    req<any>('/airbnb/departments/' + id, { method: 'DELETE' }),
+
+  getBlockedNumbers: () => req<AirbnbBlockedNumber[]>('/airbnb/blocked'),
+  addBlockedNumber: (data: { phone_number: string; reason?: string }) =>
+    req<AirbnbBlockedNumber>('/airbnb/blocked', { method: 'POST', body: JSON.stringify(data) }),
+  removeBlockedNumber: (id: string) =>
+    req<any>('/airbnb/blocked/' + id, { method: 'DELETE' }),
 };

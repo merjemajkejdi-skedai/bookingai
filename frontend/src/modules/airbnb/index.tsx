@@ -1,13 +1,15 @@
 import { useState } from 'react';
-import { MessageSquare, BellRing, Home, HelpCircle, LogOut } from 'lucide-react';
+import { MessageSquare, BellRing, Home, HelpCircle, LogOut, Users, ShieldOff } from 'lucide-react';
 import clsx from 'clsx';
 import { getStoredUser, clearAuth } from '../../shared/lib/auth';
 import { AirbnbConversationsPage } from './components/ConversationsPage';
 import { AirbnbRequestsPage } from './components/RequestsPage';
 import { AirbnbListingsPage } from './components/ListingsPage';
 import { AirbnbFaqsPage } from './components/FaqsPage';
+import { AirbnbDepartmentsPage } from './components/DepartmentsPage';
+import { AirbnbBlockedNumbersPage } from './components/BlockedNumbersPage';
 
-type Page = 'conversations' | 'requests' | 'listings' | 'faqs';
+type Page = 'conversations' | 'requests' | 'listings' | 'faqs' | 'departments' | 'blocked';
 
 interface Props { onLogout: () => void; }
 
@@ -22,6 +24,8 @@ export function AirbnbModule({ onLogout }: Props) {
     { id: 'requests',      label: 'Requests',      icon: <BellRing size={16} /> },
     { id: 'listings',      label: 'Listings',      icon: <Home size={16} /> },
     { id: 'faqs',          label: 'FAQs',          icon: <HelpCircle size={16} /> },
+    { id: 'departments',   label: 'Departments',   icon: <Users size={16} /> },
+    { id: 'blocked',       label: 'Blocked',       icon: <ShieldOff size={16} /> },
   ];
 
   return (
@@ -68,6 +72,8 @@ export function AirbnbModule({ onLogout }: Props) {
         {page === 'requests'      && <AirbnbRequestsPage />}
         {page === 'listings'      && <AirbnbListingsPage />}
         {page === 'faqs'          && <AirbnbFaqsPage />}
+        {page === 'departments'  && <AirbnbDepartmentsPage />}
+        {page === 'blocked'      && <AirbnbBlockedNumbersPage />}
       </main>
 
       <nav className="md:hidden flex items-center bg-white border-t border-slate-200 flex-shrink-0">

@@ -37,8 +37,26 @@ export interface AirbnbRequest {
   category: string;
   description: string;
   status: 'open' | 'resolved';
+  department_id?: string | null;
   created_at: string;
   resolved_at?: string | null;
+}
+
+export interface AirbnbDepartment {
+  id: string;
+  tenant_id: string;
+  name: string;
+  notification_number: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface AirbnbBlockedNumber {
+  id: string;
+  tenant_id: string;
+  phone_number: string;
+  reason?: string | null;
+  created_at: string;
 }
 
 export interface AirbnbConversation {
@@ -50,6 +68,8 @@ export interface AirbnbConversation {
   channel_user_id: string;
   messages?: { role: string; content: string; ts: string }[];
   ai_paused_until?: string | null;
+  checked_out_at?: string | null;
+  survey_sent_at?: string | null;
   updated_at: string;
   created_at: string;
 }

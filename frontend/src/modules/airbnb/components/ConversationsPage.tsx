@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { MessageSquare, RefreshCw, Send, User, Bot, UserCheck, PauseCircle, PlayCircle } from 'lucide-react';
+import { MessageSquare, RefreshCw, Send, User, Bot, UserCheck, PauseCircle, PlayCircle, LogOut } from 'lucide-react';
 import clsx from 'clsx';
 import { airbnbApi } from '../api';
 import type { AirbnbConversation } from '../types';
@@ -90,6 +90,25 @@ export function AirbnbConversationsPage() {
     catch (e: any) { alert(e.message); }
   }
 
+  async function handleCheckout() {
+    if (!selected) return;
+    if (!confirm('Mark this guest as checked out? If they messaged within the last 24 hours, a satisfaction survey will be sent immediately.')) return;
+    try {
+      const result = await airbnbApi.checkoutConversation(selected.id);
+      await loadThread();
+      await loadInbox();
+      if (!result.survey_sent) {
+        const reasons: Record<string, string> = {
+          already_sent: 'A survey was already sent for this conversation.',
+          no_guest_messages: 'No guest messages found — nothing to survey.',
+          outside_24h_window: "The guest's last message was more than 24 hours ago, so no survey was sent.",
+          send_failed: 'Marked checked out, but the survey failed to send.',
+        };
+        alert(reasons[result.reason || ''] || 'Marked checked out.');
+      }
+    } catch (e: any) { alert(e.message); }
+  }
+
   if (loading) {
     return <div className="flex items-center justify-center h-64"><RefreshCw className="animate-spin text-slate-400" size={24} /></div>;
   }
@@ -139,6 +158,13 @@ export function AirbnbConversationsPage() {
               ) : (
                 <button onClick={handleTakeover} className="flex items-center gap-1 text-xs text-slate-500 px-2 py-1 rounded-lg hover:bg-slate-50">
                   <PauseCircle size={14} /> Take over
+                </button>
+              )}
+              {selected.checked_out_at ? (
+                <span className="text-xs text-slate-400 px-2 py-1">Checked out</span>
+              ) : (
+                <button onClick={handleCheckout} className="flex items-center gap-1 text-xs text-slate-500 px-2 py-1 rounded-lg hover:bg-slate-50">
+                  <LogOut size={14} /> Mark checked out
                 </button>
               )}
             </div>
