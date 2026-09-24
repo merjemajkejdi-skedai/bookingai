@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { isPg, prepare, queryOne, queryRun } from '../db/database.js';
 import { runHotelAgent } from '../hotel/agent.js';
 import { runGbAgent } from '../generalBusiness/agent.js';
+import { runAirbnbAgent } from '../airbnb/agent.js';
 import { sendMessengerMessage, getMessengerSenderProfile } from '../channels/messenger.js';
 import { decrypt } from '../utils/encryption.js';
 import { alertError } from '../utils/errorMonitor.js';
@@ -183,7 +184,9 @@ async function handleMessengerMessage(tenant: any, event: any) {
 
   try {
     const tenantType = (tenant.type || '').toLowerCase();
-    const reply = tenantType === 'general_business'
+    const reply = tenantType === 'airbnb'
+      ? await runAirbnbAgent(text, [], guestPhone, tenantId, 'messenger')
+      : tenantType === 'general_business'
       ? await runGbAgent(text, [], guestPhone, tenantId)
       : await runHotelAgent(text, [], guestPhone, tenantId);
     if (!reply) return;

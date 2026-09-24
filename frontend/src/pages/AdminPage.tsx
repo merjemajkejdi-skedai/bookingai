@@ -6,7 +6,7 @@ import { Button, Modal, Input, Select, Spinner } from '../components/ui';
 import clsx from 'clsx';
 
 const PLANS = ['starter', 'growth', 'pro'];
-const TYPES = ['barbershop', 'salon', 'dentist', 'medical', 'hotel', 'art_class', 'art_event', 'restaurant', 'skedai', 'shop', 'general_business'];
+const TYPES = ['barbershop', 'salon', 'dentist', 'medical', 'hotel', 'art_class', 'art_event', 'restaurant', 'skedai', 'shop', 'general_business', 'airbnb'];
 const PROTECTED_TENANT_IDS = ['41b10744-891e-439a-a976-3aff28c51afe', '1a7ef18c-394b-441e-8376-fc57238b7dcc'];
 
 interface AdminPageProps {

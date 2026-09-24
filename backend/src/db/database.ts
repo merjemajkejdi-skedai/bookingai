@@ -2453,11 +2453,61 @@ export async function runMigrations() {
       // health_004 — one row per well-known key. Used today to record whether
       // getJwtSecret() is reading a real env var or falling back to a
       // generated, non-persisted secret — read by the JWT health check.
-      `CREATE TABLE IF NOT EXISTS system_status (
-  key TEXT PRIMARY KEY,
-  value TEXT NOT NULL,
+      // airbnb_001 — independent vertical for short-term-rental hosts. No
+      // shared tables or agent code with hotel — a host manages multiple
+      // listings sharing one set of channels, which hotel's one-property-per-
+      // tenant model doesn't fit. tenant_id is TEXT to match tenants.id, and
+      // every timestamp is TIMESTAMPTZ — both hard-won lessons from bugs fixed
+      // earlier this session (hotel_conversations.updated_at, hotel_requests.
+      // created_at, and the gb_* UUID/TEXT FK mismatch family).
+      `CREATE TABLE IF NOT EXISTS airbnb_listings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  address TEXT NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  config JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 )`,
+      `CREATE INDEX IF NOT EXISTS idx_airbnb_listings_tenant ON airbnb_listings(tenant_id, is_active)`,
+      `CREATE TABLE IF NOT EXISTS airbnb_faqs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  listing_id UUID NOT NULL REFERENCES airbnb_listings(id) ON DELETE CASCADE,
+  category TEXT,
+  question TEXT NOT NULL,
+  answer TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)`,
+      `CREATE INDEX IF NOT EXISTS idx_airbnb_faqs_listing ON airbnb_faqs(listing_id)`,
+      `CREATE TABLE IF NOT EXISTS airbnb_conversations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  listing_id UUID REFERENCES airbnb_listings(id),
+  channel TEXT NOT NULL,
+  channel_user_id TEXT NOT NULL,
+  messages JSONB NOT NULL DEFAULT '[]',
+  ai_paused_until TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(tenant_id, channel, channel_user_id)
+)`,
+      `CREATE INDEX IF NOT EXISTS idx_airbnb_conversations_tenant ON airbnb_conversations(tenant_id, updated_at DESC)`,
+      `CREATE TABLE IF NOT EXISTS airbnb_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  listing_id UUID NOT NULL REFERENCES airbnb_listings(id),
+  conversation_id UUID REFERENCES airbnb_conversations(id),
+  category TEXT NOT NULL,
+  description TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  resolved_at TIMESTAMPTZ
+)`,
+      `CREATE INDEX IF NOT EXISTS idx_airbnb_requests_tenant ON airbnb_requests(tenant_id, status)`,
+      `CREATE INDEX IF NOT EXISTS idx_airbnb_requests_listing ON airbnb_requests(listing_id)`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));

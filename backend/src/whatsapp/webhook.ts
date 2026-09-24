@@ -17,6 +17,7 @@ import { getConversationsTable } from '../utils/conversationsTable.js';
 import { maybeSendNewConversationAlert } from '../skedai/conversationAlert.js';
 import { RaceState, sendLateFollowUp } from './raceState.js';
 import { logAgentError } from '../monitoring/logAgentError.js';
+import { runAirbnbAgent } from '../airbnb/agent.js';
 
 export const whatsappRouter = Router();
 
@@ -378,6 +379,7 @@ async function runAgent(
   if (tenantType === 'art_event')        return runArtEventAgent(message, history, phone, tenantId, raceState);
   if (tenantType === 'restaurant')       return runRestaurantAgent(message, history, phone, tenantId, raceState);
   if (tenantType === 'general_business') return runGbAgent(message, history, phone, tenantId, raceState);
+  if (tenantType === 'airbnb')            return runAirbnbAgent(message, history, phone, tenantId, 'whatsapp', raceState);
   // happy_ POS tenants use the POS app — WhatsApp is an optional bolt-on, never route to a generic agent
   if (tenantType.startsWith('happy_')) return '';
   return runBookingAgent(message, history, phone, tenantId, raceState);

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { isPg, prepare, queryOne, queryRun } from '../db/database.js';
 import { runHotelAgent } from '../hotel/agent.js';
 import { runGbAgent } from '../generalBusiness/agent.js';
+import { runAirbnbAgent } from '../airbnb/agent.js';
 import { sendInstagramMessage, getInstagramSenderProfile } from '../channels/instagram.js';
 import { alertError } from '../utils/errorMonitor.js';
 import { getConversationsTable } from '../utils/conversationsTable.js';
@@ -147,7 +148,9 @@ router.post('/instagram/webhook', async (req, res) => {
 
         // AI is ON — run agent based on tenant type
         try {
-          const reply = tenantType === 'general_business'
+          const reply = tenantType === 'airbnb'
+            ? await runAirbnbAgent(text, [], guestPhone, tenantId, 'instagram')
+            : tenantType === 'general_business'
             ? await runGbAgent(text, [], guestPhone, tenantId)
             : await runHotelAgent(text, [], guestPhone, tenantId);
           if (!reply) continue;

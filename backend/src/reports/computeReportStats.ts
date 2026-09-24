@@ -17,6 +17,15 @@ export interface OwnerReportStats {
   conversationsByChannel: Record<string, number>;
   newConversations: number;
   requests: { created: number; resolved: number } | null;
+  // Airbnb only — a tenant can have multiple listings, so a single aggregate
+  // number is meaningless to a host with several properties.
+  byListing?: {
+    listingId: string;
+    listingName: string;
+    messagesAnswered: number;
+    newConversations: number;
+    requests: { created: number; resolved: number };
+  }[];
 }
 
 interface RawMessage {
@@ -32,12 +41,14 @@ const HAS_CHANNEL_COLUMN: Record<string, boolean> = {
   shop_conversations: false,
   gb_conversations: true,
   art_class_conversations: true,
+  airbnb_conversations: true,
 };
 
-// Only hotel and general_business have a Requests feature.
+// Only hotel, general_business and airbnb have a Requests feature.
 const REQUEST_TABLES: Record<string, string> = {
   hotel: 'hotel_requests',
   general_business: 'gb_requests',
+  airbnb: 'airbnb_requests',
 };
 
 function parseMessages(raw: unknown): RawMessage[] {
@@ -63,6 +74,7 @@ export async function computeReportStats(
 ): Promise<OwnerReportStats> {
   const table = getConversationsTable(tenantType);
   const hasChannel = HAS_CHANNEL_COLUMN[table] ?? false;
+  const isAirbnb = tenantType === 'airbnb';
 
   const stats: OwnerReportStats = {
     tenantId,
@@ -81,17 +93,29 @@ export async function computeReportStats(
   // single message inside the period (messages are appended chronologically
   // and capped at the last 30), so this filter is safe and keeps rows sane.
   const rows = await query(
-    `SELECT id, messages, created_at${hasChannel ? ', channel' : ''}
+    `SELECT id, messages, created_at${hasChannel ? ', channel' : ''}${isAirbnb ? ', listing_id' : ''}
      FROM ${table}
      WHERE tenant_id = ? AND updated_at::timestamptz >= ?`,
     [tenantId, periodStart.toISOString()],
   ) as any[];
 
   const replyGaps: number[] = [];
+  // Per-listing accumulators, airbnb only.
+  const byListingAcc = new Map<string, { messagesAnswered: number; newConversations: number; replyGaps: number[] }>();
 
   for (const row of rows) {
     const messages = parseMessages(row.messages);
     const channel = hasChannel ? (row.channel || 'whatsapp') : 'whatsapp';
+    const listingId: string | null = isAirbnb ? (row.listing_id ?? null) : null;
+
+    let listingAcc = null;
+    if (isAirbnb && listingId) {
+      listingAcc = byListingAcc.get(listingId);
+      if (!listingAcc) {
+        listingAcc = { messagesAnswered: 0, newConversations: 0, replyGaps: [] };
+        byListingAcc.set(listingId, listingAcc);
+      }
+    }
 
     let sawActivityInPeriod = false;
     let pendingUserTs: number | null = null;
@@ -108,8 +132,10 @@ export async function computeReportStats(
       } else if (m.role === 'assistant') {
         if (inPeriod(m.ts, periodStart, periodEnd)) {
           stats.messagesAnswered++;
+          if (listingAcc) listingAcc.messagesAnswered++;
           if (pendingUserTs !== null && ts >= pendingUserTs) {
             replyGaps.push((ts - pendingUserTs) / 1000);
+            if (listingAcc) listingAcc.replyGaps.push((ts - pendingUserTs) / 1000);
           }
         }
         pendingUserTs = null;
@@ -122,6 +148,7 @@ export async function computeReportStats(
 
     if (inPeriod(row.created_at, periodStart, periodEnd)) {
       stats.newConversations++;
+      if (listingAcc) listingAcc.newConversations++;
     }
   }
 
@@ -131,7 +158,7 @@ export async function computeReportStats(
 
   const requestsTable = REQUEST_TABLES[tenantType];
   if (requestsTable) {
-    // hotel_requests stores timestamps as TEXT; gb_requests as native TIMESTAMPTZ.
+    // hotel_requests stores timestamps as TEXT; gb_requests/airbnb_requests as native TIMESTAMPTZ.
     const createdCol  = requestsTable === 'hotel_requests' ? 'created_at::timestamptz'  : 'created_at';
     const resolvedCol = requestsTable === 'hotel_requests' ? 'resolved_at::timestamptz' : 'resolved_at';
 
@@ -147,6 +174,36 @@ export async function computeReportStats(
     ) as any[];
 
     stats.requests = { created: createdRow?.count ?? 0, resolved: resolvedRow?.count ?? 0 };
+  }
+
+  if (isAirbnb) {
+    const listings = await query(
+      'SELECT id, name FROM airbnb_listings WHERE tenant_id = ?',
+      [tenantId],
+    ) as any[];
+
+    const requestRows = await query(
+      `SELECT listing_id,
+              COUNT(*) FILTER (WHERE created_at >= ? AND created_at < ?)::int AS created,
+              COUNT(*) FILTER (WHERE resolved_at >= ? AND resolved_at < ?)::int AS resolved
+       FROM airbnb_requests
+       WHERE tenant_id = ?
+       GROUP BY listing_id`,
+      [periodStart.toISOString(), periodEnd.toISOString(), periodStart.toISOString(), periodEnd.toISOString(), tenantId],
+    ) as any[];
+    const requestsByListing = new Map(requestRows.map(r => [r.listing_id, { created: r.created, resolved: r.resolved }]));
+
+    stats.byListing = listings.map(l => {
+      const acc = byListingAcc.get(l.id);
+      const reqs = requestsByListing.get(l.id);
+      return {
+        listingId: l.id,
+        listingName: l.name,
+        messagesAnswered: acc?.messagesAnswered ?? 0,
+        newConversations: acc?.newConversations ?? 0,
+        requests: { created: reqs?.created ?? 0, resolved: reqs?.resolved ?? 0 },
+      };
+    });
   }
 
   return stats;

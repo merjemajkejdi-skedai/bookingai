@@ -35,6 +35,7 @@ import { alertError, cleanupCooldowns } from './utils/errorMonitor.js';
 import instagramRouter from './routes/instagramWebhook.js';
 import messengerRouter from './routes/messengerWebhook.js';
 import { gbRouter } from './routes/generalBusiness.js';
+import { airbnbRouter } from './routes/airbnb.js';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 
@@ -137,6 +138,7 @@ app.use('/', instagramRouter);
 app.use('/', messengerRouter);
 app.use('/', emailWebhookRouter);
 app.use('/gb', gbRouter);
+app.use('/airbnb', airbnbRouter);
 app.use('/report-actions', reportActionsRouter);
 app.use('/api/tenant', unansweredQuestionsRouter);
 

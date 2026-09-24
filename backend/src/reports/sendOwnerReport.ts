@@ -100,6 +100,34 @@ function unansweredQuestionsSection(questions: ReportQuestion[]): string {
     </div>`;
 }
 
+function byListingSection(byListing: OwnerReportStats['byListing']): string {
+  if (!byListing || byListing.length === 0) return '';
+
+  const rows = byListing.map(l => `
+    <tr>
+      <td style="padding:6px 8px;font-size:13px;color:#0f172a;border-top:1px solid #f1f5f9;">${escapeHtml(l.listingName)}</td>
+      <td style="padding:6px 8px;font-size:13px;color:#0f172a;border-top:1px solid #f1f5f9;text-align:center;">${l.messagesAnswered}</td>
+      <td style="padding:6px 8px;font-size:13px;color:#0f172a;border-top:1px solid #f1f5f9;text-align:center;">${l.newConversations}</td>
+      <td style="padding:6px 8px;font-size:13px;color:#0f172a;border-top:1px solid #f1f5f9;text-align:center;">${l.requests.created} / ${l.requests.resolved}</td>
+    </tr>`).join('');
+
+  return `
+    <div style="margin-top:20px;padding-top:16px;border-top:1px solid #e2e8f0;">
+      <p style="margin:0 0 8px;font-size:15px;color:#0f172a;">🏠 Breakdown by listing</p>
+      <table style="width:100%;border-collapse:collapse;">
+        <thead>
+          <tr>
+            <th style="padding:6px 8px;font-size:11px;text-transform:uppercase;color:#64748b;text-align:left;">Listing</th>
+            <th style="padding:6px 8px;font-size:11px;text-transform:uppercase;color:#64748b;">Msgs</th>
+            <th style="padding:6px 8px;font-size:11px;text-transform:uppercase;color:#64748b;">New</th>
+            <th style="padding:6px 8px;font-size:11px;text-transform:uppercase;color:#64748b;">Requests (created/resolved)</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
 export async function sendOwnerReportEmail(
   tenant: ReportTenant,
   stats: OwnerReportStats,
@@ -136,6 +164,7 @@ export async function sendOwnerReportEmail(
     <p style="margin:0 0 10px;font-size:15px;color:#0f172a;">📡 ${channelBreakdownLine(stats.conversationsByChannel)}</p>
     ${requestsLine}
     ${unansweredQuestionsSection(unansweredQuestions)}
+    ${byListingSection(stats.byListing)}
     <div style="margin-top:20px;text-align:center;">
       <a href="https://app.skedai.net"
          style="display:inline-block;background:#0D9488;color:#fff;text-decoration:none;

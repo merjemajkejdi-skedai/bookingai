@@ -20,6 +20,7 @@ import { alertError } from '../utils/errorMonitor.js';
 import { maybeSendNewConversationAlert } from '../skedai/conversationAlert.js';
 import { RaceState } from './raceState.js';
 import { logAgentError } from '../monitoring/logAgentError.js';
+import { runAirbnbAgent } from '../airbnb/agent.js';
 
 const metaRouter = Router();
 
@@ -299,6 +300,8 @@ metaRouter.post('/meta/webhook', async (req: Request, res: Response) => {
               reply = await withTimeout(runRestaurantAgent(textToAgent, history, customerPhone, tenant.id, raceState), 25_000);
             } else if (tenantType === 'general_business') {
               reply = await withTimeout(runGbAgent(textToAgent, history, customerPhone, tenant.id, raceState), 25_000);
+            } else if (tenantType === 'airbnb') {
+              reply = await withTimeout(runAirbnbAgent(textToAgent, history, customerPhone, tenant.id, 'whatsapp', raceState), 25_000);
             } else if (tenantType.startsWith('happy_')) {
               // happy_ POS tenants use the POS app — WhatsApp is an optional bolt-on, stay silent by default
               reply = '';

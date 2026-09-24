@@ -5,6 +5,7 @@ export function getConversationsTable(tenantType: string): string {
     case 'skedai':      return 'skedai_conversations';
     case 'art_class':        return 'art_class_conversations';
     case 'general_business': return 'gb_conversations';
+    case 'airbnb':             return 'airbnb_conversations';
     default:
       console.warn(`[Conversations] Unknown tenant type: ${tenantType} — falling back to hotel_conversations`);
       return 'hotel_conversations';

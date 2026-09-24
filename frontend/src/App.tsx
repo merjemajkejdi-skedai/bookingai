@@ -14,8 +14,9 @@ import { HotelModule } from './modules/hotel';
 import { SkedAIModule } from './modules/skedai';
 import { ShopModule } from './modules/shop';
 import { GeneralBusinessModule } from './modules/generalBusiness';
+import { AirbnbModule } from './modules/airbnb';
 
-type ShopMode = 'booking' | 'art_event' | 'art_class' | 'restaurant' | 'hotel' | 'skedai' | 'shop' | 'general_business';
+type ShopMode = 'booking' | 'art_event' | 'art_class' | 'restaurant' | 'hotel' | 'skedai' | 'shop' | 'general_business' | 'airbnb';
 
 function getShopMode(type: string): ShopMode {
   const t = type.toLowerCase();
@@ -26,6 +27,7 @@ function getShopMode(type: string): ShopMode {
   if (t === 'skedai')     return 'skedai';
   if (t === 'shop')              return 'shop';
   if (t === 'general_business')  return 'general_business';
+  if (t === 'airbnb')            return 'airbnb';
   return 'booking';
 }
 
@@ -212,6 +214,7 @@ export default function App() {
           {mode === 'skedai'     && <SkedAIModule       key={viewTenant.id} onLogout={handleLogout} />}
           {mode === 'shop'       && <ShopModule         key={viewTenant.id} onLogout={handleLogout} tenantId={viewTenant.id} />}
           {mode === 'general_business' && <GeneralBusinessModule key={viewTenant.id} onLogout={handleLogout} />}
+          {mode === 'airbnb' && <AirbnbModule key={viewTenant.id} onLogout={handleLogout} />}
         </div>
       </div>
     );
@@ -229,6 +232,7 @@ export default function App() {
       {mode === 'skedai'     && <SkedAIModule       onLogout={handleLogout} />}
       {mode === 'shop'       && <ShopModule         onLogout={handleLogout} />}
       {mode === 'general_business' && <GeneralBusinessModule onLogout={handleLogout} />}
+      {mode === 'airbnb' && <AirbnbModule onLogout={handleLogout} />}
     </div>
   );
 }
