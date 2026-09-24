@@ -2536,6 +2536,15 @@ export async function runMigrations() {
 )`,
       `ALTER TABLE airbnb_conversations ADD COLUMN IF NOT EXISTS checked_out_at TIMESTAMPTZ`,
       `ALTER TABLE airbnb_conversations ADD COLUMN IF NOT EXISTS survey_sent_at TIMESTAMPTZ`,
+      // meta_phone_unique_001 — prevents the tenant-collision bug class where two
+      // tenants end up sharing the same Meta phone_number_id (confirmed live: a
+      // stale meta_phone_number_id left on a tenant that had switched to
+      // provider='twilio' collided with a different tenant's real, current Meta
+      // connection — inbound webhook lookups have no ORDER BY, so with a
+      // duplicate present, messages route to whichever row Postgres happens to
+      // return). Partial index — most tenants have a NULL phone_number_id.
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_tenants_meta_phone_number_id_unique
+       ON tenants(meta_phone_number_id) WHERE meta_phone_number_id IS NOT NULL`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));

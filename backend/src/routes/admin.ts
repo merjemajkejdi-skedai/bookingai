@@ -10,63 +10,6 @@ import { manuallyResolveAlert } from '../monitoring/healthAlertEngine.js';
 export const adminRouter = Router();
 adminRouter.use(requireAuth, requireAdmin);
 
-// TEMPORARY diagnostic route — investigating a WhatsApp phone_number_id
-// collision across tenants. Remove after the investigation is done.
-adminRouter.get('/debug/phone-lookup', async (req: Request, res: Response) => {
-  try {
-    const phoneNumId = (req.query.phoneNumberId as string) || '1161458027055834';
-    const matches = await dbAll(
-      `SELECT id, name, type, provider, meta_phone_number_id, meta_waba_id, whatsapp_number,
-              is_active, deleted_at, created_at
-       FROM tenants WHERE meta_phone_number_id = ?`,
-      phoneNumId,
-    ) as any[];
-
-    const subjectRow = await dbGet(
-      `SELECT id, name, type, provider, meta_phone_number_id, meta_access_token, meta_waba_id,
-              twilio_account_sid, twilio_auth_token, whatsapp_number, whatsapp_connected_at,
-              is_active, deleted_at
-       FROM tenants WHERE id = ?`,
-      '92441ff7-6f12-4a0c-a821-477e56583287',
-    ) as any;
-
-    const redact = (v: string | null) => v ? { set: true, length: v.length, prefix: v.slice(0, 6) } : { set: false };
-    const subject = subjectRow ? {
-      ...subjectRow,
-      meta_access_token: redact(subjectRow.meta_access_token),
-      twilio_auth_token: redact(subjectRow.twilio_auth_token),
-    } : null;
-
-    ok(res, { queriedPhoneNumberId: phoneNumId, matchCount: matches.length, matches, subject });
-  } catch (e: any) { err(res, e.message, 500); }
-});
-
-// TEMPORARY one-off fix — clears the stale meta_* fields left on the
-// "Bar - 1" tenant (92441ff7-...) from a past Meta connection that was never
-// cleared when it switched to provider='twilio'. Those leftover fields
-// collided with "Bega" (3421f5f6-...), which legitimately holds this same
-// meta_phone_number_id/meta_waba_id today via a real Meta Embedded Signup
-// connection. provider stays 'twilio' — untouched. Remove after use.
-adminRouter.post('/debug/fix-phone-collision', async (req: Request, res: Response) => {
-  try {
-    const id = '92441ff7-6f12-4a0c-a821-477e56583287';
-    await dbRun(
-      `UPDATE tenants SET
-         meta_phone_number_id = NULL,
-         meta_waba_id = NULL,
-         meta_access_token = NULL
-       WHERE id = ?`,
-      id,
-    );
-    const row = await dbGet(
-      `SELECT id, name, provider, meta_phone_number_id, meta_waba_id, whatsapp_number
-       FROM tenants WHERE id = ?`,
-      id,
-    );
-    ok(res, { fixed: true, row });
-  } catch (e: any) { err(res, e.message, 500); }
-});
-
 const PROTECTED_TENANT_IDS = [
   '41b10744-891e-439a-a976-3aff28c51afe', // La Favorita
   '1a7ef18c-394b-441e-8376-fc57238b7dcc', // Bloom Matcha
