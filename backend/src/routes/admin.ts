@@ -269,6 +269,47 @@ adminRouter.put('/tenants/:id', async (req: Request, res: Response) => {
 });
 
 // ---------------------------------------------------------------------------
+// Disconnect WhatsApp — clears SkedAI's own record of the connection so the
+// tenant stops sending/receiving WhatsApp messages and the fields become
+// editable again for reconnection. Does NOT call Meta or Twilio — the number
+// itself stays associated with those accounts until removed there directly.
+//
+// A dedicated, targeted UPDATE rather than going through the general
+// PUT /tenants/:id save path: that route treats an empty string as "field
+// not provided, don't overwrite" for every one of these columns (see the
+// normalisedWhatsapp / metaPhoneNumberId / twilioAccountSid handling above),
+// which is exactly why clearing them from the edit form has never worked.
+// ---------------------------------------------------------------------------
+
+// POST /admin/tenants/:id/disconnect-whatsapp
+adminRouter.post('/tenants/:id/disconnect-whatsapp', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const tenant = await dbGet('SELECT id, name FROM tenants WHERE id = ?', id) as any;
+    if (!tenant) return err(res, 'Tenant not found', 404);
+
+    await dbRun(
+      `UPDATE tenants SET
+         provider = NULL,
+         whatsapp_number = '',
+         meta_phone_number_id = NULL,
+         meta_access_token = NULL,
+         meta_waba_id = NULL,
+         twilio_account_sid = NULL,
+         twilio_auth_token = NULL,
+         whatsapp_connected_at = NULL
+       WHERE id = ?`,
+      id,
+    );
+
+    const adminEmail = (req.user as any)?.email || 'unknown';
+    console.log(`[Admin] WhatsApp disconnected for tenant ${tenant.name} (${id}) by ${adminEmail}`);
+
+    ok(res, await dbGet('SELECT * FROM tenants WHERE id = ?', id));
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// ---------------------------------------------------------------------------
 // Commissionable flag — per tenant, with month-by-month history
 // (addendum to Cost Analysis v2)
 // ---------------------------------------------------------------------------

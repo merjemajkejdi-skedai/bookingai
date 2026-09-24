@@ -189,6 +189,15 @@ export async function sendWhatsAppMessage(
 
     // Tenant object — route by provider
     const tenant = tenantOrFromNumber;
+    // provider is only ever null/empty for a tenant that's been explicitly
+    // disconnected (admin's "Disconnect WhatsApp" action) — every tenant
+    // otherwise defaults to 'twilio'. Without this guard, a disconnected
+    // tenant would silently fall through to the Twilio branch below and send
+    // via the platform's shared default number, defeating the point of
+    // disconnecting.
+    if (!tenant?.provider) {
+      throw new Error(`WhatsApp not connected for tenant ${tenant?.id ?? 'unknown'}`);
+    }
     if (tenant?.provider === 'meta') {
       await sendViaMeta(to, message, tenant);
       if (tenant?.id) { logMessage(tenant.id, 'outbound', 'meta'); logWhatsAppSend(tenant.id, 'meta', true); }

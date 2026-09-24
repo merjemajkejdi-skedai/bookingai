@@ -71,13 +71,20 @@ export async function checkEmailHealth(): Promise<HealthFinding[]> {
 // ── 1.2 WhatsApp provider health ────────────────────────────────────────────
 // Critical if the last 5 consecutive outbound sends for a tenant+provider
 // all failed. Only looks at (tenant, provider) pairs with recent activity.
+// Excludes tenants with no provider set (t.provider IS NULL/'') — an admin's
+// "Disconnect WhatsApp" action makes sendWhatsAppMessage throw immediately
+// for that tenant (see whatsapp/twilio.ts's provider guard), which would
+// otherwise show up here as "5 consecutive failed sends" and fire a false
+// critical alert for what is actually an intentional disconnect, not a
+// broken connection.
 export async function checkWhatsAppHealth(): Promise<HealthFinding[]> {
   const findings: HealthFinding[] = [];
   const pairs = await query(
     `SELECT DISTINCT wsl.tenant_id, wsl.provider, t.name AS tenant_name
      FROM whatsapp_send_log wsl
      JOIN tenants t ON t.id = wsl.tenant_id
-     WHERE wsl.created_at > NOW() - INTERVAL '24 hours' AND t.deleted_at IS NULL`,
+     WHERE wsl.created_at > NOW() - INTERVAL '24 hours' AND t.deleted_at IS NULL
+       AND t.provider IS NOT NULL AND t.provider != ''`,
   ) as any[];
 
   for (const pair of pairs) {

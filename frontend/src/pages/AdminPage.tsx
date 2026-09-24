@@ -509,13 +509,17 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
   const [plan, setPlan]                       = useState(tenant.plan || 'starter');
   const [billingEmail, setBilling]            = useState(tenant.billing_email || '');
   const [type, setType]                       = useState(tenant.type || 'barbershop');
-  const [provider, setProvider]               = useState(tenant.provider || 'twilio');
+  const [provider, setProvider]               = useState(tenant.provider || '');
   const [metaPhoneNumberId, setMetaPhoneId]   = useState(tenant.meta_phone_number_id || '');
   const [metaAccessToken, setMetaToken]       = useState(tenant.meta_access_token || '');
   const [metaWabaId, setMetaWabaId]           = useState(tenant.meta_waba_id || '');
   const [twilioAccountSid, setTwilioSid]            = useState(tenant.twilio_account_sid || '');
   const [twilioAuthToken, setTwilioToken]           = useState(tenant.twilio_auth_token || '');
   const [twilioDeptTemplateSid, setDeptTemplateSid] = useState(tenant.twilio_dept_template_sid || '');
+  // WhatsApp disconnect confirm
+  const [waDisconnectOpen, setWaDisconnectOpen]     = useState(false);
+  const [waDisconnecting, setWaDisconnecting]       = useState(false);
+  const [waDisconnectError, setWaDisconnectError]   = useState('');
   const [reviewsEnabled, setReviewsEnabled]         = useState(!!tenant.reviews_enabled);
   const [surveyEnabled,  setSurveyEnabled]    = useState(!!tenant.survey_enabled);
   const [menusEnabled,   setMenusEnabled]     = useState(!!tenant.menus_enabled);
@@ -850,6 +854,25 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
     finally { setIgDisconnecting(false); }
   }
 
+  async function handleWhatsAppDisconnect() {
+    setWaDisconnecting(true);
+    setWaDisconnectError('');
+    try {
+      await adminApi.disconnectWhatsApp(tenant.id);
+      // Clear local form state so the modal reflects "not connected"
+      // immediately, without needing a reload.
+      setProvider('');
+      setWhatsapp('');
+      setMetaPhoneId('');
+      setMetaToken('');
+      setMetaWabaId('');
+      setTwilioSid('');
+      setTwilioToken('');
+      setWaDisconnectOpen(false);
+    } catch (e: any) { setWaDisconnectError(e.message); }
+    finally { setWaDisconnecting(false); }
+  }
+
   async function handleMessengerConnect() {
     if (!fbPageId.trim() || !fbToken.trim()) {
       setFbConnectError('Page ID and Page Token are required');
@@ -953,10 +976,56 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
         {/* Provider selector */}
         <div className="grid grid-cols-2 gap-3">
           <Select label="WhatsApp provider" value={provider} onChange={(e: any) => setProvider(e.target.value)}>
+            <option value="">Not connected</option>
             <option value="twilio">Twilio</option>
             <option value="meta">Meta Cloud API</option>
           </Select>
         </div>
+
+        {/* Disconnect WhatsApp — only when currently connected via twilio or meta */}
+        {(provider === 'twilio' || provider === 'meta') && (
+          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-slate-500">
+                Clears SkedAI's own record of this connection so the tenant stops sending/receiving
+                WhatsApp messages and the fields above become editable for reconnection. This does
+                NOT revoke anything on Meta's or Twilio's side — the number stays associated with
+                that account until removed there separately.
+              </p>
+              {!waDisconnectOpen && (
+                <button
+                  type="button"
+                  onClick={() => { setWaDisconnectOpen(true); setWaDisconnectError(''); }}
+                  className="flex-shrink-0 text-xs text-red-500 hover:text-red-700 underline"
+                >
+                  Disconnect WhatsApp
+                </button>
+              )}
+            </div>
+            {waDisconnectOpen && (
+              <div className="p-3 bg-red-50 rounded-lg border border-red-200 space-y-2">
+                <p className="text-xs text-red-700 font-medium">
+                  This will disconnect WhatsApp for {tenant.name}. The tenant will stop receiving
+                  WhatsApp messages until reconnected. Continue?
+                </p>
+                {waDisconnectError && <p className="text-xs text-red-600">{waDisconnectError}</p>}
+                <div className="flex justify-end gap-2">
+                  <Button variant="ghost" size="sm" onClick={() => setWaDisconnectOpen(false)}>
+                    Cancel
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={handleWhatsAppDisconnect}
+                    disabled={waDisconnecting}
+                    className="px-3 py-1 text-xs bg-red-500 text-white rounded-md hover:bg-red-600 disabled:opacity-50 transition-colors"
+                  >
+                    {waDisconnecting ? 'Disconnecting…' : 'Disconnect'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Meta credentials — shown only when Meta is selected */}
         {provider === 'meta' && (

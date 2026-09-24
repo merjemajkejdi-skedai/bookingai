@@ -186,6 +186,9 @@ export const adminApi = {
     }),
   disconnectMessenger: (tenantId: string) =>
     authFetch(`/admin/tenants/${tenantId}/channels/facebook/disconnect`, { method: 'DELETE' }),
+
+  disconnectWhatsApp: (tenantId: string) =>
+    authFetch<any>(`/admin/tenants/${tenantId}/disconnect-whatsapp`, { method: 'POST' }),
   getEmailAccounts: (tenantId: string) =>
     adminFetch<any[]>(`/hotel/email/accounts?tenantId=${encodeURIComponent(tenantId)}`),
   createEmailAccount: (tenantId: string, data: Record<string, any>) =>
