@@ -82,9 +82,10 @@ airbnbRouter.put('/listings/:id', requireAuth, async (req: Request, res: Respons
 
     // Check-in fields. Handled separately from the COALESCE update above
     // because these can legitimately be cleared back to empty/null.
-    const { backup_owner_number, checkin_send_time, checkin_instructions } = req.body;
+    const { backup_owner_number, checkin_send_time, checkin_instructions, use_shared_forward_email } = req.body;
     const sets: string[] = [];
     const params: any[] = [];
+    if (typeof use_shared_forward_email === 'boolean') { sets.push('use_shared_forward_email = ?'); params.push(use_shared_forward_email); }
     if (backup_owner_number !== undefined) { sets.push('backup_owner_number = ?'); params.push(String(backup_owner_number || '').trim() || null); }
     if (checkin_send_time !== undefined) {
       if (checkin_send_time && !/^\d{2}:\d{2}$/.test(checkin_send_time)) return err(res, 'checkin_send_time must be HH:MM');
@@ -528,6 +529,7 @@ airbnbRouter.get('/reservations', requireAuth, async (req: Request, res: Respons
                       r.guest_name, r.guest_phone,
                       to_char(r.checkin_date, 'YYYY-MM-DD') AS checkin_date,
                       to_char(r.checkout_date, 'YYYY-MM-DD') AS checkout_date,
+                      r.guest_count, r.source,
                       r.status, r.checkin_instructions_sent, r.do_not_send, r.created_at
                FROM airbnb_reservations r
                JOIN airbnb_listings l ON l.id = r.listing_id
@@ -537,6 +539,80 @@ airbnbRouter.get('/reservations', requireAuth, async (req: Request, res: Respons
     if (scope === 'upcoming') sql += ' AND COALESCE(r.checkout_date, r.checkin_date) >= CURRENT_DATE - 1';
     sql += ' ORDER BY r.checkin_date ASC LIMIT 500';
     ok(res, await dbAll(sql, ...params));
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+const isIsoDate = (s: unknown): s is string => {
+  if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(`${s}T00:00:00Z`);
+  // toISOString() throws on an invalid date, and rolls e.g. Feb 30 to Mar 2 — compare to catch both.
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+};
+
+// POST /airbnb/reservations — manual entry. Writes the same table as
+// email-parsed reservations, so it behaves identically everywhere else
+// (dashboard row, sent indicator, don't-send, name-match lookup).
+airbnbRouter.post('/reservations', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const { listing_id, guest_name, guest_count, checkin_date, checkout_date, guest_phone } = req.body;
+
+  const name = String(guest_name || '').trim();
+  const count = Number(guest_count);
+  if (!listing_id) return err(res, 'listing_id is required');
+  if (!name || name.length > 100) return err(res, 'guest_name is required');
+  if (!Number.isInteger(count) || count < 1 || count > 100) return err(res, 'guest_count must be a whole number of at least 1');
+  if (!isIsoDate(checkin_date) || !isIsoDate(checkout_date)) return err(res, 'checkin_date and checkout_date are required (YYYY-MM-DD)');
+  if (checkout_date <= checkin_date) return err(res, 'Check-out must be after check-in');
+
+  // Optional. Stored as +digits so it compares cleanly with the number a guest
+  // messages from; a number that doesn't match the guest's WhatsApp number
+  // just means the name-match path won't send to them (fails closed).
+  let phone: string | null = null;
+  const rawPhone = String(guest_phone ?? '').trim();
+  if (rawPhone) {
+    const digits = rawPhone.replace(/^whatsapp:/, '').replace(/\D/g, '');
+    if (digits.length < 7 || digits.length > 15) return err(res, 'WhatsApp number looks invalid — include the country code');
+    phone = `+${digits}`;
+  }
+
+  try {
+    const listing = await dbGet('SELECT id FROM airbnb_listings WHERE id = ? AND tenant_id = ?', listing_id, tenantId);
+    if (!listing) return err(res, 'Listing not found', 404);
+
+    const id = crypto.randomUUID();
+    await dbRun(
+      `INSERT INTO airbnb_reservations
+         (id, tenant_id, listing_id, platform, guest_name, guest_phone, guest_count, checkin_date, checkout_date, source)
+       VALUES (?,?,?, 'manual', ?,?,?, ?::date, ?::date, 'manual')`,
+      id, tenantId, listing_id, name, phone, count, checkin_date, checkout_date,
+    );
+    ok(res, { id });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// DELETE /airbnb/reservations/:id — manual entries only, so a typo can be
+// undone. Email-parsed reservations are never deleted here; cancel/change
+// emails (or Don't-send) are how those get handled.
+airbnbRouter.delete('/reservations/:id', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    const row = await dbGet(
+      "SELECT id FROM airbnb_reservations WHERE id = ? AND tenant_id = ? AND source = 'manual'",
+      req.params.id, tenantId,
+    );
+    if (!row) return err(res, 'Only manually added reservations can be deleted', 404);
+    await dbRun('DELETE FROM airbnb_reservations WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
+    ok(res, { deleted: true });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// GET /airbnb/forwarding — the tenant's shared forwarding address.
+airbnbRouter.get('/forwarding', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    await ensureForwardEmails(tenantId);
+    const t = await dbGet('SELECT shared_confirmation_forward_email FROM tenants WHERE id = ?', tenantId) as any;
+    ok(res, { shared_email: t?.shared_confirmation_forward_email ?? null });
   } catch (e: any) { err(res, e.message, 500); }
 });
 

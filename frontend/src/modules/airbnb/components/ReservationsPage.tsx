@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, CheckCircle2, Ban, ChevronDown, ChevronUp, X } from 'lucide-react';
+import { RefreshCw, CheckCircle2, Ban, ChevronDown, ChevronUp, X, Plus, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import { airbnbApi } from '../api';
 import type { AirbnbReservation, AirbnbListing, AirbnbEmailReview } from '../types';
+import { AddReservationModal } from './AddReservationModal';
 
 const REASON_LABELS: Record<string, string> = {
   unknown_platform: "Couldn't tell if it was Airbnb or Booking.com",
@@ -11,6 +12,8 @@ const REASON_LABELS: Record<string, string> = {
   missing_identifiers: 'No reservation code or guest name/date found',
   no_cancellation_target: 'Cancellation for a reservation we have no record of',
   no_change_target: 'Change for a reservation we have no record of',
+  shared_no_listing_match: "Sent to your shared address, but no listing's name or address was found in it",
+  shared_multiple_listings: 'Sent to your shared address and mentioned more than one listing',
 };
 
 function reasonLabel(r?: string | null) {
@@ -31,6 +34,7 @@ export function AirbnbReservationsPage() {
   const [rows, setRows] = useState<AirbnbReservation[]>([]);
   const [review, setReview] = useState<AirbnbEmailReview[]>([]);
   const [showReview, setShowReview] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { airbnbApi.getListings().then(setListings).catch(() => {}); }, []);
@@ -54,6 +58,12 @@ export function AirbnbReservationsPage() {
 
   async function toggleDoNotSend(r: AirbnbReservation) {
     try { await airbnbApi.setReservationDoNotSend(r.id, !r.do_not_send); await load(); }
+    catch (e: any) { alert(e.message); }
+  }
+
+  async function removeManual(r: AirbnbReservation) {
+    if (!confirm(`Delete the reservation for ${r.guest_name}?`)) return;
+    try { await airbnbApi.deleteReservation(r.id); await load(); }
     catch (e: any) { alert(e.message); }
   }
 
@@ -85,6 +95,10 @@ export function AirbnbReservationsPage() {
               </button>
             ))}
           </div>
+          <button onClick={() => setShowAdd(true)} disabled={listings.length === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-500 text-white text-xs font-medium hover:bg-brand-600 disabled:opacity-40 transition-colors">
+            <Plus size={13} /> Add reservation
+          </button>
         </div>
       </div>
 
@@ -132,11 +146,12 @@ export function AirbnbReservationsPage() {
                 <div className="flex items-center gap-2 flex-wrap mb-1">
                   <p className="text-sm font-medium text-slate-800">{r.guest_name}</p>
                   <span className="text-xs text-violet-600 bg-violet-50 px-2 py-0.5 rounded-full">{r.listing_name}</span>
-                  <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">{r.platform === 'airbnb' ? 'Airbnb' : 'Booking.com'}</span>
+                  <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">{r.platform === 'airbnb' ? 'Airbnb' : r.platform === 'booking' ? 'Booking.com' : 'Manual'}</span>
                   {r.status === 'cancelled' && <span className="text-xs text-red-600 bg-red-50 px-2 py-0.5 rounded-full">Cancelled</span>}
                 </div>
                 <p className="text-xs text-slate-500">
                   {fmtDate(r.checkin_date)} → {fmtDate(r.checkout_date)}
+                  {r.guest_count ? ` · ${r.guest_count} guest${r.guest_count !== 1 ? 's' : ''}` : ''}
                   {r.reservation_code ? ` · ${r.reservation_code}` : ''}
                 </p>
                 <div className="mt-1.5 flex items-center gap-3 text-xs">
@@ -146,16 +161,31 @@ export function AirbnbReservationsPage() {
                   {r.do_not_send && <span className="flex items-center gap-1 text-amber-600"><Ban size={13} /> Held</span>}
                 </div>
               </div>
-              {r.status === 'confirmed' && (
-                <button onClick={() => toggleDoNotSend(r)}
-                  className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-slate-100 text-xs font-medium text-slate-600 hover:bg-slate-200 transition-colors">
-                  {r.do_not_send ? 'Allow sending' : "Don't send instructions"}
-                </button>
-              )}
+              <div className="flex items-center gap-1 flex-shrink-0">
+                {r.status === 'confirmed' && (
+                  <button onClick={() => toggleDoNotSend(r)}
+                    className="px-3 py-1.5 rounded-lg bg-slate-100 text-xs font-medium text-slate-600 hover:bg-slate-200 transition-colors">
+                    {r.do_not_send ? 'Allow sending' : "Don't send instructions"}
+                  </button>
+                )}
+                {r.source === 'manual' && (
+                  <button onClick={() => removeManual(r)} title="Delete manual reservation"
+                    className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 transition-colors"><Trash2 size={14} /></button>
+                )}
+              </div>
             </div>
           </div>
         ))}
       </div>
+
+      {showAdd && (
+        <AddReservationModal
+          listings={listings}
+          defaultListingId={listingFilter || undefined}
+          onClose={() => setShowAdd(false)}
+          onSaved={load}
+        />
+      )}
     </div>
   );
 }

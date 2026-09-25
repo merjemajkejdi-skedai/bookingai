@@ -6,6 +6,7 @@ import { isPg, prepare, query, queryOne, queryRun } from '../../db/database.js';
 import { htmlToText, normalizeEmailText, extractEmailAddress } from './emailText.js';
 import { parseReservationEmail, type ParsedReservation } from './parseReservationEmail.js';
 import { nameScore, MATCH_THRESHOLD } from './nameMatch.js';
+import { resolveSharedListing } from './resolveListing.js';
 import { alertError } from '../../utils/errorMonitor.js';
 
 async function dbAll(sql: string, ...p: unknown[]) { return (isPg ? query(sql, p) : prepare(sql).all(...p)) as any[]; }
@@ -114,7 +115,11 @@ export async function handleReservationEmail(opts: {
   const address = extractEmailAddress(opts.recipient);
   if (!address) return false;
 
-  let listing: any;
+  // A listing's own dedicated address is unambiguous. Failing that, the address
+  // may be a tenant's shared one, in which case the listing is worked out from
+  // the email body below.
+  let listing: any = null;
+  let sharedTenantId: string | null = null;
   try {
     listing = await dbGet(
       `SELECT l.id, l.tenant_id, l.name FROM airbnb_listings l
@@ -122,11 +127,19 @@ export async function handleReservationEmail(opts: {
        WHERE l.confirmation_forward_email = ? AND t.deleted_at IS NULL`,
       address,
     );
+    if (!listing) {
+      const t = await dbGet(
+        'SELECT id FROM tenants WHERE shared_confirmation_forward_email = ? AND deleted_at IS NULL',
+        address,
+      );
+      sharedTenantId = t?.id ?? null;
+    }
   } catch {
     return false; // e.g. table missing in a non-Postgres dev DB — not ours
   }
-  if (!listing) return false;
+  if (!listing && !sharedTenantId) return false;
 
+  const tenantId: string = listing?.tenant_id ?? sharedTenantId;
   const rawBody = opts.textBody?.trim() ? opts.textBody : htmlToText(opts.htmlBody || '');
   const body = normalizeEmailText(rawBody);
   const logId = crypto.randomUUID();
@@ -135,8 +148,26 @@ export async function handleReservationEmail(opts: {
     await dbRun(
       `INSERT INTO airbnb_email_ingest_log (id, tenant_id, listing_id, status, from_address, subject, body_text)
        VALUES (?,?,?, 'received', ?,?,?)`,
-      logId, listing.tenant_id, listing.id, opts.from, opts.subject, body.slice(0, MAX_BODY_CHARS),
+      logId, tenantId, listing?.id ?? null, opts.from, opts.subject, body.slice(0, MAX_BODY_CHARS),
     );
+
+    if (!listing) {
+      // Shared address: only this tenant's listings that opted in are
+      // candidates — a listing on its own dedicated address is never matched
+      // through the shared inbox.
+      const candidates = await dbAll(
+        'SELECT id, tenant_id, name, address FROM airbnb_listings WHERE tenant_id = ? AND use_shared_forward_email = true',
+        tenantId,
+      );
+      const resolved = resolveSharedListing(`${opts.subject}\n${body}`, candidates);
+      if (!resolved.ok) {
+        await setLog(logId, 'unmatched', resolved.reason, null);
+        console.warn(`[Reservations] Shared-address email for tenant ${tenantId}: ${resolved.reason}`);
+        return true;
+      }
+      listing = candidates.find(c => c.id === resolved.listing.id);
+      await dbRun('UPDATE airbnb_email_ingest_log SET listing_id = ? WHERE id = ?', listing.id, logId);
+    }
 
     const result = parseReservationEmail({
       from: opts.from, subject: opts.subject, body, listingName: listing.name,
@@ -152,7 +183,7 @@ export async function handleReservationEmail(opts: {
     console.log(`[Reservations] ${result.data.platform} ${result.data.kind} → ${outcome.status}${outcome.reason ? ` (${outcome.reason})` : ''} [listing ${listing.id}]`);
   } catch (e: any) {
     console.error('[Reservations] Ingest error:', e.message);
-    alertError(e, 'handleReservationEmail', { listingId: listing.id });
+    alertError(e, 'handleReservationEmail', { listingId: listing?.id ?? null, tenantId });
     await setLog(logId, 'error', e.message?.slice(0, 200) ?? 'error', null).catch(() => {});
   }
   return true;

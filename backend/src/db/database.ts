@@ -2589,6 +2589,16 @@ export async function runMigrations() {
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 )`,
       `CREATE INDEX IF NOT EXISTS idx_airbnb_email_ingest_tenant ON airbnb_email_ingest_log(tenant_id, status, created_at DESC)`,
+      // airbnb_004 — shared (tenant-level) forwarding address + manual reservations.
+      // One shared address per tenant, for listings that opt in instead of using
+      // their own dedicated address. Only ever populated for airbnb tenants.
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS shared_confirmation_forward_email TEXT`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_tenants_shared_forward_email
+       ON tenants(shared_confirmation_forward_email) WHERE shared_confirmation_forward_email IS NOT NULL`,
+      `ALTER TABLE airbnb_listings ADD COLUMN IF NOT EXISTS use_shared_forward_email BOOLEAN NOT NULL DEFAULT false`,
+      `ALTER TABLE airbnb_reservations ADD COLUMN IF NOT EXISTS guest_count INTEGER`,
+      // 'email_forward' | 'manual'
+      `ALTER TABLE airbnb_reservations ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'email_forward'`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));

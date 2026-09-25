@@ -20,6 +20,7 @@ export interface AirbnbListing {
   is_active: boolean;
   config: AirbnbListingConfig;
   confirmation_forward_email?: string | null;
+  use_shared_forward_email?: boolean;
   checkin_instructions?: InstructionBlock[];
   backup_owner_number?: string | null;
   checkin_send_time?: string | null;
@@ -31,9 +32,11 @@ export interface AirbnbReservation {
   id: string;
   listing_id: string;
   listing_name: string;
-  platform: 'airbnb' | 'booking';
+  platform: 'airbnb' | 'booking' | 'manual';
+  source?: 'email_forward' | 'manual';
   reservation_code?: string | null;
   guest_name: string;
+  guest_count?: number | null;
   guest_phone?: string | null;
   checkin_date: string;
   checkout_date?: string | null;

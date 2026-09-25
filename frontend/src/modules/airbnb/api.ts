@@ -120,6 +120,12 @@ export const airbnbApi = {
   },
   setReservationDoNotSend: (id: string, do_not_send: boolean) =>
     req<any>('/airbnb/reservations/' + id + '/do-not-send', { method: 'PATCH', body: JSON.stringify({ do_not_send }) }),
+  createReservation: (data: {
+    listing_id: string; guest_name: string; guest_count: number;
+    checkin_date: string; checkout_date: string; guest_phone?: string;
+  }) => req<{ id: string }>('/airbnb/reservations', { method: 'POST', body: JSON.stringify(data) }),
+  deleteReservation: (id: string) => req<any>('/airbnb/reservations/' + id, { method: 'DELETE' }),
+  getForwarding: () => req<{ shared_email: string | null }>('/airbnb/forwarding'),
   getEmailReview: () => req<AirbnbEmailReview[]>('/airbnb/reservations/email-review'),
   dismissEmailReview: (id: string) =>
     req<any>('/airbnb/reservations/email-review/' + id + '/dismiss', { method: 'POST' }),

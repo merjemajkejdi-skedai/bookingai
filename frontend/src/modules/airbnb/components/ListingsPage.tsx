@@ -39,16 +39,30 @@ export function AirbnbListingsPage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [instructionsFor, setInstructionsFor] = useState<AirbnbListing | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [sharedEmail, setSharedEmail] = useState<string | null>(null);
+
+  // The address a listing's emails should actually go to: its own dedicated
+  // one, or the tenant's shared one if the listing opted in.
+  function liveAddress(l: AirbnbListing): string | null {
+    return l.use_shared_forward_email ? sharedEmail : (l.confirmation_forward_email ?? null);
+  }
 
   function copyAddress(l: AirbnbListing) {
-    if (!l.confirmation_forward_email) return;
-    navigator.clipboard?.writeText(l.confirmation_forward_email)
+    const addr = liveAddress(l);
+    if (!addr) return;
+    navigator.clipboard?.writeText(addr)
       .then(() => { setCopiedId(l.id); setTimeout(() => setCopiedId(null), 1500); })
       .catch(() => {});
   }
 
+  async function toggleShared(l: AirbnbListing) {
+    try { await airbnbApi.updateListing(l.id, { use_shared_forward_email: !l.use_shared_forward_email }); await load(); }
+    catch (e: any) { alert(e.message); }
+  }
+
   const load = useCallback(async () => {
     try { setListings(await airbnbApi.getListings()); } catch { /* silent */ }
+    try { setSharedEmail((await airbnbApi.getForwarding()).shared_email); } catch { /* silent */ }
   }, []);
   useEffect(() => { load().then(() => setLoading(false)); }, [load]);
 
@@ -149,19 +163,32 @@ export function AirbnbListingsPage() {
                   <span className="text-slate-400 font-normal">({l.checkin_instructions!.length} message{l.checkin_instructions!.length !== 1 ? 's' : ''})</span>
                 )}
               </button>
-              {l.confirmation_forward_email && (
+              {liveAddress(l) && (
                 <div className="min-w-0 text-right">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-green-600 mb-0.5">
+                    {l.use_shared_forward_email ? 'Live: shared address' : 'Live: dedicated address'}
+                  </p>
                   <div className="flex items-center gap-1.5 justify-end">
-                    <code className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 truncate">{l.confirmation_forward_email}</code>
+                    <code className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 truncate">{liveAddress(l)}</code>
                     <button onClick={() => copyAddress(l)} className="p-1 text-slate-400 hover:text-slate-700" title="Copy">
                       {copiedId === l.id ? <Check size={13} className="text-green-600" /> : <Copy size={13} />}
                     </button>
                   </div>
                   <p className="text-[10px] text-slate-400 mt-0.5">
-                    Forward your Airbnb and Booking.com confirmation, cancellation and change emails for this listing here.
+                    {l.use_shared_forward_email
+                      ? "Forward your confirmation, cancellation and change emails here. They're matched to this listing by its name, so the listing name above must appear in the email."
+                      : 'Forward your Airbnb and Booking.com confirmation, cancellation and change emails for this listing here.'}
                   </p>
                 </div>
               )}
+            </div>
+
+            <div className="mt-2 flex items-center justify-between gap-3 flex-wrap">
+              <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
+                <input type="checkbox" checked={!!l.use_shared_forward_email} onChange={() => toggleShared(l)} />
+                Use the shared forwarding address instead of a dedicated one
+              </label>
+              <span className="text-[10px] text-slate-400">Forwarding is optional — you can also add reservations manually.</span>
             </div>
           </div>
         ))}

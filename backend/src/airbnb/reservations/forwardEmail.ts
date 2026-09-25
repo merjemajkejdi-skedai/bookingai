@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { isPg, prepare, query, queryRun } from '../../db/database.js';
 
 // Reuses the domain the Mailgun inbound route already receives for hotel
@@ -17,9 +18,23 @@ export function forwardEmailForListing(listingId: string): string {
   return `res-${listingId.replace(/-/g, '').slice(0, 10)}@${DOMAIN}`.toLowerCase();
 }
 
+// One per tenant, for listings that opt into sharing instead of using their
+// own dedicated address. Hashed rather than sliced from the id since tenant ids
+// aren't all UUIDs. "res-t-" can't collide with a listing address
+// ("res-<hex>" has no second dash) or a hotel's chosen review slug in practice.
+export function sharedForwardEmailForTenant(tenantId: string): string {
+  const hash = createHash('sha1').update(tenantId).digest('hex').slice(0, 10);
+  return `res-t-${hash}@${DOMAIN}`.toLowerCase();
+}
+
 // Fills confirmation_forward_email for any of this tenant's listings that
-// don't have one yet (listings created before this feature existed).
+// don't have one yet (listings created before this feature existed), and the
+// tenant's shared address.
 export async function ensureForwardEmails(tenantId: string): Promise<void> {
+  await dbRun(
+    'UPDATE tenants SET shared_confirmation_forward_email = ? WHERE id = ? AND shared_confirmation_forward_email IS NULL',
+    sharedForwardEmailForTenant(tenantId), tenantId,
+  );
   const missing = await dbAll(
     'SELECT id FROM airbnb_listings WHERE tenant_id = ? AND confirmation_forward_email IS NULL',
     tenantId,
