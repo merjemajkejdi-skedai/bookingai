@@ -2599,6 +2599,10 @@ export async function runMigrations() {
       `ALTER TABLE airbnb_reservations ADD COLUMN IF NOT EXISTS guest_count INTEGER`,
       // 'email_forward' | 'manual'
       `ALTER TABLE airbnb_reservations ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'email_forward'`,
+      // airbnb_005 — Airbnb's own numeric listing id ("Listing #22483336", shown in
+      // cancellation emails). Optional, host-entered. A stronger listing match key
+      // than the display name when present; name matching remains the fallback.
+      `ALTER TABLE airbnb_listings ADD COLUMN IF NOT EXISTS airbnb_listing_number TEXT`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));

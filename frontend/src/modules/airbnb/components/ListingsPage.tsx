@@ -28,8 +28,8 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
   );
 }
 
-interface FormState { name: string; address: string; config: AirbnbListingConfig; }
-const EMPTY_FORM: FormState = { name: '', address: '', config: { ...EMPTY_CONFIG } };
+interface FormState { name: string; address: string; airbnb_listing_number: string; config: AirbnbListingConfig; }
+const EMPTY_FORM: FormState = { name: '', address: '', airbnb_listing_number: '', config: { ...EMPTY_CONFIG } };
 
 export function AirbnbListingsPage() {
   const [listings, setListings] = useState<AirbnbListing[]>([]);
@@ -69,7 +69,7 @@ export function AirbnbListingsPage() {
   function startCreate() { setEditing(null); setForm(EMPTY_FORM); setShowForm(true); }
   function startEdit(l: AirbnbListing) {
     setEditing(l);
-    setForm({ name: l.name, address: l.address, config: { ...EMPTY_CONFIG, ...(l.config || {}) } });
+    setForm({ name: l.name, address: l.address, airbnb_listing_number: l.airbnb_listing_number ?? '', config: { ...EMPTY_CONFIG, ...(l.config || {}) } });
     setShowForm(true);
   }
 
@@ -112,6 +112,15 @@ export function AirbnbListingsPage() {
             className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
           <input value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} placeholder="Address"
             className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
+          <div>
+            <input value={form.airbnb_listing_number} onChange={e => setForm({ ...form, airbnb_listing_number: e.target.value })}
+              placeholder="Airbnb listing number (optional), e.g. 22483336"
+              className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
+            <p className="text-[11px] text-slate-400 mt-1">
+              Shown as "Listing #…" in Airbnb's cancellation emails. Lets forwarded emails on the shared address be matched
+              to this listing exactly, instead of by its name.
+            </p>
+          </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
             {CONFIG_FIELDS.map(f => f.multiline ? (
@@ -176,8 +185,8 @@ export function AirbnbListingsPage() {
                   </div>
                   <p className="text-[10px] text-slate-400 mt-0.5">
                     {l.use_shared_forward_email
-                      ? "Forward your confirmation, cancellation and change emails here. They're matched to this listing by its name, so the listing name above must appear in the email."
-                      : 'Forward your Airbnb and Booking.com confirmation, cancellation and change emails for this listing here.'}
+                      ? "Forward your Airbnb booking confirmation and cancellation emails here. They're matched to this listing by its Airbnb listing number if saved, otherwise by its name appearing in the email."
+                      : 'Forward your Airbnb booking confirmation and cancellation emails for this listing here.'}
                   </p>
                 </div>
               )}

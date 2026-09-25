@@ -1,40 +1,44 @@
-// Parses host-facing Airbnb / Booking.com reservation emails (forwarded by the
-// host to a per-listing address) into structured data.
+// Parses host-facing AIRBNB reservation emails (forwarded by the host to a
+// SkedAI address) into structured data. Airbnb only — Booking.com has no real
+// samples yet, so it is deliberately not parsed (it goes to the review queue,
+// where the host adds the reservation manually).
 //
-// Pure functions, no I/O. This is deliberately conservative: if the fields a
-// row needs can't be extracted with confidence, parseReservationEmail returns
-// { ok: false, reason } so the caller logs it for manual review — a wrong
-// reservation row (wrong date, wrong name) is worse than a missing one, since
-// it can hand a door code to the wrong person or withhold it from the right one.
+// Pure functions, no I/O. Emails are first CLASSIFIED by sender address +
+// subject pattern into one of three known types:
+//   - booking confirmation   (automated@airbnb.com, "Reservation confirmed - {Guest} arrives {date}")
+//   - cancellation           (automated@airbnb.com, "Canceled: Reservation {CODE} for {range}")
+//   - guest message          (express@airbnb.com,   "[RE: ]Reservation for {Listing}, {range}") — ignored
+// Anything that doesn't confidently match one of those — including a
+// "reservation changed" email, of which there is no real sample yet — is NOT
+// parsed: it returns status 'review' so the caller queues the raw email for a
+// human. A wrong reservation row (wrong date, wrong person) is worse than a
+// missing one, since it can hand a door code to the wrong person.
 //
-// Formats are matched in English only, and are based on the platforms' known
-// host-notification layouts — they have NOT been validated against real
-// forwarded samples yet. Expect to tune the patterns once real emails flow in;
-// every failure is logged with its reason and raw text to make that fast.
-import { normalizeName } from './nameMatch.js';
-
-export type EmailKind = 'confirmation' | 'cancellation' | 'change';
-export type Platform = 'airbnb' | 'booking';
+// Written from descriptions of three real forwarded emails, not from their raw
+// text — the label/line layout below is the part most likely to need tuning.
+export type EmailKind = 'confirmation' | 'cancellation';
 
 export interface ParsedReservation {
-  platform: Platform;
+  platform: 'airbnb';
   kind: EmailKind;
-  reservationCode: string | null;
-  guestName: string | null;
-  checkinDate: string | null;  // YYYY-MM-DD
-  checkoutDate: string | null; // YYYY-MM-DD
+  reservationCode: string;              // the primary key — required for both kinds
+  guestName: string | null;             // full name (confirmation); null for cancellation
+  guestCount: number | null;
+  checkinDate: string | null;           // YYYY-MM-DD (confirmation only)
+  checkoutDate: string | null;          // YYYY-MM-DD (confirmation only)
+  airbnbListingNumber: string | null;   // "Listing #22483336", when the email shows it
 }
 
 export type ParseResult =
-  | { ok: true; data: ParsedReservation }
-  | { ok: false; reason: string };
+  | { status: 'parsed'; data: ParsedReservation }
+  | { status: 'ignored'; reason: string }
+  | { status: 'review'; reason: string };
 
 export interface ParseInput {
-  from: string;
+  from: string;       // envelope/top-level From (the host, or Airbnb if auto-forwarded)
   subject: string;
-  body: string;        // already normalised plain text
-  listingName: string;
-  now?: Date;          // reference date for year inference; defaults to today
+  body: string;       // already normalised plain text
+  sentAt?: Date | null; // top-level Date header, used only if the forwarded block has none
 }
 
 // ── Dates ───────────────────────────────────────────────────────────────────
@@ -50,209 +54,207 @@ function iso(y: number, m: number, d: number): string | null {
   return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
-// A date with no year ("Fri, Mar 3") belongs to the next occurrence of that
-// month/day — but allow a small look-back so an email about a booking that
-// started last week isn't pushed a year forward.
-function inferYear(m: number, d: number, now: Date): number {
-  const y = now.getUTCFullYear();
-  const candidate = Date.UTC(y, m - 1, d);
-  return candidate < now.getTime() - 45 * 86400000 ? y + 1 : y;
-}
+interface DateHit { index: number; month: number; day: number; year: number | null }
 
-/** First unambiguous date found in `text`, or null. Never guesses dd/mm vs mm/dd. */
-export function extractFirstDate(text: string, now: Date): string | null {
-  type Hit = { index: number; value: string | null };
-  const hits: Hit[] = [];
-
-  for (const m of text.matchAll(/\b(\d{4})-(\d{2})-(\d{2})\b/g)) {
-    hits.push({ index: m.index!, value: iso(+m[1], +m[2], +m[3]) });
-  }
-  // "Mar 3, 2026" / "Mar 3" / "March 3rd"
+// Every "Mon D[, YYYY]" / "D Mon[ YYYY]" in the text, in order. Year is null
+// when the text doesn't state one.
+function findDates(text: string): DateHit[] {
+  const hits: DateHit[] = [];
   for (const m of text.matchAll(new RegExp(`\\b${MON}\\s+(\\d{1,2})(?:st|nd|rd|th)?(?!\\d)(?:,?\\s+(\\d{4}))?`, 'gi'))) {
-    const mo = MONTHS[m[1].toLowerCase()]; const d = +m[2];
-    hits.push({ index: m.index!, value: iso(m[3] ? +m[3] : inferYear(mo, d, now), mo, d) });
+    hits.push({ index: m.index!, month: MONTHS[m[1].toLowerCase()], day: +m[2], year: m[3] ? +m[3] : null });
   }
-  // "3 Mar 2026" / "3rd March"
   for (const m of text.matchAll(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+${MON}(?:,?\\s+(\\d{4}))?`, 'gi'))) {
-    const d = +m[1]; const mo = MONTHS[m[2].toLowerCase()];
-    hits.push({ index: m.index!, value: iso(m[3] ? +m[3] : inferYear(mo, d, now), mo, d) });
+    hits.push({ index: m.index!, month: MONTHS[m[2].toLowerCase()], day: +m[1], year: m[3] ? +m[3] : null });
   }
-  // Numeric d/m/y — only when one side is > 12 so it's unambiguous.
-  for (const m of text.matchAll(/\b(\d{1,2})[/.](\d{1,2})[/.](\d{4})\b/g)) {
-    const a = +m[1]; const b = +m[2]; const y = +m[3];
-    if (a > 12 && b <= 12) hits.push({ index: m.index!, value: iso(y, b, a) });
-    else if (b > 12 && a <= 12) hits.push({ index: m.index!, value: iso(y, a, b) });
-  }
-
-  const valid = hits.filter(h => h.value).sort((x, y) => x.index - y.index);
-  return valid[0]?.value ?? null;
+  return hits.sort((a, b) => a.index - b.index);
 }
 
-// Value following a label, allowing the value to sit on the next line
-// ("Check-in\nFri, Mar 3").
-function dateAfterLabel(text: string, labelSource: string, now: Date): string | null {
-  const re = new RegExp(`(?:${labelSource})\\W{0,6}([^\\n]{0,50}(?:\\n[^\\n]{0,50})?)`, 'gi');
-  for (const m of text.matchAll(re)) {
-    const d = extractFirstDate(m[1], now);
-    if (d) return d;
+// Airbnb host emails state no year ("Mon, Sep 14"). Anchor on the email's own
+// send date: the year that keeps the date on or after it.
+function yearOnOrAfter(month: number, day: number, anchor: Date): number {
+  const y = anchor.getUTCFullYear();
+  const anchorDay = Date.UTC(y, anchor.getUTCMonth(), anchor.getUTCDate());
+  return Date.UTC(y, month - 1, day) >= anchorDay ? y : y + 1;
+}
+
+// The original email's send date, from the forwarded block's "Date:"/"Sent:"
+// line (must state a year), falling back to the top-level Date header. Null if
+// neither is available — callers must then refuse year-less dates rather than
+// guess a year.
+export function originalSendDate(body: string, fallback?: Date | null): Date | null {
+  const head = body.slice(0, 3000);
+  for (const m of head.matchAll(/^\s*(?:Date|Sent)\s*:\s*(.+)$/gim)) {
+    if (!/\b(?:19|20)\d{2}\b/.test(m[1])) continue;
+    const hit = findDates(m[1]).find(h => h.year);
+    if (hit) return new Date(Date.UTC(hit.year!, hit.month - 1, hit.day));
+  }
+  return fallback && !Number.isNaN(fallback.getTime()) ? fallback : null;
+}
+
+// ── Classification ──────────────────────────────────────────────────────────
+
+const ADDRESS_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
+
+// Sender addresses to consider: the top-level From (Airbnb itself if the host
+// auto-forwards) plus the From: lines of a manually forwarded block.
+function senderAddresses(from: string, body: string): Set<string> {
+  const out = new Set<string>();
+  for (const a of from.match(ADDRESS_RE) ?? []) out.add(a.toLowerCase());
+  for (const line of body.slice(0, 3000).matchAll(/^\s*From\s*:\s*(.+)$/gim)) {
+    for (const a of line[1].match(ADDRESS_RE) ?? []) out.add(a.toLowerCase());
+  }
+  return out;
+}
+
+const FWD_PREFIX = /^\s*(?:(?:fwd?|fw)\s*:\s*)+/i;
+
+// Top-level subject (forward prefix stripped), then the forwarded block's own
+// "Subject:" line — either may carry the original.
+function subjectCandidates(subject: string, body: string): string[] {
+  const out = [subject.replace(FWD_PREFIX, '').trim()];
+  const m = body.slice(0, 3000).match(/^\s*Subject\s*:\s*(.+)$/im);
+  if (m) out.push(m[1].replace(FWD_PREFIX, '').trim());
+  return out.filter(Boolean);
+}
+
+const RE_CONFIRMED = /^Reservation confirmed\s*[-–—]\s*(.+?)\s+arrives\s+(.+)$/i;
+const RE_CANCELLED = /^Cancell?ed:\s*Reservation\s+(\w+)\s+for\s+(.+)$/i;
+const RE_GUEST_MESSAGE = /^(?:RE:\s*)?Reservation for\s+.+,\s+.+$/i;
+
+type Classified =
+  | { type: 'confirmation'; guestName: string }
+  | { type: 'cancellation'; code: string }
+  | { type: 'guest_message' }
+  | null;
+
+function classify(addresses: Set<string>, subjects: string[]): Classified {
+  for (const s of subjects) {
+    if (addresses.has('automated@airbnb.com')) {
+      const c = s.match(RE_CONFIRMED);
+      if (c) return { type: 'confirmation', guestName: c[1].trim() };
+      const x = s.match(RE_CANCELLED);
+      if (x) return { type: 'cancellation', code: x[1] };
+    }
+    if (addresses.has('express@airbnb.com') && RE_GUEST_MESSAGE.test(s)) return { type: 'guest_message' };
   }
   return null;
 }
 
-// "Mar 3 – 5, 2026" / "Mar 30 – Apr 2, 2026" (Airbnb cancellation subjects).
-function dateRange(text: string, now: Date): { checkin: string; checkout: string } | null {
-  const re = new RegExp(`\\b${MON}\\s+(\\d{1,2})\\s*[–—-]\\s*(?:${MON}\\s+)?(\\d{1,2})(?:,?\\s+(\\d{4}))?`, 'i');
-  const m = text.match(re);
-  if (!m) return null;
-  const m1 = MONTHS[m[1].toLowerCase()];
-  const d1 = +m[2];
-  const m2 = m[3] ? MONTHS[m[3].toLowerCase()] : m1;
-  const d2 = +m[4];
-  const y1 = m[5] ? +m[5] : inferYear(m1, d1, now);
-  const y2 = m2 < m1 ? y1 + 1 : y1;
-  const a = iso(y1, m1, d1); const b = iso(y2, m2, d2);
-  return a && b ? { checkin: a, checkout: b } : null;
-}
+// ── Field extraction ────────────────────────────────────────────────────────
 
-// ── Platform / kind ─────────────────────────────────────────────────────────
+const MAX_NEW_YEAR_CROSSING_NIGHTS = 180;
 
-function detectPlatform(from: string, subject: string, body: string): Platform | null {
-  const all = `${from}\n${subject}\n${body}`.toLowerCase();
-  const airbnb = (all.match(/airbnb/g) || []).length;
-  const booking = (all.match(/booking\.com|booking number|genius/g) || []).length;
-  if (!airbnb && !booking) return null;
-  // The forwarded original's sender line is the strongest signal.
-  const fwdAirbnb = /from:[^\n]*@(?:[a-z0-9.-]*\.)?airbnb\./i.test(body);
-  const fwdBooking = /from:[^\n]*@(?:[a-z0-9.-]*\.)?booking\.com/i.test(body);
-  if (fwdAirbnb && !fwdBooking) return 'airbnb';
-  if (fwdBooking && !fwdAirbnb) return 'booking';
-  return airbnb >= booking ? 'airbnb' : 'booking';
-}
+// Airbnb codes look like HM2XDDCBHQ / HMWKFJHB29.
+const CODE_SHAPE = /^H[A-Z0-9]{9}$/;
 
-const RE_CANCEL = /cancel+ed|cancellation|has been cancel/i;
-const RE_CHANGE = /alteration|altered|changed|change request|modified|has been updated|reservation update|booking update|dates? (?:have )?changed/i;
-const RE_CONFIRM = /confirmed|new booking|new reservation|booking confirmation|instant book/i;
-
-function detectKind(subject: string, body: string): EmailKind | null {
-  const head = body.slice(0, 800);
-  for (const text of [subject, head]) {
-    if (RE_CANCEL.test(text)) return 'cancellation';
-    if (RE_CHANGE.test(text)) return 'change';
-    if (RE_CONFIRM.test(text)) return 'confirmation';
-  }
-  return null;
-}
-
-// ── Code / name ─────────────────────────────────────────────────────────────
-
-const AIRBNB_CODE = /\b(H[A-Z0-9]{9})\b/g;
-const BOOKING_CODE = /(?:booking|reservation|confirmation)\s*(?:number|no\.?|id|#)\s*[:#]?\s*(\d{8,12})/gi;
-
-function allCodes(text: string, platform: Platform): string[] {
+function codesIn(text: string): string[] {
   const codes = new Set<string>();
-  if (platform === 'airbnb') {
-    for (const m of text.matchAll(/(?:confirmation|reservation)\s*code\W{0,4}([A-Z0-9]{8,12})\b/gi)) codes.add(m[1].toUpperCase());
-    for (const m of text.matchAll(AIRBNB_CODE)) codes.add(m[1]);
-  } else {
-    for (const m of text.matchAll(BOOKING_CODE)) codes.add(m[1]);
-    for (const m of text.matchAll(/\((\d{8,12})\)/g)) codes.add(m[1]);
-  }
+  for (const m of text.matchAll(/[Cc]onfirmation [Cc]ode\W{0,6}(H[A-Z0-9]{9})\b/g)) codes.add(m[1]);
   return [...codes];
 }
 
 function cleanName(raw: string): string | null {
-  const n = raw
-    .replace(/\(.*?\)/g, '')           // "(Genius level 2)"
-    .replace(/[|•·].*$/, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (n.length < 2 || n.length > 60 || /[\d@]/.test(n)) return null;
-  return n;
+  const n = raw.replace(/\(.*?\)/g, '').replace(/\s+/g, ' ').trim();
+  return n.length >= 2 && n.length <= 60 && !/[\d@]/.test(n) ? n : null;
 }
 
-function extractGuestName(subject: string, body: string): string | null {
-  const fromSubject =
-    subject.match(/(?:reservation\s+)?confirmed\s*[-–—:]\s*(.+?)\s+arrives\b/i) ||
-    subject.match(/new (?:booking|reservation)[^-–—:]*[-–—:]\s*(.+?)(?:\s+arrives|\s*$)/i);
-  if (fromSubject) {
-    const n = cleanName(fromSubject[1]);
-    if (n) return n;
-  }
-  const fromBody =
-    body.match(/^\s*guest(?:\s+name)?\s*[:\-]\s*([^\n]+)$/im) ||
-    body.match(/^\s*(?:booker|name)\s*[:\-]\s*([^\n]+)$/im) ||
-    body.match(/^\s*([^\n]{2,60}?)\s+(?:is\s+)?arriv(?:es|ing)\b/im);
-  return fromBody ? cleanName(fromBody[1]) : null;
+// "2 adults", "2 adults, 1 child", "2 adults · 1 infant" — sum every people
+// category in the first cluster after the first "adult(s)" (pets excluded).
+function guestCount(text: string): number | null {
+  const first = text.search(/\d+\s+adults?\b/i);
+  if (first < 0) return null;
+  const window = text.slice(first, first + 160);
+  let total = 0;
+  for (const m of window.matchAll(/(\d+)\s+(adults?|children|child|infants?)\b/gi)) total += +m[1];
+  return total >= 1 && total <= 100 ? total : null;
 }
 
-// Digest-style emails can hold several bookings/properties. If the body has
-// more than one distinct code, keep only the block that mentions this
-// listing's name; if that can't be determined, refuse rather than guess.
-function isolateListingBlock(
-  text: string, platform: Platform, listingName: string,
-): { text: string } | { error: string } {
-  const codes = allCodes(text, platform);
-  if (codes.length <= 1) return { text };
-
-  const positions = codes
-    .map(c => text.indexOf(c))
-    .filter(p => p >= 0)
-    .sort((a, b) => a - b);
-  const needle = normalizeName(listingName);
-  const segments = positions.map((p, i) => text.slice(p, positions[i + 1] ?? text.length));
-  const matching = segments.filter(s => normalizeName(s).includes(needle));
-  if (matching.length === 1) return { text: matching[0] };
-  return { error: 'multiple_bookings_ambiguous' };
+function valueAfterLabel(text: string, label: string): string {
+  const m = text.match(new RegExp(`${label}\\W{0,4}([^\\n]{0,40}(?:\\n[^\\n]{0,40})?)`, 'i'));
+  return m ? m[1] : '';
 }
 
 // ── Entry point ─────────────────────────────────────────────────────────────
 
 export function parseReservationEmail(input: ParseInput): ParseResult {
-  const now = input.now ?? new Date();
-  const platform = detectPlatform(input.from, input.subject, input.body);
-  if (!platform) return { ok: false, reason: 'unknown_platform' };
+  const addresses = senderAddresses(input.from, input.body);
+  const cls = classify(addresses, subjectCandidates(input.subject, input.body));
 
-  const kind = detectKind(input.subject, input.body);
-  if (!kind) return { ok: false, reason: 'unknown_email_type' };
+  if (!cls) {
+    // Say what we can about why, so the review queue is actionable.
+    const fromBooking = [...addresses].some(a => a.endsWith('booking.com') || a.includes('.booking.com'));
+    return { status: 'review', reason: fromBooking ? 'booking_not_supported' : 'unclassified' };
+  }
+  if (cls.type === 'guest_message') return { status: 'ignored', reason: 'guest_message' };
 
-  const isolated = isolateListingBlock(`${input.subject}\n${input.body}`, platform, input.listingName);
-  if ('error' in isolated) return { ok: false, reason: isolated.error };
-  const text = isolated.text;
+  const listingNumber = input.body.match(/Listing\s*#\s*(\d{5,})/i)?.[1] ?? null;
 
-  const codes = allCodes(text, platform);
-  const reservationCode = codes[0] ?? null;
-  const guestName = extractGuestName(input.subject, text);
-
-  // Change emails often show old and new dates side by side; prefer what
-  // follows a "new/updated" marker, falling back to the whole text.
-  let dateText = text;
-  if (kind === 'change') {
-    const marker = [...text.matchAll(/new (?:reservation )?dates?|updated (?:reservation )?(?:details|dates)|new check-?in|changed to/gi)].pop();
-    if (marker?.index !== undefined) dateText = text.slice(marker.index);
+  // ── Cancellation: code from the subject, cross-checked against the body ────
+  if (cls.type === 'cancellation') {
+    if (!CODE_SHAPE.test(cls.code)) return { status: 'review', reason: 'bad_code_shape' };
+    const bodyCodes = [...input.body.matchAll(/\bH[A-Z0-9]{9}\b/g)].map(m => m[0]);
+    if (bodyCodes.some(c => c !== cls.code)) return { status: 'review', reason: 'code_mismatch' };
+    return {
+      status: 'parsed',
+      data: {
+        platform: 'airbnb', kind: 'cancellation', reservationCode: cls.code,
+        guestName: null, guestCount: null, checkinDate: null, checkoutDate: null,
+        airbnbListingNumber: listingNumber,
+      },
+    };
   }
 
-  let checkinDate = dateAfterLabel(dateText, 'check[\\s-]?in|arrival|arrives', now);
-  let checkoutDate = dateAfterLabel(dateText, 'check[\\s-]?out|departure|departs', now);
-  if (!checkinDate) {
-    const range = dateRange(dateText, now) ?? (dateText !== text ? dateRange(text, now) : null);
-    if (range) { checkinDate = range.checkin; checkoutDate = checkoutDate ?? range.checkout; }
-  }
-  if (!checkinDate && kind !== 'cancellation') {
-    checkinDate = extractFirstDate(dateText, now);
-  }
-  if (checkinDate && checkoutDate && checkoutDate < checkinDate) {
-    // year-inference artefact (e.g. check-in Dec 30, check-out Jan 2)
-    const y = +checkoutDate.slice(0, 4);
-    checkoutDate = `${y + 1}${checkoutDate.slice(4)}`;
-  }
+  // ── Booking confirmation ───────────────────────────────────────────────────
+  const codes = codesIn(input.body);
+  if (codes.length === 0) return { status: 'review', reason: 'missing_fields:confirmation_code' };
+  if (codes.length > 1) return { status: 'review', reason: 'multiple_codes' };
 
-  const data: ParsedReservation = { platform, kind, reservationCode, guestName, checkinDate, checkoutDate };
+  const guestName = cleanName(cls.guestName);
+  if (!guestName) return { status: 'review', reason: 'missing_fields:guest_name' };
 
-  if (kind === 'confirmation' && !(guestName && checkinDate)) {
-    return { ok: false, reason: `missing_fields:${!guestName ? 'guest_name ' : ''}${!checkinDate ? 'checkin_date' : ''}`.trim() };
+  const sent = originalSendDate(input.body, input.sentAt);
+  const inLabel = valueAfterLabel(input.body, 'check[\\s-]?in');
+  const outLabel = valueAfterLabel(input.body, 'check[\\s-]?out');
+  let a = findDates(inLabel)[0];
+  let b = findDates(outLabel)[0];
+
+  // Layout fallback: if the labelled values don't give a sensible stay (e.g. a
+  // two-column layout flattened into one line), take the first two distinct
+  // dates after the check-in label instead.
+  const sameYear = !!a && !!b && (a.year ?? 0) === (b.year ?? 0);
+  const checkoutNotAfterCheckin = sameYear && (b!.month < a!.month || (b!.month === a!.month && b!.day <= a!.day));
+  if (!a || !b || checkoutNotAfterCheckin) {
+    const idx = input.body.search(/check[\s-]?in/i);
+    const dates = idx >= 0 ? findDates(input.body.slice(idx, idx + 300)) : [];
+    const distinct = dates.filter((d, i) => i === 0 || d.month !== dates[0].month || d.day !== dates[0].day);
+    if (distinct.length >= 2) { a = distinct[0]; b = distinct[1]; }
   }
-  if (kind !== 'confirmation' && !(reservationCode || (guestName && checkinDate))) {
-    return { ok: false, reason: 'missing_identifiers' };
-  }
-  return { ok: true, data };
+  if (!a || !b) return { status: 'review', reason: `missing_fields:${!a ? 'checkin_date ' : ''}${!b ? 'checkout_date' : ''}`.trim() };
+
+  // No year in these emails: anchor on the original send date, or refuse.
+  if ((!a.year || !b.year) && !sent) return { status: 'review', reason: 'missing_send_date' };
+  const y1 = a.year ?? yearOnOrAfter(a.month, a.day, sent!);
+  const checkinDate = iso(y1, a.month, a.day);
+  // Checkout is on/after check-in: same year unless the stay crosses New Year.
+  // Only infer that crossing when it gives a plausibly SHORT stay — a
+  // year-less check-out that is simply earlier than check-in (garbled email,
+  // swapped labels) would otherwise become a ~360-night stay and sail through.
+  let y2 = b.year ?? y1;
+  let crossedNewYear = false;
+  if (!b.year && iso(y2, b.month, b.day)! < (checkinDate ?? '')) { y2 += 1; crossedNewYear = true; }
+  const checkoutDate = iso(y2, b.month, b.day);
+
+  // Sanity: a real, forward-running stay of sensible length.
+  if (!checkinDate || !checkoutDate || checkoutDate <= checkinDate) return { status: 'review', reason: 'bad_dates' };
+  const nights = (Date.parse(checkoutDate) - Date.parse(checkinDate)) / 86400000;
+  if (nights > 365 || (crossedNewYear && nights > MAX_NEW_YEAR_CROSSING_NIGHTS)) return { status: 'review', reason: 'bad_dates' };
+
+  return {
+    status: 'parsed',
+    data: {
+      platform: 'airbnb', kind: 'confirmation', reservationCode: codes[0],
+      guestName, guestCount: guestCount(input.body),
+      checkinDate, checkoutDate, airbnbListingNumber: listingNumber,
+    },
+  };
 }

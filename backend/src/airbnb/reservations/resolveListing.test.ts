@@ -32,5 +32,22 @@ check('identical names refuse', id(resolveSharedListing('Downtown Loft', [loft, 
 check('address fallback', id(resolveSharedListing('Guest arriving at 12 Rruga e Durresit Tirana', [loft, studio])), 'loft');
 check('word boundary (no partial word match)', id(resolveSharedListing('Loftus Road', [{ id: 'l', name: 'Loft', address: 'a' }])), 'shared_no_listing_match');
 
+// ── Airbnb listing number: preferred when it identifies exactly one listing ──
+const numbered = [
+  { id: 'a', name: 'Downtown Loft', address: 'x', airbnb_listing_number: '22483336' },
+  { id: 'b', name: 'Sea View Studio', address: 'y', airbnb_listing_number: '11111111' },
+];
+check('number beats a conflicting name', id(resolveSharedListing('Sea View Studio', numbered, '22483336')), 'a');
+check('number with # and spaces still matches', id(resolveSharedListing('nothing useful', numbered, ' #22483336 ')), 'a');
+check('unknown number falls back to name', id(resolveSharedListing('Sea View Studio', numbered, '99999999')), 'b');
+check('no number given -> name matching as before', id(resolveSharedListing('Downtown Loft', numbered)), 'a');
+check('number saved on neither listing and no name -> no match', id(resolveSharedListing('nothing useful', [
+  { id: 'a', name: 'Downtown Loft', address: 'x' }, { id: 'b', name: 'Sea View Studio', address: 'y' },
+], '22483336')), 'shared_no_listing_match');
+check('duplicated number is not trusted, falls back to name', id(resolveSharedListing('Sea View Studio', [
+  { id: 'a', name: 'Downtown Loft', address: 'x', airbnb_listing_number: '22483336' },
+  { id: 'b', name: 'Sea View Studio', address: 'y', airbnb_listing_number: '22483336' },
+], '22483336')), 'b');
+
 console.log(fails ? `\n${fails} FAILED` : '\nall passed');
 process.exit(fails ? 1 : 0);

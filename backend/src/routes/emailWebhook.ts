@@ -48,8 +48,16 @@ emailWebhookRouter.post('/webhooks/email', upload.any(), async (req, res) => {
     // Consumed only when the recipient is a listing's forwarding address;
     // anything else falls through to the hotel-review handler untouched.
     const htmlBody: string = req.body['body-html'] || '';
+    // The message's own Date header (Mailgun sends headers as a JSON array of
+    // [name, value] pairs) — a year anchor of last resort for the parser.
+    let sentAt: Date | null = null;
+    try {
+      const headers: [string, string][] = JSON.parse(req.body['message-headers'] || '[]');
+      const dateHeader = headers.find(([k]) => k.toLowerCase() === 'date')?.[1];
+      if (dateHeader) { const d = new Date(dateHeader); if (!Number.isNaN(d.getTime())) sentAt = d; }
+    } catch { /* no usable headers — parser falls back to the forwarded block's own date */ }
     if (recipient && (body || htmlBody)) {
-      const handled = await handleReservationEmail({ recipient, from, subject, textBody: body, htmlBody })
+      const handled = await handleReservationEmail({ recipient, from, subject, textBody: body, htmlBody, sentAt })
         .catch((e: any) => { console.error('[Email webhook] reservation handler error:', e.message); return false; });
       if (handled) return;
     }

@@ -21,6 +21,7 @@ export interface AirbnbListing {
   config: AirbnbListingConfig;
   confirmation_forward_email?: string | null;
   use_shared_forward_email?: boolean;
+  airbnb_listing_number?: string | null;
   checkin_instructions?: InstructionBlock[];
   backup_owner_number?: string | null;
   checkin_send_time?: string | null;

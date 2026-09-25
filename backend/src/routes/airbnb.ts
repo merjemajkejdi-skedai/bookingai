@@ -45,16 +45,26 @@ airbnbRouter.get('/listings', requireAuth, async (req: Request, res: Response) =
   } catch (e: any) { err(res, e.message, 500); }
 });
 
+// Airbnb's own numeric listing id ("Listing #22483336"). Blank -> null;
+// anything that isn't digits -> false (reject).
+function parseListingNumber(v: unknown): string | null | false {
+  const s = String(v ?? '').trim().replace(/^#/, '').trim();
+  if (!s) return null;
+  return /^\d{4,15}$/.test(s) ? s : false;
+}
+
 airbnbRouter.post('/listings', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
   const { name, address, config } = req.body;
   if (!name || !address) return err(res, 'name and address are required');
+  const listingNumber = parseListingNumber(req.body.airbnb_listing_number);
+  if (listingNumber === false) return err(res, 'Airbnb listing number must be digits only (e.g. 22483336)');
   try {
     const id = crypto.randomUUID();
     const configJson = typeof config === 'object' ? JSON.stringify(config ?? {}) : (config ?? '{}');
     await dbRun(
-      `INSERT INTO airbnb_listings (id, tenant_id, name, address, config) VALUES (?,?,?,?,?)`,
-      id, tenantId, name, address, configJson,
+      `INSERT INTO airbnb_listings (id, tenant_id, name, address, config, airbnb_listing_number) VALUES (?,?,?,?,?,?)`,
+      id, tenantId, name, address, configJson, listingNumber,
     );
     await ensureForwardEmails(tenantId).catch((e: any) => console.warn('[Airbnb] ensureForwardEmails failed:', e.message));
     const row = await dbGet('SELECT * FROM airbnb_listings WHERE id = ?', id);
@@ -65,6 +75,9 @@ airbnbRouter.post('/listings', requireAuth, async (req: Request, res: Response) 
 airbnbRouter.put('/listings/:id', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
   const { name, address, config, is_active } = req.body;
+  // Validate before anything is written.
+  const listingNumber = req.body.airbnb_listing_number !== undefined ? parseListingNumber(req.body.airbnb_listing_number) : undefined;
+  if (listingNumber === false) return err(res, 'Airbnb listing number must be digits only (e.g. 22483336)');
   try {
     const configJson = config !== undefined
       ? (typeof config === 'object' ? JSON.stringify(config) : config)
@@ -86,6 +99,7 @@ airbnbRouter.put('/listings/:id', requireAuth, async (req: Request, res: Respons
     const sets: string[] = [];
     const params: any[] = [];
     if (typeof use_shared_forward_email === 'boolean') { sets.push('use_shared_forward_email = ?'); params.push(use_shared_forward_email); }
+    if (listingNumber !== undefined) { sets.push('airbnb_listing_number = ?'); params.push(listingNumber); }
     if (backup_owner_number !== undefined) { sets.push('backup_owner_number = ?'); params.push(String(backup_owner_number || '').trim() || null); }
     if (checkin_send_time !== undefined) {
       if (checkin_send_time && !/^\d{2}:\d{2}$/.test(checkin_send_time)) return err(res, 'checkin_send_time must be HH:MM');

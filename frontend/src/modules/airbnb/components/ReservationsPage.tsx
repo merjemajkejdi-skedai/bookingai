@@ -6,19 +6,21 @@ import type { AirbnbReservation, AirbnbListing, AirbnbEmailReview } from '../typ
 import { AddReservationModal } from './AddReservationModal';
 
 const REASON_LABELS: Record<string, string> = {
-  unknown_platform: "Couldn't tell if it was Airbnb or Booking.com",
-  unknown_email_type: "Couldn't tell if it was a confirmation, change or cancellation",
-  multiple_bookings_ambiguous: "Contained several bookings and none clearly matched this listing",
-  missing_identifiers: 'No reservation code or guest name/date found',
+  unclassified: "Not a booking confirmation or cancellation we recognise (for example a changed reservation)",
+  booking_not_supported: 'Booking.com emails aren\'t read automatically yet',
+  code_mismatch: "The reservation code in the email's subject and body don't agree",
+  bad_code_shape: "The reservation code didn't look right",
+  multiple_codes: 'Contained more than one reservation code',
+  missing_send_date: "Couldn't tell when the email was sent, so the year of the dates is unknown",
+  bad_dates: "The check-in / check-out dates didn't make sense",
   no_cancellation_target: 'Cancellation for a reservation we have no record of',
-  no_change_target: 'Change for a reservation we have no record of',
-  shared_no_listing_match: "Sent to your shared address, but no listing's name or address was found in it",
+  shared_no_listing_match: "Sent to your shared address, but no listing's Airbnb number, name or address was found in it",
   shared_multiple_listings: 'Sent to your shared address and mentioned more than one listing',
 };
 
 function reasonLabel(r?: string | null) {
   if (!r) return 'Unknown';
-  if (r.startsWith('missing_fields')) return `Missing: ${r.split(':')[1] || 'required fields'}`;
+  if (r.startsWith('missing_fields')) return `Couldn't read: ${(r.split(':')[1] || 'required fields').replace(/_/g, ' ')}`;
   return REASON_LABELS[r] ?? r;
 }
 
@@ -35,6 +37,8 @@ export function AirbnbReservationsPage() {
   const [review, setReview] = useState<AirbnbEmailReview[]>([]);
   const [showReview, setShowReview] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
+  // Listing to preselect when "Add manually" is opened from a review-queue item.
+  const [addListingId, setAddListingId] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { airbnbApi.getListings().then(setListings).catch(() => {}); }, []);
@@ -95,7 +99,7 @@ export function AirbnbReservationsPage() {
               </button>
             ))}
           </div>
-          <button onClick={() => setShowAdd(true)} disabled={listings.length === 0}
+          <button onClick={() => { setAddListingId(undefined); setShowAdd(true); }} disabled={listings.length === 0}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-500 text-white text-xs font-medium hover:bg-brand-600 disabled:opacity-40 transition-colors">
             <Plus size={13} /> Add reservation
           </button>
@@ -112,6 +116,10 @@ export function AirbnbReservationsPage() {
           </button>
           {showReview && (
             <div className="px-3 pb-3 space-y-2">
+              <p className="text-xs text-amber-700">
+                These emails weren't turned into reservations automatically. Nothing was created or changed from them — add
+                the reservation yourself with "Add manually", then dismiss the email.
+              </p>
               {review.map(r => (
                 <div key={r.id} className="bg-white rounded-lg border border-amber-100 p-3">
                   <div className="flex items-start justify-between gap-2">
@@ -119,9 +127,16 @@ export function AirbnbReservationsPage() {
                       <p className="text-sm font-medium text-slate-800 truncate">{r.subject || '(no subject)'}</p>
                       <p className="text-xs text-amber-700">{reasonLabel(r.reason)} · {r.listing_name || 'unknown listing'}</p>
                     </div>
-                    <button onClick={() => dismiss(r.id)} className="p-1 text-slate-400 hover:text-slate-700 flex-shrink-0" title="Dismiss">
-                      <X size={14} />
-                    </button>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button onClick={() => { setAddListingId(r.listing_id || undefined); setShowAdd(true); }}
+                        disabled={listings.length === 0}
+                        className="px-2 py-1 rounded-lg bg-brand-50 text-brand-700 text-xs font-medium hover:bg-brand-100 disabled:opacity-40">
+                        Add manually
+                      </button>
+                      <button onClick={() => dismiss(r.id)} className="p-1 text-slate-400 hover:text-slate-700" title="Dismiss">
+                        <X size={14} />
+                      </button>
+                    </div>
                   </div>
                   {r.body_excerpt && (
                     <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap text-[11px] text-slate-500 bg-slate-50 rounded p-2">{r.body_excerpt}</pre>
@@ -136,7 +151,7 @@ export function AirbnbReservationsPage() {
       <div className="space-y-3">
         {rows.length === 0 && (
           <p className="text-sm text-slate-400 text-center py-8">
-            No reservations yet. Forward your Airbnb / Booking.com confirmation emails to the address shown on each listing.
+            No reservations yet. Forward your Airbnb confirmation and cancellation emails to your forwarding address, or use "Add reservation" (for Booking.com, add them manually).
           </p>
         )}
         {rows.map(r => (
@@ -181,7 +196,7 @@ export function AirbnbReservationsPage() {
       {showAdd && (
         <AddReservationModal
           listings={listings}
-          defaultListingId={listingFilter || undefined}
+          defaultListingId={addListingId || listingFilter || undefined}
           onClose={() => setShowAdd(false)}
           onSaved={load}
         />

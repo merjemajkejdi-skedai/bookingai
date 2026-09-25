@@ -4,9 +4,17 @@
 // the tenant's listings with use_shared_forward_email = true, so a listing
 // that still uses its own dedicated address can never be matched here.
 //
+// Airbnb's own numeric listing id ("Listing #22483336"), when the email shows
+// one and exactly one candidate has it saved, is the strongest match and is
+// used first. Name/address matching is the fallback — not every listing has the
+// number filled in, and not every email type shows it.
+//
 // Refuses (rather than guesses) when zero or several distinct listings match.
 
-export interface ListingCandidate { id: string; name: string; address: string }
+export interface ListingCandidate {
+  id: string; name: string; address: string;
+  airbnb_listing_number?: string | null;
+}
 
 export type ResolveResult =
   | { ok: true; listing: ListingCandidate }
@@ -35,7 +43,20 @@ function reduceNested(matches: { c: ListingCandidate; key: string }[]) {
   );
 }
 
-export function resolveSharedListing(text: string, candidates: ListingCandidate[]): ResolveResult {
+export function resolveSharedListing(
+  text: string,
+  candidates: ListingCandidate[],
+  airbnbListingNumber?: string | null,
+): ResolveResult {
+  if (airbnbListingNumber) {
+    const digits = (s: string | null | undefined) => (s ?? '').replace(/\D/g, '');
+    const wanted = digits(airbnbListingNumber);
+    const byNumber = wanted ? candidates.filter(c => digits(c.airbnb_listing_number) === wanted) : [];
+    // Exactly one: use it. Zero (not saved on any listing) or several
+    // (duplicated by mistake): fall through to name matching.
+    if (byNumber.length === 1) return { ok: true, listing: byNumber[0] };
+  }
+
   const haystack = normalizeLoose(text);
 
   const pick = (keyOf: (c: ListingCandidate) => string, minLen: number): ResolveResult | null => {

@@ -60,13 +60,14 @@ export function AirbnbSettingsPage() {
       <div className="space-y-4 max-w-2xl">
         <Section
           title="Shared confirmation forwarding address"
-          description="One address for all your listings. Forward your Airbnb and Booking.com confirmation, cancellation and change emails here instead of to each listing's own address."
+          description="One address for all your listings. Forward your Airbnb booking confirmation and cancellation emails here instead of to each listing's own address."
         >
           {sharedEmail
             ? <CopyableValue value={sharedEmail} />
             : <p className="text-sm text-slate-400">Address unavailable right now — try reloading.</p>}
           <ul className="text-xs text-slate-500 space-y-1 list-disc pl-4">
-            <li>Emails sent here are matched to a listing by the listing's name appearing in the email, so make sure each listing's name matches how it appears on Airbnb / Booking.com.</li>
+            <li>Emails sent here are matched to a listing by its Airbnb listing number when you've saved one on the listing (the most reliable way), otherwise by the listing's name or address appearing in the email.</li>
+            <li>Only Airbnb booking confirmations and cancellations are read automatically. Booking.com emails and anything else are held on the Reservations tab — add those reservations manually.</li>
             <li>Only listings set to "use the shared forwarding address" (on the Listings tab) are matched. Emails that can't be matched to exactly one listing are held on the Reservations tab for review.</li>
             <li>Forwarding is optional — you can add reservations manually instead.</li>
           </ul>
