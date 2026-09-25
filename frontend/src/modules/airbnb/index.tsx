@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { MessageSquare, BellRing, Home, HelpCircle, LogOut, Users, ShieldOff, CalendarCheck } from 'lucide-react';
+import { MessageSquare, BellRing, Home, HelpCircle, LogOut, Users, ShieldOff, CalendarCheck, Settings } from 'lucide-react';
 import clsx from 'clsx';
 import { getStoredUser, clearAuth } from '../../shared/lib/auth';
 import { AirbnbConversationsPage } from './components/ConversationsPage';
@@ -9,8 +9,9 @@ import { AirbnbFaqsPage } from './components/FaqsPage';
 import { AirbnbDepartmentsPage } from './components/DepartmentsPage';
 import { AirbnbBlockedNumbersPage } from './components/BlockedNumbersPage';
 import { AirbnbReservationsPage } from './components/ReservationsPage';
+import { AirbnbSettingsPage } from './components/SettingsPage';
 
-type Page = 'conversations' | 'requests' | 'reservations' | 'listings' | 'faqs' | 'departments' | 'blocked';
+type Page = 'conversations' | 'requests' | 'reservations' | 'listings' | 'faqs' | 'departments' | 'blocked' | 'settings';
 
 interface Props { onLogout: () => void; }
 
@@ -28,6 +29,7 @@ export function AirbnbModule({ onLogout }: Props) {
     { id: 'faqs',          label: 'FAQs',          icon: <HelpCircle size={16} /> },
     { id: 'departments',   label: 'Departments',   icon: <Users size={16} /> },
     { id: 'blocked',       label: 'Blocked',       icon: <ShieldOff size={16} /> },
+    { id: 'settings',      label: 'Settings',      icon: <Settings size={16} /> },
   ];
 
   return (
@@ -77,18 +79,19 @@ export function AirbnbModule({ onLogout }: Props) {
         {page === 'faqs'          && <AirbnbFaqsPage />}
         {page === 'departments'  && <AirbnbDepartmentsPage />}
         {page === 'blocked'      && <AirbnbBlockedNumbersPage />}
+        {page === 'settings'     && <AirbnbSettingsPage />}
       </main>
 
-      <nav className="md:hidden flex items-center bg-white border-t border-slate-200 flex-shrink-0">
+      <nav className="md:hidden flex items-center overflow-x-auto bg-white border-t border-slate-200 flex-shrink-0">
         {nav.map(item => (
           <button key={item.id} onClick={() => setPage(item.id)}
-            className={clsx('flex-1 flex flex-col items-center gap-1 py-3 text-[10px] font-medium transition-colors',
+            className={clsx('flex-1 min-w-[68px] flex flex-col items-center gap-1 py-3 text-[10px] font-medium transition-colors',
               page === item.id ? 'text-brand-600' : 'text-slate-400 hover:text-slate-600')}>
             <span className={clsx('transition-colors', page === item.id ? 'text-brand-500' : 'text-slate-400')}>{item.icon}</span>
             {item.label}
           </button>
         ))}
-        <button onClick={handleLogout} className="flex-1 flex flex-col items-center gap-1 py-3 text-[10px] font-medium text-slate-400 hover:text-slate-600 transition-colors">
+        <button onClick={handleLogout} className="flex-1 min-w-[68px] flex flex-col items-center gap-1 py-3 text-[10px] font-medium text-slate-400 hover:text-slate-600 transition-colors">
           <LogOut size={16} className="text-slate-400" /> Sign out
         </button>
       </nav>
