@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { airbnbTools, executeAirbnbTool } from './tools.js';
-import { buildAirbnbSystemPrompt, buildAirbnbOnboardingPrompt } from './prompts.js';
+import { buildAirbnbSystemPrompt, buildAirbnbOnboardingPrompt, buildAirbnbReservationOnboardingPrompt } from './prompts.js';
+import { tenantHasReservations } from './reservations/lookup.js';
 import {
   getOrCreateConversation,
   getAirbnbHistory,
@@ -87,9 +88,18 @@ export async function runAirbnbAgent(
 
   // No listing identified yet (or it was deleted/deactivated since) — run the
   // narrow onboarding prompt whose only job is to identify the listing.
+  // A host with reservations on file (forwarded booking emails) resolves the
+  // listing by the guest's name first; a host without any keeps the original
+  // "which property?" flow, unchanged.
+  const reservationMode = !listing && await tenantHasReservations(tenantId).catch(() => false);
   const systemPrompt = listing
     ? buildAirbnbSystemPrompt(tenant, listing)
-    : buildAirbnbOnboardingPrompt(tenant);
+    : reservationMode
+      ? buildAirbnbReservationOnboardingPrompt(tenant)
+      : buildAirbnbOnboardingPrompt(tenant);
+  const tools = reservationMode
+    ? airbnbTools
+    : airbnbTools.filter(t => t.name !== 'lookup_reservation_by_name');
 
   try {
     while (true) {
@@ -97,7 +107,7 @@ export async function runAirbnbAgent(
         model: SONNET_MODEL,
         max_tokens: 1024,
         system: systemPrompt,
-        tools: airbnbTools,
+        tools,
         messages,
       });
 

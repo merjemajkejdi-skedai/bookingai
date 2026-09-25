@@ -8,6 +8,10 @@ export interface AirbnbListingConfig {
   local_recommendations?: string;
 }
 
+export type InstructionBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image'; url: string; caption?: string };
+
 export interface AirbnbListing {
   id: string;
   tenant_id: string;
@@ -15,8 +19,40 @@ export interface AirbnbListing {
   address: string;
   is_active: boolean;
   config: AirbnbListingConfig;
+  confirmation_forward_email?: string | null;
+  checkin_instructions?: InstructionBlock[];
+  backup_owner_number?: string | null;
+  checkin_send_time?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface AirbnbReservation {
+  id: string;
+  listing_id: string;
+  listing_name: string;
+  platform: 'airbnb' | 'booking';
+  reservation_code?: string | null;
+  guest_name: string;
+  guest_phone?: string | null;
+  checkin_date: string;
+  checkout_date?: string | null;
+  status: 'confirmed' | 'cancelled';
+  checkin_instructions_sent: boolean;
+  do_not_send: boolean;
+  created_at: string;
+}
+
+export interface AirbnbEmailReview {
+  id: string;
+  listing_id?: string | null;
+  listing_name?: string | null;
+  status: 'unparsed' | 'unmatched' | 'error';
+  reason?: string | null;
+  from_address?: string | null;
+  subject?: string | null;
+  body_excerpt?: string | null;
+  created_at: string;
 }
 
 export interface AirbnbFaq {

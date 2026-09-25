@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import crypto from 'crypto';
 import { processInboundReviewEmail } from '../reviews/reviewProcessor.js';
+import { handleReservationEmail } from '../airbnb/reservations/ingest.js';
 
 export const emailWebhookRouter = Router();
 
@@ -42,6 +43,16 @@ emailWebhookRouter.post('/webhooks/email', upload.any(), async (req, res) => {
     const recipient: string =
       req.body.recipient || req.body.To || req.body.to || '';
     const rawEmail: string = req.body['body-mime'] || body;
+
+    // ── Airbnb reservation emails ────────────────────────────────────────────
+    // Consumed only when the recipient is a listing's forwarding address;
+    // anything else falls through to the hotel-review handler untouched.
+    const htmlBody: string = req.body['body-html'] || '';
+    if (recipient && (body || htmlBody)) {
+      const handled = await handleReservationEmail({ recipient, from, subject, textBody: body, htmlBody })
+        .catch((e: any) => { console.error('[Email webhook] reservation handler error:', e.message); return false; });
+      if (handled) return;
+    }
 
     // ── Basic validation ─────────────────────────────────────────────────────
     if (!body || !recipient) {

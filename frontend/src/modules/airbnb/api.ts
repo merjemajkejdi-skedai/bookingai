@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import type { AirbnbListing, AirbnbFaq, AirbnbRequest, AirbnbConversation, AirbnbDepartment, AirbnbBlockedNumber } from './types';
+import type { AirbnbListing, AirbnbFaq, AirbnbRequest, AirbnbConversation, AirbnbDepartment, AirbnbBlockedNumber, AirbnbReservation, AirbnbEmailReview, InstructionBlock } from './types';
 import { redirectToLoginOnSessionExpired } from '../../shared/lib/sessionExpiry.js';
 
 const BASE = `${import.meta.env.VITE_API_URL || ''}`;
@@ -89,4 +89,38 @@ export const airbnbApi = {
     req<AirbnbBlockedNumber>('/airbnb/blocked', { method: 'POST', body: JSON.stringify(data) }),
   removeBlockedNumber: (id: string) =>
     req<any>('/airbnb/blocked/' + id, { method: 'DELETE' }),
+
+  // Check-in instructions + reservations
+  saveCheckinSettings: (id: string, data: {
+    checkin_instructions?: InstructionBlock[];
+    backup_owner_number?: string;
+    checkin_send_time?: string;
+  }) => req<AirbnbListing>('/airbnb/listings/' + id, { method: 'PUT', body: JSON.stringify(data) }),
+
+  // Multipart upload — req() forces a JSON content-type, so this builds its own request.
+  uploadInstructionImage: async (listingId: string, file: File): Promise<{ url: string }> => {
+    const token = localStorage.getItem('bookingai_token');
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(`${BASE}${injectTenantId(`/airbnb/listings/${listingId}/instructions-image`)}`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    if (res.status === 401) { redirectToLoginOnSessionExpired(); throw new Error('Session expired'); }
+    const json = await res.json().catch(() => null);
+    if (!json?.success) throw new Error(json?.error || 'Upload failed');
+    return json.data;
+  },
+
+  getReservations: (opts?: { listingId?: string; scope?: 'upcoming' | 'all' }) => {
+    const p = new URLSearchParams({ scope: opts?.scope ?? 'upcoming' });
+    if (opts?.listingId) p.set('listingId', opts.listingId);
+    return req<AirbnbReservation[]>(`/airbnb/reservations?${p.toString()}`);
+  },
+  setReservationDoNotSend: (id: string, do_not_send: boolean) =>
+    req<any>('/airbnb/reservations/' + id + '/do-not-send', { method: 'PATCH', body: JSON.stringify({ do_not_send }) }),
+  getEmailReview: () => req<AirbnbEmailReview[]>('/airbnb/reservations/email-review'),
+  dismissEmailReview: (id: string) =>
+    req<any>('/airbnb/reservations/email-review/' + id + '/dismiss', { method: 'POST' }),
 };

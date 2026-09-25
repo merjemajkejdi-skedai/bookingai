@@ -2545,6 +2545,50 @@ export async function runMigrations() {
       // return). Partial index — most tenants have a NULL phone_number_id.
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_tenants_meta_phone_number_id_unique
        ON tenants(meta_phone_number_id) WHERE meta_phone_number_id IS NOT NULL`,
+      // airbnb_003 — check-in instructions via forwarded reservation emails.
+      // tenant_id TEXT / timestamps TIMESTAMPTZ, same lessons as airbnb_001.
+      `ALTER TABLE airbnb_listings ADD COLUMN IF NOT EXISTS confirmation_forward_email TEXT`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_airbnb_listings_forward_email
+       ON airbnb_listings(confirmation_forward_email) WHERE confirmation_forward_email IS NOT NULL`,
+      // Ordered blocks: [{type:'text',text}|{type:'image',url,caption?}]
+      `ALTER TABLE airbnb_listings ADD COLUMN IF NOT EXISTS checkin_instructions JSONB NOT NULL DEFAULT '[]'`,
+      `ALTER TABLE airbnb_listings ADD COLUMN IF NOT EXISTS backup_owner_number TEXT`,
+      `ALTER TABLE airbnb_listings ADD COLUMN IF NOT EXISTS checkin_send_time TIME`,
+      `CREATE TABLE IF NOT EXISTS airbnb_reservations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  listing_id UUID NOT NULL REFERENCES airbnb_listings(id) ON DELETE CASCADE,
+  platform TEXT NOT NULL,
+  reservation_code TEXT,
+  guest_name TEXT NOT NULL,
+  guest_phone TEXT,
+  checkin_date DATE NOT NULL,
+  checkout_date DATE,
+  status TEXT NOT NULL DEFAULT 'confirmed',
+  checkin_instructions_sent BOOLEAN NOT NULL DEFAULT false,
+  do_not_send BOOLEAN NOT NULL DEFAULT false,
+  source_email_ref TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)`,
+      `CREATE INDEX IF NOT EXISTS idx_airbnb_reservations_tenant ON airbnb_reservations(tenant_id, checkin_date)`,
+      `CREATE INDEX IF NOT EXISTS idx_airbnb_reservations_listing_code ON airbnb_reservations(listing_id, reservation_code)`,
+      // One row per inbound forwarded email — the source_email_ref target, and
+      // the manual-review queue for emails that didn't parse or match.
+      `CREATE TABLE IF NOT EXISTS airbnb_email_ingest_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  listing_id UUID REFERENCES airbnb_listings(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'received',
+  reason TEXT,
+  from_address TEXT,
+  subject TEXT,
+  body_text TEXT,
+  reservation_id UUID,
+  resolved_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)`,
+      `CREATE INDEX IF NOT EXISTS idx_airbnb_email_ingest_tenant ON airbnb_email_ingest_log(tenant_id, status, created_at DESC)`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));

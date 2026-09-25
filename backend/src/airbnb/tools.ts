@@ -2,12 +2,24 @@ import Anthropic from '@anthropic-ai/sdk';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { sendWhatsAppMessage } from '../whatsapp/twilio.js';
 import { setConversationListing } from './session.js';
+import { handleLookupReservation } from './reservations/lookup.js';
 
 async function dbAll(sql: string, ...p: unknown[]) { return isPg ? query(sql, p) : prepare(sql).all(...p); }
 async function dbGet(sql: string, ...p: unknown[]) { return isPg ? queryOne(sql, p) : prepare(sql).get(...p); }
 async function dbRun(sql: string, ...p: unknown[]) { if (isPg) return queryRun(sql, p); prepare(sql).run(...p); }
 
 export const airbnbTools: Anthropic.Tool[] = [
+  {
+    name: 'lookup_reservation_by_name',
+    description: "Look up the guest's reservation by the name they gave, to send their check-in instructions and work out which property they're at. Pass exactly what the guest wrote. Returns a status — act on it; never guess a match yourself. Only available before the property is known.",
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        guest_name: { type: 'string', description: "The name the guest gave, exactly as written" },
+      },
+      required: ['guest_name'],
+    },
+  },
   {
     name: 'identify_listing',
     description: "Match the guest's own words (a property nickname, or an address if they don't know the nickname) to one of this host's listings. Call this as soon as you need to know which property the guest is at and you don't already know it. Never guess the listing yourself.",
@@ -99,6 +111,12 @@ export async function executeAirbnbTool(
   conversationId: string,
 ): Promise<string> {
   try {
+    if (toolName === 'lookup_reservation_by_name') {
+      return await handleLookupReservation(
+        toolInput, tenantId, conversationId,
+        (req) => handleCreateRequest(req, tenantId, conversationId),
+      );
+    }
     if (toolName === 'identify_listing') return await handleIdentifyListing(toolInput, tenantId, conversationId);
     if (toolName === 'get_faq')            return await handleGetFaq(toolInput, tenantId, conversationId);
     if (toolName === 'create_request')     return await handleCreateRequest(toolInput, tenantId, conversationId);
@@ -129,7 +147,7 @@ async function handleIdentifyListing(
   conversationId: string,
 ): Promise<string> {
   const listings = await dbAll(
-    'SELECT id, name, address FROM airbnb_listings WHERE tenant_id = ? AND is_active = true',
+    'SELECT id, name, address, backup_owner_number FROM airbnb_listings WHERE tenant_id = ? AND is_active = true',
     tenantId,
   ) as any[];
 
@@ -139,7 +157,7 @@ async function handleIdentifyListing(
   if (listings.length === 1) {
     // Only one listing on this account — no ambiguity possible.
     await setConversationListing(conversationId, listings[0].id);
-    return JSON.stringify({ matched: true, listing_id: listings[0].id, listing_name: listings[0].name });
+    return JSON.stringify({ matched: true, listing_id: listings[0].id, listing_name: listings[0].name, backup_owner_number: listings[0].backup_owner_number ?? null });
   }
 
   const matches = matchListings(input.guest_text, listings);
@@ -152,7 +170,7 @@ async function handleIdentifyListing(
   }
   if (matches.length === 1 || (matches[0] && !matches[1])) {
     await setConversationListing(conversationId, matches[0].id);
-    return JSON.stringify({ matched: true, listing_id: matches[0].id, listing_name: matches[0].name });
+    return JSON.stringify({ matched: true, listing_id: matches[0].id, listing_name: matches[0].name, backup_owner_number: matches[0].backup_owner_number ?? null });
   }
 
   // Multiple plausible matches — ambiguous, ask rather than guess.

@@ -6,8 +6,22 @@ import { sendWhatsAppMessage } from '../whatsapp/twilio.js';
 import { sendInstagramMessage } from '../channels/instagram.js';
 import { sendMessengerMessage } from '../channels/messenger.js';
 import { appendAirbnbStaffMessage } from '../airbnb/session.js';
+import { ensureForwardEmails } from '../airbnb/reservations/forwardEmail.js';
+import { parseBlocks } from '../airbnb/reservations/deliver.js';
+import multer from 'multer';
+import path from 'path';
 
 export const airbnbRouter = Router();
+
+const instructionImageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    // WhatsApp only accepts JPEG/PNG images.
+    const ok = ['.jpg', '.jpeg', '.png'].includes(path.extname(file.originalname).toLowerCase());
+    if (ok) cb(null, true); else cb(new Error('Only JPG or PNG images are allowed'));
+  },
+});
 
 async function dbAll(sql: string, ...p: unknown[]) { return isPg ? query(sql, p) : prepare(sql).all(...p); }
 async function dbGet(sql: string, ...p: unknown[]) { return isPg ? queryOne(sql, p) : prepare(sql).get(...p); }
@@ -24,6 +38,8 @@ const err = (res: Response, msg: string, status = 400) =>
 airbnbRouter.get('/listings', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
   try {
+    // Listings created before the forwarding-address feature get theirs here.
+    await ensureForwardEmails(tenantId).catch((e: any) => console.warn('[Airbnb] ensureForwardEmails failed:', e.message));
     const rows = await dbAll('SELECT * FROM airbnb_listings WHERE tenant_id = ? ORDER BY created_at ASC', tenantId);
     ok(res, rows);
   } catch (e: any) { err(res, e.message, 500); }
@@ -40,6 +56,7 @@ airbnbRouter.post('/listings', requireAuth, async (req: Request, res: Response) 
       `INSERT INTO airbnb_listings (id, tenant_id, name, address, config) VALUES (?,?,?,?,?)`,
       id, tenantId, name, address, configJson,
     );
+    await ensureForwardEmails(tenantId).catch((e: any) => console.warn('[Airbnb] ensureForwardEmails failed:', e.message));
     const row = await dbGet('SELECT * FROM airbnb_listings WHERE id = ?', id);
     ok(res, row);
   } catch (e: any) { err(res, e.message, 500); }
@@ -62,8 +79,49 @@ airbnbRouter.put('/listings/:id', requireAuth, async (req: Request, res: Respons
        WHERE id = ? AND tenant_id = ?`,
       name ?? null, address ?? null, configJson ?? null, is_active ?? null, req.params.id, tenantId,
     );
+
+    // Check-in fields. Handled separately from the COALESCE update above
+    // because these can legitimately be cleared back to empty/null.
+    const { backup_owner_number, checkin_send_time, checkin_instructions } = req.body;
+    const sets: string[] = [];
+    const params: any[] = [];
+    if (backup_owner_number !== undefined) { sets.push('backup_owner_number = ?'); params.push(String(backup_owner_number || '').trim() || null); }
+    if (checkin_send_time !== undefined) {
+      if (checkin_send_time && !/^\d{2}:\d{2}$/.test(checkin_send_time)) return err(res, 'checkin_send_time must be HH:MM');
+      sets.push('checkin_send_time = ?'); params.push(checkin_send_time || null);
+    }
+    if (checkin_instructions !== undefined) {
+      sets.push('checkin_instructions = ?'); params.push(JSON.stringify(parseBlocks(checkin_instructions)));
+    }
+    if (sets.length) {
+      await dbRun(
+        `UPDATE airbnb_listings SET ${sets.join(', ')}, updated_at = NOW() WHERE id = ? AND tenant_id = ?`,
+        ...params, req.params.id, tenantId,
+      );
+    }
+
     const row = await dbGet('SELECT * FROM airbnb_listings WHERE id = ?', req.params.id);
     ok(res, row);
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// POST /airbnb/listings/:id/instructions-image — uploads one photo for the
+// check-in instructions editor and returns its URL. The client adds it to the
+// instruction blocks and saves them via PUT.
+airbnbRouter.post('/listings/:id/instructions-image', requireAuth, instructionImageUpload.single('file'), async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    const listing = await dbGet('SELECT id FROM airbnb_listings WHERE id = ? AND tenant_id = ?', req.params.id, tenantId);
+    if (!listing) return err(res, 'Listing not found', 404);
+    if (!req.file) return err(res, 'No file uploaded');
+
+    const { uploadToR2, r2IsConfigured } = await import('../utils/r2.js');
+    if (!r2IsConfigured()) return err(res, 'File storage is not configured', 503);
+
+    const ext = path.extname(req.file.originalname).toLowerCase().replace('.', '');
+    const key = `airbnb/${tenantId}/${req.params.id}/instructions/${crypto.randomUUID()}.${ext}`;
+    const url = await uploadToR2(key, req.file.buffer, req.file.mimetype);
+    ok(res, { url });
   } catch (e: any) { err(res, e.message, 500); }
 });
 
@@ -455,3 +513,73 @@ airbnbRouter.post('/conversations/:id/checkout', requireAuth, async (req: Reques
   } catch (e: any) { err(res, e.message, 500); }
 });
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RESERVATIONS (parsed from forwarded Airbnb / Booking.com emails)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// GET /airbnb/reservations?listingId=&scope=upcoming|all
+airbnbRouter.get('/reservations', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const listingId = (req.query.listingId as string) || '';
+  const scope = (req.query.scope as string) === 'all' ? 'all' : 'upcoming';
+  try {
+    let sql = `SELECT r.id, r.listing_id, l.name AS listing_name, r.platform, r.reservation_code,
+                      r.guest_name, r.guest_phone,
+                      to_char(r.checkin_date, 'YYYY-MM-DD') AS checkin_date,
+                      to_char(r.checkout_date, 'YYYY-MM-DD') AS checkout_date,
+                      r.status, r.checkin_instructions_sent, r.do_not_send, r.created_at
+               FROM airbnb_reservations r
+               JOIN airbnb_listings l ON l.id = r.listing_id
+               WHERE r.tenant_id = ?`;
+    const params: any[] = [tenantId];
+    if (listingId) { sql += ' AND r.listing_id = ?'; params.push(listingId); }
+    if (scope === 'upcoming') sql += ' AND COALESCE(r.checkout_date, r.checkin_date) >= CURRENT_DATE - 1';
+    sql += ' ORDER BY r.checkin_date ASC LIMIT 500';
+    ok(res, await dbAll(sql, ...params));
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// PATCH /airbnb/reservations/:id/do-not-send — { do_not_send: boolean }.
+// Blocks both the proactive send job and the guest-initiated (name-match) path.
+airbnbRouter.patch('/reservations/:id/do-not-send', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  const { do_not_send } = req.body;
+  if (typeof do_not_send !== 'boolean') return err(res, 'do_not_send (boolean) is required');
+  try {
+    await dbRun(
+      'UPDATE airbnb_reservations SET do_not_send = ?, updated_at = NOW() WHERE id = ? AND tenant_id = ?',
+      do_not_send, req.params.id, tenantId,
+    );
+    ok(res, { id: req.params.id, do_not_send });
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+// GET /airbnb/reservations/email-review — forwarded emails that didn't parse,
+// or that were a cancellation/change with no reservation to apply to.
+airbnbRouter.get('/reservations/email-review', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    const rows = await dbAll(
+      `SELECT g.id, g.listing_id, l.name AS listing_name, g.status, g.reason, g.from_address, g.subject,
+              LEFT(g.body_text, 4000) AS body_excerpt, g.created_at
+       FROM airbnb_email_ingest_log g
+       LEFT JOIN airbnb_listings l ON l.id = g.listing_id
+       WHERE g.tenant_id = ? AND g.status IN ('unparsed', 'unmatched', 'error') AND g.resolved_at IS NULL
+       ORDER BY g.created_at DESC LIMIT 50`,
+      tenantId,
+    );
+    ok(res, rows);
+  } catch (e: any) { err(res, e.message, 500); }
+});
+
+airbnbRouter.post('/reservations/email-review/:id/dismiss', requireAuth, async (req: Request, res: Response) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    await dbRun(
+      'UPDATE airbnb_email_ingest_log SET resolved_at = NOW() WHERE id = ? AND tenant_id = ?',
+      req.params.id, tenantId,
+    );
+    ok(res, { dismissed: true });
+  } catch (e: any) { err(res, e.message, 500); }
+});

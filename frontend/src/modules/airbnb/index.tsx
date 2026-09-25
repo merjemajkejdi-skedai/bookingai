@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { MessageSquare, BellRing, Home, HelpCircle, LogOut, Users, ShieldOff } from 'lucide-react';
+import { MessageSquare, BellRing, Home, HelpCircle, LogOut, Users, ShieldOff, CalendarCheck } from 'lucide-react';
 import clsx from 'clsx';
 import { getStoredUser, clearAuth } from '../../shared/lib/auth';
 import { AirbnbConversationsPage } from './components/ConversationsPage';
@@ -8,8 +8,9 @@ import { AirbnbListingsPage } from './components/ListingsPage';
 import { AirbnbFaqsPage } from './components/FaqsPage';
 import { AirbnbDepartmentsPage } from './components/DepartmentsPage';
 import { AirbnbBlockedNumbersPage } from './components/BlockedNumbersPage';
+import { AirbnbReservationsPage } from './components/ReservationsPage';
 
-type Page = 'conversations' | 'requests' | 'listings' | 'faqs' | 'departments' | 'blocked';
+type Page = 'conversations' | 'requests' | 'reservations' | 'listings' | 'faqs' | 'departments' | 'blocked';
 
 interface Props { onLogout: () => void; }
 
@@ -22,7 +23,8 @@ export function AirbnbModule({ onLogout }: Props) {
   const nav: { id: Page; label: string; icon: React.ReactNode }[] = [
     { id: 'conversations', label: 'Conversations', icon: <MessageSquare size={16} /> },
     { id: 'requests',      label: 'Requests',      icon: <BellRing size={16} /> },
-    { id: 'listings',      label: 'Listings',      icon: <Home size={16} /> },
+    { id: 'reservations',  label: 'Reservations',  icon: <CalendarCheck size={16} /> },
+    { id: 'listings',     label: 'Listings',      icon: <Home size={16} /> },
     { id: 'faqs',          label: 'FAQs',          icon: <HelpCircle size={16} /> },
     { id: 'departments',   label: 'Departments',   icon: <Users size={16} /> },
     { id: 'blocked',       label: 'Blocked',       icon: <ShieldOff size={16} /> },
@@ -70,6 +72,7 @@ export function AirbnbModule({ onLogout }: Props) {
       <main className="flex-1 min-w-0 overflow-hidden flex flex-col p-3 md:p-5">
         {page === 'conversations' && <AirbnbConversationsPage />}
         {page === 'requests'      && <AirbnbRequestsPage />}
+        {page === 'reservations'  && <AirbnbReservationsPage />}
         {page === 'listings'      && <AirbnbListingsPage />}
         {page === 'faqs'          && <AirbnbFaqsPage />}
         {page === 'departments'  && <AirbnbDepartmentsPage />}
