@@ -8,6 +8,7 @@ import { prepare, isPg, query, queryOne, queryRun } from '../../db/database.js';
 import { sendWhatsAppMessage } from '../../whatsapp/twilio.js';
 import { logUnansweredQuestion } from '../../faqGap/logUnansweredQuestion.js';
 import { RaceState, sendLateFollowUp } from '../../whatsapp/raceState.js';
+import { getModelForTenant } from '../../utils/modelForTenant.js';
 
 async function dbAll(sql: string, ...p: unknown[]) { return isPg ? query(sql, p) : prepare(sql).all(...p); }
 async function dbGet(sql: string, ...p: unknown[]) { return isPg ? queryOne(sql, p) : prepare(sql).get(...p); }
@@ -688,6 +689,7 @@ export async function runArtClassAgent(
   tenantId: string,
   raceState?: RaceState,  // set by the webhook if its timeout already fired
 ): Promise<string> {
+  const model = await getModelForTenant(tenantId);
   const messages: Anthropic.MessageParam[] = [
     ...conversationHistory,
     { role: 'user', content: customerMessage },
@@ -695,7 +697,7 @@ export async function runArtClassAgent(
 
   while (true) {
     const response = await callClaudeWithRetry({
-      model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-6',
+      model,
       max_tokens: 1024,
       system: [{ type: 'text' as const, text: await buildSystemPrompt(tenantId), cache_control: { type: 'ephemeral' } }],
       tools,

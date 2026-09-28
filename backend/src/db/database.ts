@@ -2603,6 +2603,16 @@ export async function runMigrations() {
       // cancellation emails). Optional, host-entered. A stronger listing match key
       // than the display name when present; name matching remains the fallback.
       `ALTER TABLE airbnb_listings ADD COLUMN IF NOT EXISTS airbnb_listing_number TEXT`,
+      // model_001 — configurable Claude model per tenant. Nullable: unset falls
+      // back to a single global default (DEFAULT_CLAUDE_MODEL env var, or the
+      // existing hardcoded 'claude-sonnet-4-6'), so no existing tenant's behavior
+      // changes until this is deliberately set.
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS claude_model TEXT`,
+      // model_002 — records which Claude model produced each outbound message,
+      // so cost analytics can price a tenant's usage by the model actually used
+      // instead of one flat rate. NULL for inbound messages (logged before any
+      // agent call exists) and for outbound rows logged before this column existed.
+      `ALTER TABLE message_log ADD COLUMN IF NOT EXISTS model TEXT`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));

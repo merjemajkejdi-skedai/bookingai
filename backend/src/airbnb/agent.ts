@@ -12,13 +12,13 @@ import { isPg, prepare, queryOne } from '../db/database.js';
 import { alertError } from '../utils/errorMonitor.js';
 import { RaceState, sendLateFollowUp } from '../whatsapp/raceState.js';
 import { logAgentError } from '../monitoring/logAgentError.js';
+import { getModelForTenant } from '../utils/modelForTenant.js';
 
 async function dbGet(sql: string, ...p: unknown[]) {
   return isPg ? queryOne(sql, p) : prepare(sql).get(...p);
 }
 
 const client = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
-const SONNET_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 
 // ---------------------------------------------------------------------------
 // runAirbnbAgent — independent implementation, no shared code with
@@ -97,6 +97,7 @@ export async function runAirbnbAgent(
     : reservationMode
       ? buildAirbnbReservationOnboardingPrompt(tenant)
       : buildAirbnbOnboardingPrompt(tenant);
+  const model = await getModelForTenant(tenantId);
   const tools = reservationMode
     ? airbnbTools
     : airbnbTools.filter(t => t.name !== 'lookup_reservation_by_name');
@@ -104,7 +105,7 @@ export async function runAirbnbAgent(
   try {
     while (true) {
       const response = await client.messages.create({
-        model: SONNET_MODEL,
+        model,
         max_tokens: 1024,
         system: systemPrompt,
         tools,

@@ -150,6 +150,31 @@ adminAnalyticsRouter.get('/messages', async (req: Request, res: Response) => {
 
     const rows = await dbAll(sql, []) as any[];
 
+    // Per-tenant, per-model outbound counts — the frontend prices each
+    // tenant's Claude cost off the model actually used for its messages,
+    // not one flat rate across every tenant (a tenant on Opus costs a lot
+    // more per message than one on Haiku). Only outbound messages carry a
+    // model (see message_log's model column / logMessage()) — inbound
+    // messages predate any agent call and never had a model of their own.
+    // Rows logged before this column existed have model = NULL and are
+    // priced by the frontend at the same 'default' rate as before.
+    const modelRows = await dbAll(
+      `SELECT ml.tenant_id, ml.model, COUNT(*) AS count
+       FROM message_log ml
+       WHERE ml.direction = 'outbound' AND ${dateFilter}
+       GROUP BY ml.tenant_id, ml.model`,
+      [],
+    ) as any[];
+    const modelsByTenant = new Map<string, { model: string | null; count: number }[]>();
+    for (const r of modelRows) {
+      const list = modelsByTenant.get(r.tenant_id) ?? [];
+      list.push({ model: r.model, count: Number(r.count) });
+      modelsByTenant.set(r.tenant_id, list);
+    }
+    for (const row of rows) {
+      row.outbound_by_model = modelsByTenant.get(row.tenant_id) ?? [];
+    }
+
     // Commissionable history — only meaningful for a specific calendar month.
     // Snapshot-on-first-view, then attach that month's locked values to each row
     // so the frontend uses historical status/rate for past months instead of
@@ -311,7 +336,11 @@ adminAnalyticsRouter.patch('/infra-cost', async (req: Request, res: Response) =>
 // all projection math runs client-side off whatever the user tweaks them to.
 // ---------------------------------------------------------------------------
 const PROJECTION_FALLBACK_PRICE = 79;
-const CLAUDE_RATE_DEFAULT   = 0.008; // mirrors CostAnalyticsPage.tsx DEFAULTS.claudePerMessage
+// This tool projects one hypothetical average tenant, so it intentionally
+// stays a single flat rate (mirrors CostAnalyticsPage.tsx's default-model rate,
+// DEFAULTS.claudeRatesByModel['claude-sonnet-4-6']) even though the per-tenant
+// cost table now prices each tenant by its actual assigned model.
+const CLAUDE_RATE_DEFAULT   = 0.008;
 const TWILIO_RATE_DEFAULT  = 0.005;  // mirrors CostAnalyticsPage.tsx DEFAULTS.twilioInbound/Outbound
 
 adminAnalyticsRouter.get('/projection-defaults', async (_req: Request, res: Response) => {

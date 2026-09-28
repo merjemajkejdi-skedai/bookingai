@@ -5,6 +5,7 @@ import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { getHotelHistory, saveHotelConversation, saveGuestMessage } from './session.js';
 import { alertError } from '../utils/errorMonitor.js';
 import { RaceState, sendLateFollowUp } from '../whatsapp/raceState.js';
+import { getModelForTenant } from '../utils/modelForTenant.js';
 
 async function dbGet(sql: string, ...p: unknown[]) {
   return isPg ? queryOne(sql, p) : prepare(sql).get(...p);
@@ -135,7 +136,6 @@ async function processSurveyReply(
 }
 
 const client = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
-const SONNET_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 
 // ---------------------------------------------------------------------------
 // runHotelAgent
@@ -342,6 +342,7 @@ export async function runHotelAgent(
   const isFreshStart = gapMinutes >= 300;
 
   const systemPrompt = buildHotelSystemPrompt(tenantRow, hotelConfig, isFreshStart);
+  const model = await getModelForTenant(tenantId);
 
   // When message_forward is OFF, the agent only reads FAQ/config — never creates requests
   const messageForward = (hotelConfig as any)?.message_forward !== 0;
@@ -353,7 +354,7 @@ export async function runHotelAgent(
   try {
   while (true) {
     const response = await client.messages.create({
-      model: SONNET_MODEL,
+      model,
       max_tokens: 1024,
       system: systemPrompt,
       tools: activeTools,

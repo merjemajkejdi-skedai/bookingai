@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { format } from 'date-fns';
 import { prepare, isPg, query, queryOne, queryRun } from '../../db/database.js';
 import { RaceState, sendLateFollowUp } from '../../whatsapp/raceState.js';
+import { getModelForTenant } from '../../utils/modelForTenant.js';
 
 async function dbAll(sql: string, ...p: unknown[]) { return isPg ? query(sql, p) : prepare(sql).all(...p); }
 async function dbGet(sql: string, ...p: unknown[]) { return isPg ? queryOne(sql, p) : prepare(sql).get(...p); }
@@ -392,7 +393,6 @@ Step 8 — Thank the guest warmly. Tell them you look forward to seeing them on 
 // Retry helper
 // ---------------------------------------------------------------------------
 const client = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
-const SONNET_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 
 async function callClaudeWithRetry(
   params: Parameters<typeof client.messages.create>[0],
@@ -432,10 +432,11 @@ export async function runRestaurantAgent(
   ];
 
   const systemPrompt = await buildSystemPrompt(tenantId);
+  const model = await getModelForTenant(tenantId);
 
   while (true) {
     const response = await callClaudeWithRetry({
-      model: SONNET_MODEL,
+      model,
       max_tokens: 1024,
       system: [{ type: 'text' as const, text: systemPrompt, cache_control: { type: 'ephemeral' } }],
       tools: restaurantTools,

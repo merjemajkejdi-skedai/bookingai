@@ -7,6 +7,15 @@ import clsx from 'clsx';
 
 const PLANS = ['starter', 'growth', 'pro'];
 const TYPES = ['barbershop', 'salon', 'dentist', 'medical', 'hotel', 'art_class', 'art_event', 'restaurant', 'skedai', 'shop', 'general_business', 'airbnb'];
+
+// Fixed dropdown — keep in sync with backend/src/utils/modelForTenant.ts's
+// CLAUDE_MODEL_OPTIONS. A freeform field would let a typo silently break
+// every message for that tenant at the Claude API call.
+const CLAUDE_MODEL_OPTIONS = [
+  { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5 (fastest, cheapest)' },
+  { value: 'claude-sonnet-4-6',         label: 'Sonnet (default — balanced)' },
+  { value: 'claude-opus-5',             label: 'Opus 5 (most capable)' },
+];
 const PROTECTED_TENANT_IDS = ['41b10744-891e-439a-a976-3aff28c51afe', '1a7ef18c-394b-441e-8376-fc57238b7dcc'];
 
 interface AdminPageProps {
@@ -516,6 +525,7 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
   const [twilioAccountSid, setTwilioSid]            = useState(tenant.twilio_account_sid || '');
   const [twilioAuthToken, setTwilioToken]           = useState(tenant.twilio_auth_token || '');
   const [twilioDeptTemplateSid, setDeptTemplateSid] = useState(tenant.twilio_dept_template_sid || '');
+  const [claudeModel, setClaudeModel]         = useState(tenant.claude_model || '');
   // WhatsApp disconnect confirm
   const [waDisconnectOpen, setWaDisconnectOpen]     = useState(false);
   const [waDisconnecting, setWaDisconnecting]       = useState(false);
@@ -916,6 +926,7 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
         twilioAccountSid:       twilioAccountSid       || null,
         twilioAuthToken:        twilioAuthToken        || null,
         twilioDeptTemplateSid:  twilioDeptTemplateSid  || null,
+        claudeModel:            claudeModel            || null,
       });
       onSaved();
     } catch (e: any) { setError(e.message); }
@@ -972,6 +983,13 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
           </Select>
         </div>
         <Input label="Billing email" value={billingEmail} onChange={(e: any) => setBilling(e.target.value)} />
+
+        <div className="grid grid-cols-2 gap-3">
+          <Select label="Claude model" value={claudeModel} onChange={(e: any) => setClaudeModel(e.target.value)}>
+            <option value="">Default (platform-wide)</option>
+            {CLAUDE_MODEL_OPTIONS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+          </Select>
+        </div>
 
         {/* Provider selector */}
         <div className="grid grid-cols-2 gap-3">

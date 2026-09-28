@@ -6,6 +6,7 @@ import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { encrypt, decrypt } from '../utils/encryption.js';
 import { sendManualOwnerReport } from '../reports/reportCron.js';
 import { manuallyResolveAlert } from '../monitoring/healthAlertEngine.js';
+import { VALID_CLAUDE_MODELS } from '../utils/modelForTenant.js';
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth, requireAdmin);
@@ -183,6 +184,7 @@ adminRouter.put('/tenants/:id', async (req: Request, res: Response) => {
     twilioAccountSid, twilioAuthToken, twilioDeptTemplateSid,
     notificationEmail, emailFallbackEnabled,
     monthlyPrice, commissionRate, environment, usesTwilioFlag,
+    claudeModel,
   } = req.body;
 
   // Normalise: always store with whatsapp: prefix; empty string → null (don't overwrite)
@@ -192,6 +194,14 @@ adminRouter.put('/tenants/:id', async (req: Request, res: Response) => {
 
   if (environment !== undefined && !['test', 'live'].includes(environment))
     return err(res, "environment must be 'test' or 'live'");
+
+  // claude_model: fixed dropdown, never freeform — a typo here would silently
+  // fail every message this tenant sends. null/'' clears it back to the
+  // platform default, same "was this key provided" pattern as monthly_price below.
+  const claudeModelProvided = claudeModel !== undefined;
+  const claudeModelValue    = claudeModel || null;
+  if (claudeModelValue !== null && !VALID_CLAUDE_MODELS.has(claudeModelValue))
+    return err(res, 'Invalid claude_model');
 
   // monthly_price and uses_twilio_flag both treat `null` as a meaningful, intentional
   // value (null = fall back to PLAN_REVENUE / fall back to the provider field), so a
@@ -228,7 +238,8 @@ adminRouter.put('/tenants/:id', async (req: Request, res: Response) => {
        monthly_price        = CASE WHEN ? THEN ? ELSE monthly_price END,
        commission_rate      = COALESCE(?,commission_rate),
        environment          = COALESCE(?,environment),
-       uses_twilio_flag     = CASE WHEN ? THEN ? ELSE uses_twilio_flag END
+       uses_twilio_flag     = CASE WHEN ? THEN ? ELSE uses_twilio_flag END,
+       claude_model         = CASE WHEN ? THEN ? ELSE claude_model END
      WHERE id=?`,
     name??null, normalisedWhatsapp, plan??null,
     isActive !== undefined ? (isActive ? 1 : 0) : null,
@@ -246,6 +257,7 @@ adminRouter.put('/tenants/:id', async (req: Request, res: Response) => {
     commissionRate??null,
     environment??null,
     twilioFlagProvided ? 1 : 0, twilioFlagValue,
+    claudeModelProvided ? 1 : 0, claudeModelValue,
     req.params.id,
   );
 

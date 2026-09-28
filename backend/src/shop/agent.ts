@@ -7,6 +7,7 @@ import { sendWhatsAppMedia } from '../whatsapp/twilio.js';
 import { alertError } from '../utils/errorMonitor.js';
 import { RaceState, sendLateFollowUp } from '../whatsapp/raceState.js';
 import { logAgentError } from '../monitoring/logAgentError.js';
+import { getModelForTenant } from '../utils/modelForTenant.js';
 
 const anthropic = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
 
@@ -118,6 +119,7 @@ export async function runShopAgent(
     history.push({ role: 'user', content: message });
 
     const systemPrompt = buildShopSystemPrompt(tenant, config, deliveryInfo);
+    const model = await getModelForTenant(tenantId);
     const messages = [...history];
     let finalReply = '';
     let pendingMenuPdf: { url: string; label: string } | null = null;
@@ -126,7 +128,7 @@ export async function runShopAgent(
     // no tools, not saved to history
     if (isReminderMode) {
       const resp = await callClaudeWithRetry(anthropic, {
-        model:      process.env.CLAUDE_MODEL || 'claude-sonnet-4-6',
+        model,
         max_tokens: 200,
         system:     systemPrompt,
         messages,
@@ -144,7 +146,7 @@ export async function runShopAgent(
     while (true) {
       console.log('[Shop] calling Claude with', shopTools.length, 'tools, messages:', messages.length);
       const response = await callClaudeWithRetry(anthropic, {
-        model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-6',
+        model,
         max_tokens: 1024,
         system: systemPrompt,
         tools: shopTools,

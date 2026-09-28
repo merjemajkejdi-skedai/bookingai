@@ -6,13 +6,13 @@ import { isPg, prepare, queryOne } from '../db/database.js';
 import { alertError } from '../utils/errorMonitor.js';
 import { RaceState, sendLateFollowUp } from '../whatsapp/raceState.js';
 import { logAgentError } from '../monitoring/logAgentError.js';
+import { getModelForTenant } from '../utils/modelForTenant.js';
 
 async function dbGet(sql: string, ...p: unknown[]) {
   return isPg ? queryOne(sql, p) : prepare(sql).get(...p);
 }
 
 const client = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
-const SONNET_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 
 export async function runGbAgent(
   customerMessage: string,
@@ -57,6 +57,7 @@ export async function runGbAgent(
   const menuEnabled = !!(tenant as any)?.menu_enabled;
   const systemPrompt = await buildGbSystemPrompt(tenantId);
   const tools = getGbTools(menuEnabled);
+  const model = await getModelForTenant(tenantId);
 
   const anthropicHistory: Anthropic.MessageParam[] = gbHistory
     .filter(m => m.role === 'user' || m.role === 'assistant')
@@ -70,7 +71,7 @@ export async function runGbAgent(
   try {
     while (true) {
       const response = await client.messages.create({
-        model: SONNET_MODEL,
+        model,
         max_tokens: 1024,
         system: systemPrompt,
         tools,

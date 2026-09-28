@@ -16,6 +16,7 @@ import {
   type ServiceStatus,
 } from './notify.js';
 import { RaceState, sendLateFollowUp } from '../whatsapp/raceState.js';
+import { getModelForTenant } from '../utils/modelForTenant.js';
 
 async function dbGet(sql: string, ...p: unknown[]) {
   return isPg ? queryOne(sql, p) : prepare(sql).get(...p);
@@ -106,13 +107,14 @@ async function runConversation(
   systemPrompt: string,
   history: Anthropic.MessageParam[],
   newMessage: string,
+  model: string,
 ): Promise<string> {
   const messages: Anthropic.MessageParam[] = [
     ...history,
     { role: 'user', content: newMessage },
   ];
   const response = await client.messages.create({
-    model: MODEL,
+    model,
     max_tokens: 512,
     system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
     messages,
@@ -134,6 +136,7 @@ export async function runSkedAIAgent(
   try {
     // Load DB config (falls back gracefully if table/row not found)
     const config = await loadConfig(tenantId);
+    const model = await getModelForTenant(tenantId);
     const overridePhone = config?.forwardPhone || '';
 
     const session = await getSession(phone);
@@ -159,14 +162,14 @@ export async function runSkedAIAgent(
       // Health checks + agent response in parallel
       const [healthResults, agentReply] = await Promise.all([
         runHealthChecks(config?.healthCheckUrls || []),
-        runConversation(supportPrompt, history, message),
+        runConversation(supportPrompt, history, message, model),
       ]);
       reply = agentReply;
       await notifySupportRequest(phone, message, healthResults, overridePhone);
 
     } else if (route === 'sales') {
       const salesPrompt = buildSalesPrompt(config?.industries || [], config?.calendlyUrl || '');
-      reply = await runConversation(salesPrompt, history, message);
+      reply = await runConversation(salesPrompt, history, message, model);
 
       // Notify on first message (new lead)
       if (isFirstMessage) {

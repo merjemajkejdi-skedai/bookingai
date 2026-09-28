@@ -5,6 +5,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { format } from 'date-fns';
 import { prepare, isPg, query, queryOne, queryRun } from '../../db/database.js';
 import { RaceState, sendLateFollowUp } from '../../whatsapp/raceState.js';
+import { getModelForTenant } from '../../utils/modelForTenant.js';
 
 async function dbAll(sql: string, ...p: unknown[]) { return isPg ? query(sql, p) : prepare(sql).all(...p); }
 async function dbGet(sql: string, ...p: unknown[]) { return isPg ? queryOne(sql, p) : prepare(sql).get(...p); }
@@ -412,7 +413,6 @@ async function callClaudeWithRetry(
 }
 
 const HAIKU_MODEL  = 'claude-haiku-4-5-20251001';
-const SONNET_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 
 // NOTE: agreement/confirmation words (yes/po/ok/confirm/dakord) are intentionally
 // excluded here — they look simple but trigger create_booking/cancel_booking tool
@@ -423,13 +423,13 @@ const SIMPLE_PATTERNS = [
   /^(bye|ciao|mirupafshim|gjer|dag)\b/i,
 ];
 
-function pickModel(message: string): string {
+function pickModel(message: string, capableModel: string): string {
   const text = message.trim();
   if (text.length < 30 && SIMPLE_PATTERNS.some(p => p.test(text))) {
     console.log(`🪶 Routing to Haiku: "${text.slice(0, 40)}"`);
     return HAIKU_MODEL;
   }
-  return SONNET_MODEL;
+  return capableModel;
 }
 
 // ---------------------------------------------------------------------------
@@ -446,10 +446,11 @@ export async function runBookingAgent(
     ...conversationHistory,
     { role: 'user', content: customerMessage },
   ];
+  const capableModel = await getModelForTenant(tenantId);
 
   while (true) {
     const response = await callClaudeWithRetry({
-      model: pickModel(customerMessage),
+      model: pickModel(customerMessage, capableModel),
       max_tokens: 1024,
       system: [{ type: 'text' as const, text: await buildSystemPrompt(tenantId), cache_control: { type: 'ephemeral' } }],
       tools,

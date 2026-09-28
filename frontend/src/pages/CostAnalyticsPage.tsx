@@ -7,11 +7,30 @@ import clsx from 'clsx';
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
+// Keep in sync with backend/src/utils/modelForTenant.ts's CLAUDE_MODEL_OPTIONS —
+// these are the only models a tenant can be assigned, so they're the only ones
+// costed here.
+const DEFAULT_MODEL_ID = 'claude-sonnet-4-6';
+const MODEL_LABELS: Record<string, string> = {
+  'claude-haiku-4-5-20251001': 'Haiku 4.5',
+  'claude-sonnet-4-6':         'Sonnet (default)',
+  'claude-opus-5':             'Opus 5',
+};
+
 const DEFAULTS = {
   twilioInbound:    0.005,
   twilioOutbound:   0.005,
   metaOutbound:     0.0077, // unconfirmed — Meta WABA business-initiated conversation rate
-  claudePerMessage: 0.008,  // simulated only — NOT real Anthropic usage, out of scope for v2
+  // Simulated only — NOT real Anthropic usage, same as before. Now one rate per
+  // model instead of one flat rate: a tenant on Opus costs far more per reply
+  // than one on Haiku, so a single number silently mispriced every tenant not
+  // on the default model. Ratios are ballparked from relative Claude pricing,
+  // not measured — recalibrate against real spend once you have it.
+  claudeRatesByModel: {
+    'claude-haiku-4-5-20251001': 0.0015,
+    'claude-sonnet-4-6':         0.008,
+    'claude-opus-5':             0.04,
+  } as Record<string, number>,
 };
 
 // Meta bills WABA usage on outbound messages regardless of provider (Twilio or direct
@@ -70,7 +89,7 @@ function shouldChargeTwilio(row: any): boolean {
 // ---------------------------------------------------------------------------
 // Cost calculation — Part 3/5/6
 // ---------------------------------------------------------------------------
-interface Params { twilioInbound: number; twilioOutbound: number; metaOutbound: number; claudePerMessage: number; }
+interface Params { twilioInbound: number; twilioOutbound: number; metaOutbound: number; claudeRatesByModel: Record<string, number>; }
 
 function calcCosts(row: any, p: Params, metaBillable: boolean) {
   const chargeTwilio = shouldChargeTwilio(row);
@@ -81,7 +100,13 @@ function calcCosts(row: any, p: Params, metaBillable: boolean) {
   // usage whether routed through Twilio or direct Cloud API) — gated only by the
   // October 2026 cutover date, NOT by environment. See Part 10 known limitations.
   const metaCost = metaBillable ? (Number(row.outbound) || 0) * p.metaOutbound : 0;
-  const claudeCost = (Number(row.total) || 0) * p.claudePerMessage;
+  const outboundByModel: { model: string | null; count: number }[] = row.outbound_by_model || [];
+  const claudeCost = outboundByModel.reduce((sum, entry) => {
+    const rate = (entry.model && p.claudeRatesByModel[entry.model] !== undefined)
+      ? p.claudeRatesByModel[entry.model]
+      : p.claudeRatesByModel[DEFAULT_MODEL_ID]; // NULL model (legacy rows) or an unrecognised value
+    return sum + (Number(entry.count) || 0) * rate;
+  }, 0);
   const totalVariableCost = twilioCost + metaCost + claudeCost;
   return { twilioCost, metaCost, claudeCost, totalVariableCost, chargeTwilio };
 }
@@ -550,7 +575,7 @@ export function CostAnalyticsPage() {
         <MetricCard
           label="Claude cost"
           value={`$${totalClaudeCost.toFixed(2)}`}
-          sub={`$${params.claudePerMessage.toFixed(4)}/msg (simulated)`}
+          sub="priced per model (simulated)"
           icon={DollarSign}
           color="bg-violet-50 text-violet-500"
         />
@@ -611,7 +636,15 @@ export function CostAnalyticsPage() {
             <PriceSlider label="Twilio inbound ($/msg)"   value={params.twilioInbound}    min={0.001} max={0.02} step={0.001} onChange={v => setParams(p => ({ ...p, twilioInbound: v }))}  />
             <PriceSlider label="Twilio outbound ($/msg)"  value={params.twilioOutbound}   min={0.001} max={0.02} step={0.001} onChange={v => setParams(p => ({ ...p, twilioOutbound: v }))} />
             <PriceSlider label="Meta outbound ($/msg)"    value={params.metaOutbound}     min={0.001} max={0.02} step={0.0001} onChange={v => setParams(p => ({ ...p, metaOutbound: v }))}  />
-            <PriceSlider label="Claude per message ($/msg)" value={params.claudePerMessage} min={0.001} max={0.05} step={0.001} onChange={v => setParams(p => ({ ...p, claudePerMessage: v }))} />
+            {Object.entries(MODEL_LABELS).map(([modelId, label]) => (
+              <PriceSlider
+                key={modelId}
+                label={`Claude — ${label} ($/msg)`}
+                value={params.claudeRatesByModel[modelId] ?? 0}
+                min={0.0005} max={0.08} step={0.0005}
+                onChange={v => setParams(p => ({ ...p, claudeRatesByModel: { ...p.claudeRatesByModel, [modelId]: v } }))}
+              />
+            ))}
             <button
               onClick={() => setParams(DEFAULTS)}
               className="text-xs text-brand-500 hover:underline mt-1"
