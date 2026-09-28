@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Pencil, RefreshCw, Power, Phone, ExternalLink, BarChart2, Copy, Check, Star, SmilePlus, UtensilsCrossed, Trash2, AlertTriangle, Archive, Link, Search } from 'lucide-react';
+import { Plus, Pencil, RefreshCw, Power, Phone, ExternalLink, BarChart2, Copy, Check, Star, SmilePlus, UtensilsCrossed, Trash2, AlertTriangle, Archive, Link, Search, CalendarClock } from 'lucide-react';
 import { adminApi } from '../shared/lib/auth';
 import type { AdminTenant } from '../shared/lib/auth';
 import { Button, Modal, Input, Select, Spinner } from '../components/ui';
@@ -2372,18 +2372,26 @@ function ManualLeadsView({ tenants, onCreateTenant, onViewShop }: { tenants: any
   const [formOpen, setFormOpen] = useState<'new' | any | null>(null);
   const [broughtByOptions, setBroughtByOptions] = useState<{ teamMembers: string[]; existingTenants: string[] }>({ teamMembers: [], existingTenants: [] });
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // Follow-up month filter — off by default (normal list is the baseline);
+  // the month input itself defaults to the current month once turned on.
+  const [followUpOn, setFollowUpOn] = useState(false);
+  const [followUpMonth, setFollowUpMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
 
   async function load() {
     setLoading(true);
-    try { setLeads(await adminApi.getManualLeads()); }
+    try { setLeads(await adminApi.getManualLeads(followUpOn ? { month: followUpMonth } : undefined)); }
     catch (e: any) { console.error('Failed to load manual leads:', e.message); }
     finally { setLoading(false); }
   }
 
   useEffect(() => {
-    load();
     adminApi.getManualLeadBroughtByOptions().then(setBroughtByOptions).catch(e => console.error('Failed to load brought-by options:', e.message));
   }, []);
+
+  useEffect(() => { load(); }, [followUpOn, followUpMonth]);
 
   async function changeStatus(lead: any, status: string) {
     try {
@@ -2403,6 +2411,7 @@ function ManualLeadsView({ tenants, onCreateTenant, onViewShop }: { tenants: any
   const visibleLeads = leads
     .filter(l => showLost || l.status !== 'lost')
     .sort((a, b) => {
+      if (followUpOn) return 0; // trust the backend's follow_up_date ASC order
       if (sortBy === 'status') return a.status.localeCompare(b.status);
       if (sortBy === 'rating') return (b.rating || 0) - (a.rating || 0);
       return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
@@ -2437,12 +2446,20 @@ function ManualLeadsView({ tenants, onCreateTenant, onViewShop }: { tenants: any
             <input type="checkbox" checked={showLost} onChange={e => setShowLost(e.target.checked)} />
             Show lost leads
           </label>
-          <select value={sortBy} onChange={e => setSortBy(e.target.value as any)}
-            className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white">
+          <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} disabled={followUpOn}
+            className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white disabled:opacity-50">
             <option value="updated">Sort: Recently updated</option>
             <option value="status">Sort: Status</option>
             <option value="rating">Sort: Rating</option>
           </select>
+          <label className="flex items-center gap-1.5 text-xs text-slate-500 border-l border-slate-200 pl-3">
+            <input type="checkbox" checked={followUpOn} onChange={e => setFollowUpOn(e.target.checked)} />
+            Follow-ups due in
+          </label>
+          {followUpOn && (
+            <input type="month" value={followUpMonth} onChange={e => setFollowUpMonth(e.target.value)}
+              className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white" />
+          )}
         </div>
         <Button size="sm" onClick={() => setFormOpen('new')}><Plus size={14} /> New Lead</Button>
       </div>
@@ -2485,6 +2502,13 @@ function ManualLeadsView({ tenants, onCreateTenant, onViewShop }: { tenants: any
                     )}
                   </div>
                   {lead.notes && <p className="mt-1.5 text-xs text-slate-500 italic line-clamp-2">{lead.notes}</p>}
+                  {lead.follow_up_date && (
+                    <p className="mt-1.5 flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 rounded-lg px-2 py-1 w-fit">
+                      <CalendarClock size={12} />
+                      Follow up {new Date(lead.follow_up_date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      {lead.follow_up_comment ? ` — ${lead.follow_up_comment}` : ''}
+                    </p>
+                  )}
                 </div>
                 <div className="flex flex-col items-end gap-2 shrink-0">
                   <select
@@ -2564,6 +2588,8 @@ function ManualLeadFormModal({ lead, broughtByOptions, onClose, onSaved }: {
     potentialSalePrice: lead?.potential_sale_price || '',
     currency: lead?.currency || 'EUR',
     notes: lead?.notes || '',
+    followUpDate: lead?.follow_up_date ? String(lead.follow_up_date).slice(0, 10) : '',
+    followUpComment: lead?.follow_up_comment || '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -2650,6 +2676,19 @@ function ManualLeadFormModal({ lead, broughtByOptions, onClose, onSaved }: {
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-400/40 focus:border-brand-400 resize-none"
             placeholder="Any relevant notes..."
           />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 items-start pt-2 border-t border-slate-100">
+          <Input label="Follow-up date" type="date" value={form.followUpDate} onChange={set('followUpDate')} />
+          <div className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-slate-700">Follow-up comment</span>
+            <input
+              value={form.followUpComment}
+              onChange={set('followUpComment')}
+              placeholder="e.g. waiting on their decision"
+              className="rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-400/40 focus:border-brand-400"
+            />
+          </div>
         </div>
 
         {lead && (

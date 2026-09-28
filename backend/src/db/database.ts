@@ -2613,6 +2613,11 @@ export async function runMigrations() {
       // instead of one flat rate. NULL for inbound messages (logged before any
       // agent call exists) and for outbound rows logged before this column existed.
       `ALTER TABLE message_log ADD COLUMN IF NOT EXISTS model TEXT`,
+      // manual_leads_followup_001 — follow-up date/comment on the sales CRM's
+      // manual leads table. Both nullable; overwriting the date is the only
+      // interaction (no history, no 'done' flag) — per spec, deliberately simple.
+      `ALTER TABLE manual_leads ADD COLUMN IF NOT EXISTS follow_up_date DATE`,
+      `ALTER TABLE manual_leads ADD COLUMN IF NOT EXISTS follow_up_comment TEXT`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));

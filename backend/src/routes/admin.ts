@@ -970,14 +970,24 @@ adminRouter.get('/manual-leads/brought-by-options', async (_req: Request, res: R
 // GET /admin/manual-leads?status=cold|contacted|...
 adminRouter.get('/manual-leads', async (req: Request, res: Response) => {
   try {
-    const { status } = req.query as { status?: string };
+    const { status, month } = req.query as { status?: string; month?: string };
     let sql = `SELECT ml.*, t.name AS tenant_name_resolved FROM manual_leads ml LEFT JOIN tenants t ON t.id = ml.tenant_id`;
+    const conditions: string[] = [];
     const params: any[] = [];
     if (status && MANUAL_LEAD_STATUSES.includes(status)) {
-      sql += ` WHERE ml.status = ?`;
+      conditions.push(`ml.status = ?`);
       params.push(status);
     }
-    sql += ` ORDER BY ml.updated_at DESC`;
+    const validMonth = typeof month === 'string' && /^\d{4}-\d{2}$/.test(month) ? month : null;
+    if (validMonth) {
+      const [y, m] = validMonth.split('-').map(Number);
+      const nextY = m === 12 ? y + 1 : y;
+      const nextM = m === 12 ? 1 : m + 1;
+      conditions.push(`ml.follow_up_date >= ? AND ml.follow_up_date < ?`);
+      params.push(`${validMonth}-01`, `${nextY}-${String(nextM).padStart(2, '0')}-01`);
+    }
+    if (conditions.length) sql += ` WHERE ${conditions.join(' AND ')}`;
+    sql += validMonth ? ` ORDER BY ml.follow_up_date ASC` : ` ORDER BY ml.updated_at DESC`;
     const leads = await dbAll(sql, ...params);
     ok(res, leads);
   } catch (e: any) {
@@ -994,6 +1004,7 @@ adminRouter.post('/manual-leads', async (req: Request, res: Response) => {
       contactPerson, contactRole, contactPhone, contactEmail,
       rating, status = 'cold', broughtBy,
       numberOfRooms, potentialSalePrice, currency = 'EUR', notes,
+      followUpDate, followUpComment,
     } = req.body as Record<string, any>;
 
     if (!tenantName || !String(tenantName).trim()) return err(res, 'tenantName is required');
@@ -1006,12 +1017,14 @@ adminRouter.post('/manual-leads', async (req: Request, res: Response) => {
       `INSERT INTO manual_leads
          (id, tenant_name, business_type, address, maps_url,
           contact_person, contact_role, contact_phone, contact_email,
-          rating, status, brought_by, number_of_rooms, potential_sale_price, currency, notes)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          rating, status, brought_by, number_of_rooms, potential_sale_price, currency, notes,
+          follow_up_date, follow_up_comment)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       id, tenantName.trim(), businessType || null, address || null, mapsUrl || null,
       contactPerson || null, contactRole || null, contactPhone || null, contactEmail || null,
       rating || null, status, broughtBy || null,
       numberOfRooms || null, potentialSalePrice || null, currency || 'EUR', notes || null,
+      followUpDate || null, followUpComment || null,
     );
 
     ok(res, await dbGet('SELECT * FROM manual_leads WHERE id = ?', id));
@@ -1033,6 +1046,7 @@ adminRouter.patch('/manual-leads/:id', async (req: Request, res: Response) => {
       contactPerson: 'contact_person', contactRole: 'contact_role', contactPhone: 'contact_phone', contactEmail: 'contact_email',
       rating: 'rating', status: 'status', broughtBy: 'brought_by',
       numberOfRooms: 'number_of_rooms', potentialSalePrice: 'potential_sale_price', currency: 'currency', notes: 'notes',
+      followUpDate: 'follow_up_date', followUpComment: 'follow_up_comment',
     };
 
     const body = req.body as Record<string, any>;

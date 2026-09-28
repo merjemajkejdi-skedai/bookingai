@@ -235,8 +235,13 @@ export const adminApi = {
       method: 'PATCH', body: JSON.stringify(data),
     }),
   // ── Manual Leads (sales pipeline tracker) ──────────────────────────────
-  getManualLeads: (status?: string) =>
-    adminFetch<any[]>(`/admin/manual-leads${status ? `?status=${encodeURIComponent(status)}` : ''}`),
+  getManualLeads: (opts?: { status?: string; month?: string }) => {
+    const p = new URLSearchParams();
+    if (opts?.status) p.set('status', opts.status);
+    if (opts?.month)  p.set('month', opts.month);
+    const qs = p.toString();
+    return adminFetch<any[]>(`/admin/manual-leads${qs ? `?${qs}` : ''}`);
+  },
   createManualLead: (data: Record<string, any>) =>
     adminFetch<any>('/admin/manual-leads', { method: 'POST', body: JSON.stringify(data) }),
   updateManualLead: (id: string, data: Record<string, any>) =>
