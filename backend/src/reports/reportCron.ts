@@ -26,6 +26,7 @@ interface ReportTenantRow {
   name: string;
   type: string;
   owner_email: string;
+  owner_report_bcc_email?: string | null;
   report_frequency?: string;
   faq_gap_recipient?: string;
 }
@@ -57,7 +58,7 @@ async function findDueTenants(today: Date): Promise<ReportTenantRow[]> {
   const dayOfMonth = today.getUTCDate();
 
   return query(
-    `SELECT id, name, type, owner_email, report_frequency, report_day_of_week, report_day_of_month, faq_gap_recipient
+    `SELECT id, name, type, owner_email, owner_report_bcc_email, report_frequency, report_day_of_week, report_day_of_month, faq_gap_recipient
      FROM tenants
      WHERE deleted_at IS NULL
        AND owner_email IS NOT NULL AND owner_email <> ''
@@ -101,7 +102,7 @@ async function sendAndLog(
     getUnansweredQuestionsForReport(tenant.id, periodStart, periodEnd),
   ]);
   const result = await sendOwnerReportEmail(
-    { id: tenant.id, name: tenant.name, owner_email: recipientEmail },
+    { id: tenant.id, name: tenant.name, owner_email: recipientEmail, owner_report_bcc_email: tenant.owner_report_bcc_email },
     stats,
     frequency,
     unansweredQuestions,

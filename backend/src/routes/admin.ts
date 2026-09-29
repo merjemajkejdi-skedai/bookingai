@@ -414,10 +414,10 @@ adminRouter.patch('/tenants/:id/report-config', async (req: Request, res: Respon
     const { id } = req.params;
     const {
       owner_name, owner_email, report_frequency,
-      report_day_of_week, report_day_of_month,
+      report_day_of_week, report_day_of_month, owner_report_bcc_email,
     } = req.body as {
       owner_name?: string | null; owner_email?: string | null; report_frequency?: string;
-      report_day_of_week?: number; report_day_of_month?: number;
+      report_day_of_week?: number; report_day_of_month?: number; owner_report_bcc_email?: string | null;
     };
 
     const VALID_FREQUENCIES = ["off","weekly","monthly"];
@@ -427,6 +427,8 @@ adminRouter.patch('/tenants/:id/report-config', async (req: Request, res: Respon
       return err(res, 'report_day_of_week must be between 1 (Monday) and 7 (Sunday)');
     if (report_day_of_month !== undefined && (report_day_of_month < 1 || report_day_of_month > 31))
       return err(res, 'report_day_of_month must be between 1 and 31');
+    if (owner_report_bcc_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(owner_report_bcc_email))
+      return err(res, 'owner_report_bcc_email is not a valid email address');
 
     const tenant = await dbGet('SELECT id FROM tenants WHERE id = ?', id) as any;
     if (!tenant) return err(res, 'Tenant not found', 404);
@@ -438,6 +440,7 @@ adminRouter.patch('/tenants/:id/report-config', async (req: Request, res: Respon
     if (report_frequency !== undefined)    { sets.push('report_frequency = ?'); params.push(report_frequency); }
     if (report_day_of_week !== undefined)  { sets.push('report_day_of_week = ?'); params.push(report_day_of_week); }
     if (report_day_of_month !== undefined) { sets.push('report_day_of_month = ?'); params.push(report_day_of_month); }
+    if (owner_report_bcc_email !== undefined) { sets.push('owner_report_bcc_email = ?'); params.push(owner_report_bcc_email || null); }
 
     if (sets.length === 0) return err(res, 'No fields to update');
 
@@ -473,7 +476,7 @@ adminRouter.post('/tenants/:id/send-report-now', async (req: Request, res: Respo
     const { id } = req.params;
     const periodDays = Number(req.body?.periodDays) || 7;
 
-    const tenant = await dbGet('SELECT id, name, type, owner_email, faq_gap_recipient FROM tenants WHERE id = ?', id) as any;
+    const tenant = await dbGet('SELECT id, name, type, owner_email, owner_report_bcc_email, faq_gap_recipient FROM tenants WHERE id = ?', id) as any;
     if (!tenant) return err(res, 'Tenant not found', 404);
     if (!tenant.owner_email) return err(res, 'Tenant has no owner_email configured');
 

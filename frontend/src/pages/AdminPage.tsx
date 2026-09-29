@@ -582,6 +582,7 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
   // Owner performance report
   const [ownerName, setOwnerName]             = useState(tenant.owner_name || '');
   const [ownerEmail, setOwnerEmail]           = useState(tenant.owner_email || '');
+  const [ownerReportBcc, setOwnerReportBcc]   = useState(tenant.owner_report_bcc_email || '');
   const [reportFrequency, setReportFrequency] = useState(tenant.report_frequency || 'off');
   const [reportDayOfWeek, setReportDayOfWeek] = useState(tenant.report_day_of_week || 1);
   const [reportDayOfMonth, setReportDayOfMonth] = useState(tenant.report_day_of_month || 1);
@@ -935,6 +936,11 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
 
   async function saveReportConfig() {
     setReportSaving(true); setReportError(''); setReportSaved(false);
+    if (ownerReportBcc && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ownerReportBcc)) {
+      setReportError('Report BCC email is not a valid email address');
+      setReportSaving(false);
+      return;
+    }
     try {
       await adminApi.updateReportConfig(tenant.id, {
         owner_name: ownerName || null,
@@ -942,6 +948,7 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
         report_frequency: reportFrequency,
         report_day_of_week: Number(reportDayOfWeek),
         report_day_of_month: Number(reportDayOfMonth),
+        owner_report_bcc_email: ownerReportBcc || null,
       });
       setReportSaved(true);
       setTimeout(() => setReportSaved(false), 3000);
@@ -1208,6 +1215,7 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
             <Input label="Owner name" value={ownerName} onChange={(e: any) => setOwnerName(e.target.value)} placeholder="Jane Doe" />
             <Input label="Owner email" type="email" value={ownerEmail} onChange={(e: any) => setOwnerEmail(e.target.value)} placeholder="owner@hotel.com" />
           </div>
+          <Input label="Report BCC email (optional)" type="email" value={ownerReportBcc} onChange={(e: any) => setOwnerReportBcc(e.target.value)} placeholder="staff@skedai.net" />
           <div className="flex items-center gap-4">
             {(['off', 'weekly', 'monthly'] as const).map(freq => (
               <label key={freq} className="flex items-center gap-1.5 text-sm text-slate-700 cursor-pointer select-none">

@@ -22,6 +22,7 @@ export interface ReportTenant {
   id:         string;
   name:       string;
   owner_email: string;
+  owner_report_bcc_email?: string | null;
 }
 
 function formatReplyTime(seconds: number | null): string {
@@ -66,6 +67,8 @@ function channelBreakdownLine(byChannel: Record<string, number>): string {
     .map(([ch, count]) => `${CHANNEL_LABELS[ch] || ch}: ${count}`)
     .join(' · ');
 }
+
+const BASIC_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -182,9 +185,14 @@ export async function sendOwnerReportEmail(
 </body>
 </html>`;
 
+    const bcc = tenant.owner_report_bcc_email && BASIC_EMAIL_RE.test(tenant.owner_report_bcc_email)
+      ? tenant.owner_report_bcc_email
+      : undefined;
+
     await getResend().emails.send({
       from:    FROM_EMAIL,
       to:      tenant.owner_email,
+      ...(bcc ? { bcc } : {}),
       subject,
       html,
     });

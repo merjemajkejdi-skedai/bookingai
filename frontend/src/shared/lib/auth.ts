@@ -275,7 +275,7 @@ export const adminApi = {
   // ── Owner performance report (opt-in, off by default) ────────────────────
   updateReportConfig: (tenantId: string, data: {
     owner_name?: string | null; owner_email?: string | null; report_frequency?: string;
-    report_day_of_week?: number; report_day_of_month?: number;
+    report_day_of_week?: number; report_day_of_month?: number; owner_report_bcc_email?: string | null;
   }) =>
     adminFetch<any>(`/admin/tenants/${tenantId}/report-config`, {
       method: 'PATCH',

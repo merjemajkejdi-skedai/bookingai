@@ -2618,6 +2618,9 @@ export async function runMigrations() {
       // interaction (no history, no 'done' flag) — per spec, deliberately simple.
       `ALTER TABLE manual_leads ADD COLUMN IF NOT EXISTS follow_up_date DATE`,
       `ALTER TABLE manual_leads ADD COLUMN IF NOT EXISTS follow_up_comment TEXT`,
+      // owner_report_bcc_001 — optional BCC recipient on the owner report email,
+      // per tenant. Additive only: unset (the default) sends exactly as before.
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS owner_report_bcc_email TEXT`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));
