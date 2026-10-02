@@ -47,7 +47,14 @@ export function buildSalesPrompt(
     tiers: Array<{ name: string; price: number; features: string[] }>;
   }> = [],
   calendlyUrl = '',
+  faq: Array<{ q: string; a: string }> = [],
 ): string {
+  const faqSection = faq.length > 0
+    ? `FREQUENTLY ASKED QUESTIONS:\nWhen the person's question matches one of these, answer from it rather than improvising:\n\n${
+        faq.map((f, i) => `Q${i + 1}: ${f.q}\nA: ${f.a}`).join('\n\n')
+      }\n\n`
+    : '';
+
   const pricingSection = industries.length > 0
     ? industries.map(ind => {
         const tiers = ind.tiers.map(t =>
@@ -108,7 +115,7 @@ WHEN SOMEONE ASKS ABOUT SETUP:
 "We set everything up for you in about an hour. You give us your WhatsApp number,
 we connect it to the system, add your services and team, and you're live."
 
-RULES:
+${faqSection}RULES:
 - Keep responses short — this is WhatsApp, not email
 - If they write in Albanian, respond in Albanian
 - Never make up features that don't exist

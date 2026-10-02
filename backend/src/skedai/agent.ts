@@ -168,7 +168,7 @@ export async function runSkedAIAgent(
       await notifySupportRequest(phone, message, healthResults, overridePhone);
 
     } else if (route === 'sales') {
-      const salesPrompt = buildSalesPrompt(config?.industries || [], config?.calendlyUrl || '');
+      const salesPrompt = buildSalesPrompt(config?.industries || [], config?.calendlyUrl || '', config?.supportFaq || []);
       reply = await runConversation(salesPrompt, history, message, model);
 
       // Notify on first message (new lead)
