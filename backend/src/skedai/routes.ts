@@ -4,6 +4,19 @@ import { requireAuth, resolveTenantId } from '../middleware/auth.js';
 
 export const skedaiRouter = Router();
 
+// The SkedAI dashboard identifies an impersonated tenant via the x-admin-tenant-id
+// header, which resolveTenantId() ignores — without this, a super_admin silently
+// reads/writes the 'tenant-demo-001' fallback. An explicit ?tenantId/body wins.
+function resolveSkedaiTenantId(req: Request): string {
+  if (req.user?.role === 'super_admin') {
+    const explicit = (typeof req.query.tenantId === 'string' && req.query.tenantId.trim())
+      || (typeof req.body?.tenantId === 'string' && req.body.tenantId.trim());
+    const header = req.headers['x-admin-tenant-id'];
+    if (!explicit && typeof header === 'string' && header.trim()) return header.trim();
+  }
+  return resolveTenantId(req);
+}
+
 const ok  = <T>(res: Response, data: T) => res.json({ success: true, data });
 const err = (res: Response, msg: string, status = 400) =>
   res.status(status).json({ success: false, error: msg });
@@ -44,7 +57,7 @@ function mapRow(row: any) {
 
 // ── GET full config ───────────────────────────────────────────────────────────
 skedaiRouter.get('/skedai/config', requireAuth, async (req: Request, res: Response) => {
-  const tenantId = resolveTenantId(req);
+  const tenantId = resolveSkedaiTenantId(req);
   try {
     await ensureRow(tenantId);
     const row = await dbGet('SELECT * FROM skedai_config WHERE tenant_id = ?', tenantId) as any;
@@ -54,7 +67,7 @@ skedaiRouter.get('/skedai/config', requireAuth, async (req: Request, res: Respon
 
 // ── PUT admin tab (forward phone + Calendly URL) ───────────────────────────────
 skedaiRouter.put('/skedai/config/admin', requireAuth, async (req: Request, res: Response) => {
-  const tenantId = resolveTenantId(req);
+  const tenantId = resolveSkedaiTenantId(req);
   const { forwardPhone = '', calendlyUrl = '' } = req.body;
   try {
     await ensureRow(tenantId);
@@ -68,7 +81,7 @@ skedaiRouter.put('/skedai/config/admin', requireAuth, async (req: Request, res: 
 
 // ── PUT support tab (FAQ + health check URLs) ─────────────────────────────────
 skedaiRouter.put('/skedai/config/support', requireAuth, async (req: Request, res: Response) => {
-  const tenantId = resolveTenantId(req);
+  const tenantId = resolveSkedaiTenantId(req);
   const { supportFaq = [], healthCheckUrls = [] } = req.body;
   try {
     await ensureRow(tenantId);
@@ -82,7 +95,7 @@ skedaiRouter.put('/skedai/config/support', requireAuth, async (req: Request, res
 
 // ── PUT sales tab (industries + tiers) ───────────────────────────────────────
 skedaiRouter.put('/skedai/config/sales', requireAuth, async (req: Request, res: Response) => {
-  const tenantId = resolveTenantId(req);
+  const tenantId = resolveSkedaiTenantId(req);
   const { industries = [] } = req.body;
   try {
     await ensureRow(tenantId);
