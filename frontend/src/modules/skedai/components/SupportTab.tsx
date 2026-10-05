@@ -5,11 +5,17 @@ import type { SkedAIConfig, FaqItem, HealthCheck } from '../types';
 
 function uid() { return Math.random().toString(36).slice(2); }
 
+// Items saved without an id (e.g. seeded through the API) would all match
+// `x.id === id` as undefined and be edited/deleted together — give each a unique id.
+function withIds<T extends { id?: string }>(items: T[]): (T & { id: string })[] {
+  return items.map(x => (x.id ? x : { ...x, id: uid() }) as T & { id: string });
+}
+
 interface Props { config: SkedAIConfig; onSaved: (c: Partial<SkedAIConfig>) => void }
 
 export function SupportTab({ config, onSaved }: Props) {
-  const [faq,    setFaq]    = useState<FaqItem[]>(() => config.supportFaq || []);
-  const [checks, setChecks] = useState<HealthCheck[]>(() => config.healthCheckUrls || []);
+  const [faq,    setFaq]    = useState<FaqItem[]>(() => withIds(config.supportFaq || []));
+  const [checks, setChecks] = useState<HealthCheck[]>(() => withIds(config.healthCheckUrls || []));
   const [saving, setSaving] = useState(false);
   const [saved,  setSaved]  = useState(false);
 
