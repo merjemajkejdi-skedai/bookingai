@@ -50,35 +50,23 @@ export function buildSalesPrompt(
   faq: Array<{ q: string; a: string }> = [],
 ): string {
   const faqSection = faq.length > 0
-    ? `FREQUENTLY ASKED QUESTIONS:\nWhen the person's question matches one of these, answer from it rather than improvising:\n\n${
+    ? `FREQUENTLY ASKED QUESTIONS (authoritative — these override everything else in this prompt):\nWhen the person's question matches one of these, answer from it and add no facts that are not in the answer:\n\n${
         faq.map((f, i) => `Q${i + 1}: ${f.q}\nA: ${f.a}`).join('\n\n')
       }\n\n`
     : '';
 
+  // Prices are only ever included when the owner configured them in the Sales tab.
+  // There is deliberately NO built-in price list: it would contradict the FAQs.
   const pricingSection = industries.length > 0
-    ? industries.map(ind => {
-        const tiers = ind.tiers.map(t =>
-          `  - ${t.name} €${t.price}/mo${t.features.length ? ` — ${t.features.join(', ')}` : ''}`
-        ).join('\n');
-        return `${ind.name}:\n${tiers}`;
-      }).join('\n\n')
-    : `Barbershops & beauty salons:
-  - Starter €39/mo — up to 200 bookings, 2 specialists
-  - Growth  €69/mo — up to 500 bookings, 5 specialists
-  - Pro     €99/mo — up to 2000 bookings, 10 specialists, analytics
-
-Art classes & events:
-  - Standard €49/mo — up to 300 bookings
-  - Pro      €89/mo — up to 800 bookings, notifications, cancellations
-
-Clinics & dentists:
-  - Starter €79/mo — up to 300 bookings, 3 specialists
-  - Pro     €99/mo — up to 800 bookings, 8 specialists, analytics
-
-Hotels & hospitality:
-  - Boutique  €89/mo  — up to 25 rooms
-  - Standard  €129/mo — up to 70 rooms
-  - Pro       €299/mo — up to 150 rooms, custom AI persona, priority support`;
+    ? `VERTICALS AND PRICING (set by the owner in Sales settings; a matching FAQ answer still takes precedence):\n${
+        industries.map(ind => {
+          const tiers = ind.tiers.map(t =>
+            `  - ${t.name} €${t.price}/mo${t.features.length ? ` — ${t.features.join(', ')}` : ''}`
+          ).join('\n');
+          return `${ind.name}:\n${tiers}`;
+        }).join('\n\n')
+      }\n\n`
+    : '';
 
   const demoLink = calendlyUrl || 'https://calendly.com/skedai-support/30min';
 
@@ -91,12 +79,7 @@ The AI handles the full conversation — checking availability, booking the slot
 No app to download. No form to fill. Just WhatsApp.
 The booking appears live in the business dashboard instantly.
 
-VERTICALS AND PRICING:
-${pricingSection}
-
-All plans include a FREE first month.
-
-KEY BENEFITS:
+${pricingSection}KEY BENEFITS:
 - Available 24/7 — never misses a booking
 - Works on WhatsApp — no new app needed
 - Live dashboard for the business owner
@@ -116,12 +99,13 @@ WHEN SOMEONE ASKS ABOUT SETUP:
 we connect it to the system, add your services and team, and you're live."
 
 ${faqSection}RULES:
+- If a FAQ above covers the question, answer from that FAQ only. Never add prices, plan limits, discounts, free trials or other commercial terms that are not written in it.
+- Never state, estimate or hint at a price, plan limit, discount or free period unless it is written in the FAQ or pricing section above. If you have none, say the team can go through it on a short call and share the demo link.
 - Keep responses short — this is WhatsApp, not email
 - If they write in Albanian, respond in Albanian
 - Never make up features that don't exist
 - Never promise custom development
 - If asked something you don't know, say "Great question — let me have our team answer that properly"
-- Always mention the free first month when discussing pricing
 - Be warm, confident, never pushy
 - Sign off as "SkedAI"`;
 }
