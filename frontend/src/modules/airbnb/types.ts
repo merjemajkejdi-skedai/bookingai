@@ -87,6 +87,7 @@ export interface AirbnbDepartment {
   tenant_id: string;
   name: string;
   notification_number: string;
+  escalation_number?: string | null;
   is_active: boolean;
   created_at: string;
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Plus, Pencil, RefreshCw, Power, Phone, ExternalLink, BarChart2, Copy, Check, Star, SmilePlus, UtensilsCrossed, Trash2, AlertTriangle, Archive, Link, Search, CalendarClock } from 'lucide-react';
+import { EscalationSettings } from '../shared/components/EscalationSettings';
 import { adminApi } from '../shared/lib/auth';
 import type { AdminTenant } from '../shared/lib/auth';
 import { Button, Modal, Input, Select, Spinner } from '../components/ui';
@@ -1207,6 +1208,9 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: any; onClose: (
             <p className="text-xs text-teal-700 font-medium">✓ Active — undelivered messages will be forwarded to <strong>{notificationEmail}</strong>.</p>
           )}
         </div>
+
+        {/* Human-in-the-loop escalation — opt-in, off by default */}
+        <EscalationSettings tenantId={tenant.id} />
 
         {/* Owner performance report — opt-in, off by default */}
         <div className="border border-slate-200 rounded-lg p-4 space-y-3">

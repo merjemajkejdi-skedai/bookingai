@@ -64,6 +64,7 @@ export interface Department {
   tenant_id: string;
   name: string;
   whatsapp: string;
+  escalation_number?: string | null;
   request_types: string[];
   is_active: boolean;
   response_time_minutes: number;

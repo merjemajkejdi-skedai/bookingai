@@ -5,6 +5,7 @@ import { sendInstagramMessage } from '../channels/instagram.js';
 import { sendMessengerMessage } from '../channels/messenger.js';
 import * as XLSX from 'xlsx';
 import { requireAuth, resolveTenantId } from '../middleware/auth.js';
+import { parseEscalationNumberInput, setDepartmentEscalationNumber } from '../escalation/config.js';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { appendStaffMessage } from '../hotel/session.js';
 import { ImapSmtpAdapter } from '../channels/email/ImapSmtpAdapter.js';
@@ -818,6 +819,8 @@ hotelRouter.post('/departments', requireAuth, async (req: Request, res: Response
   }
   const invalid = request_types.filter(t => !REQUEST_TYPES.includes(t));
   if (invalid.length) return err(res, `Invalid request types: ${invalid.join(', ')}`);
+  const escNum = parseEscalationNumberInput(req.body?.escalation_number);
+  if (!escNum.ok) return err(res, escNum.error);
 
   try {
     const id = crypto.randomUUID();
@@ -830,6 +833,7 @@ hotelRouter.post('/departments', requireAuth, async (req: Request, res: Response
       scheduling_enabled ? 1 : 0, after_hours_message || null,
       confirmation_mode === 'notify_only' ? 'notify_only' : 'with_estimate',
     );
+    if (req.body?.escalation_number !== undefined) await setDepartmentEscalationNumber('hotel', id, tenantId, escNum.value);
     const row = await dbGet('SELECT * FROM hotel_departments WHERE id = ?', id) as any;
     ok(res, { ...row, request_types: JSON.parse(row.request_types || '[]') });
   } catch (e: any) { err(res, e.message, 500); }
@@ -850,6 +854,8 @@ hotelRouter.put('/departments/:id', requireAuth, async (req: Request, res: Respo
   if (!name || !whatsapp || !Array.isArray(request_types) || !request_types.length) {
     return err(res, 'name, whatsapp, and request_types are required');
   }
+  const escNum = parseEscalationNumberInput(req.body?.escalation_number);
+  if (!escNum.ok) return err(res, escNum.error);
   try {
     await dbRun(
       `UPDATE hotel_departments
@@ -864,6 +870,7 @@ hotelRouter.put('/departments/:id', requireAuth, async (req: Request, res: Respo
       confirmation_mode === 'notify_only' ? 'notify_only' : 'with_estimate',
       req.params.id, tenantId,
     );
+    if (req.body && 'escalation_number' in req.body) await setDepartmentEscalationNumber('hotel', req.params.id, tenantId, escNum.value);
     ok(res, { updated: true });
   } catch (e: any) { err(res, e.message, 500); }
 });

@@ -105,13 +105,13 @@ export const api = {
   // Departments
   getDepartments: () => req<Department[]>('/hotel/departments'),
   createDepartment: (data: {
-    name: string; whatsapp: string; request_types: string[];
+    name: string; whatsapp: string; request_types: string[]; escalation_number?: string;
     response_time_minutes?: number; language?: string;
     scheduling_enabled?: number; after_hours_message?: string | null;
     confirmation_mode?: string;
   }) => req<Department>('/hotel/departments', { method: 'POST', body: JSON.stringify(data) }),
   updateDepartment: (id: string, data: {
-    name: string; whatsapp: string; request_types: string[];
+    name: string; whatsapp: string; request_types: string[]; escalation_number?: string;
     is_active?: boolean; response_time_minutes?: number; language?: string;
     scheduling_enabled?: number; after_hours_message?: string | null;
     confirmation_mode?: string;

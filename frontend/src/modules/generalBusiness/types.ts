@@ -25,6 +25,7 @@ export interface GbDepartment {
   id: string;
   name: string;
   whatsapp_number?: string;
+  escalation_number?: string | null;
   request_types: string[];
   response_time_minutes: number;
   is_active: boolean;

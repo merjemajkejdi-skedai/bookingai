@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import crypto from 'crypto';
 import { requireAuth, resolveTenantId } from '../middleware/auth.js';
+import { parseEscalationNumberInput, setDepartmentEscalationNumber } from '../escalation/config.js';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { sendWhatsAppMessage } from '../whatsapp/twilio.js';
 import { sendInstagramMessage } from '../channels/instagram.js';
@@ -146,6 +147,8 @@ gbRouter.post('/departments', requireAuth, async (req: Request, res: Response) =
   const tenantId = resolveTenantId(req);
   const { name, whatsapp_number, request_types, response_time_minutes } = req.body;
   if (!name) return err(res, 'name is required');
+  const escNum = parseEscalationNumberInput(req.body?.escalation_number);
+  if (!escNum.ok) return err(res, escNum.error);
   try {
     const id = crypto.randomUUID();
     const types = isPg
@@ -156,6 +159,7 @@ gbRouter.post('/departments', requireAuth, async (req: Request, res: Response) =
        VALUES (?,?,?,?,?,?)`,
       id, tenantId, name, whatsapp_number ?? null, types, response_time_minutes ?? 30,
     );
+    if (req.body?.escalation_number !== undefined) await setDepartmentEscalationNumber('general_business', id, tenantId, escNum.value);
     const row = await dbGet('SELECT * FROM gb_departments WHERE id = ?', id);
     ok(res, row);
   } catch (e: any) { err(res, e.message, 500); }
@@ -164,6 +168,8 @@ gbRouter.post('/departments', requireAuth, async (req: Request, res: Response) =
 gbRouter.put('/departments/:id', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
   const { name, whatsapp_number, request_types, response_time_minutes, is_active } = req.body;
+  const escNum = parseEscalationNumberInput(req.body?.escalation_number);
+  if (!escNum.ok) return err(res, escNum.error);
   try {
     const types = request_types !== undefined
       ? (isPg ? request_types : JSON.stringify(request_types))
@@ -178,6 +184,7 @@ gbRouter.put('/departments/:id', requireAuth, async (req: Request, res: Response
       name, whatsapp_number ?? null, types, response_time_minutes, is_active,
       req.params.id, tenantId,
     );
+    if (req.body && 'escalation_number' in req.body) await setDepartmentEscalationNumber('general_business', req.params.id, tenantId, escNum.value);
     const row = await dbGet('SELECT * FROM gb_departments WHERE id = ?', req.params.id);
     ok(res, row);
   } catch (e: any) { err(res, e.message, 500); }

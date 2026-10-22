@@ -77,7 +77,7 @@ export const airbnbApi = {
     req<{ checked_out: boolean; survey_sent: boolean; reason?: string }>('/airbnb/conversations/' + id + '/checkout', { method: 'POST' }),
 
   getDepartments: () => req<AirbnbDepartment[]>('/airbnb/departments'),
-  createDepartment: (data: { name: string; notification_number: string }) =>
+  createDepartment: (data: { name: string; notification_number: string; escalation_number?: string }) =>
     req<AirbnbDepartment>('/airbnb/departments', { method: 'POST', body: JSON.stringify(data) }),
   updateDepartment: (id: string, data: Partial<AirbnbDepartment>) =>
     req<AirbnbDepartment>('/airbnb/departments/' + id, { method: 'PUT', body: JSON.stringify(data) }),

@@ -40,6 +40,7 @@ type FormData = {
   scheduling_enabled: number;
   after_hours_message: string;
   confirmation_mode: 'with_estimate' | 'notify_only';
+  escalation_number: string;
 };
 
 type ScheduleRow = {
@@ -59,6 +60,7 @@ const EMPTY_FORM: FormData = {
   scheduling_enabled: 0,
   after_hours_message: '',
   confirmation_mode: 'with_estimate',
+  escalation_number: '',
 };
 
 const EMPTY_SCHEDULE: ScheduleRow = {
@@ -212,6 +214,15 @@ function DeptForm({
         onChange={e => setForm(f => ({ ...f, whatsapp: e.target.value }))}
         required
       />
+      <div>
+        <Input
+          label="Escalation number (optional)"
+          placeholder="+355691234567"
+          value={form.escalation_number}
+          onChange={e => setForm(f => ({ ...f, escalation_number: e.target.value }))}
+        />
+        <p className="text-xs text-slate-400 mt-1">Where "check with staff" questions for this department are sent. Leave empty to use the tenant default.</p>
+      </div>
 
       {/* Response time (shown only when scheduling is disabled — serves as the default) */}
       <div className="space-y-1">
@@ -446,6 +457,7 @@ export function DepartmentsPage() {
         scheduling_enabled: form.scheduling_enabled,
         after_hours_message: form.after_hours_message || null,
         confirmation_mode: form.confirmation_mode,
+        escalation_number: form.escalation_number.trim(),
       });
       // Save schedules using the new dept's id
       if (schedules.length > 0) {
@@ -470,6 +482,7 @@ export function DepartmentsPage() {
         scheduling_enabled: form.scheduling_enabled,
         after_hours_message: form.after_hours_message || null,
         confirmation_mode: form.confirmation_mode,
+        escalation_number: form.escalation_number.trim(),
       });
       // Always save schedules (empty array = delete all)
       await api.saveDeptSchedules(editing.id, schedules);
@@ -623,6 +636,7 @@ export function DepartmentsPage() {
               scheduling_enabled: editing.scheduling_enabled ?? 0,
               after_hours_message: editing.after_hours_message ?? '',
               confirmation_mode: editing.confirmation_mode ?? 'with_estimate',
+              escalation_number: editing.escalation_number ?? '',
             }}
             initialSchedules={editSchedules.map(s => ({
               id: s.id,

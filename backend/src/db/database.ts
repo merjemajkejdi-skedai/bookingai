@@ -2621,6 +2621,40 @@ export async function runMigrations() {
       // owner_report_bcc_001 — optional BCC recipient on the owner report email,
       // per tenant. Additive only: unset (the default) sends exactly as before.
       `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS owner_report_bcc_email TEXT`,
+      // human_escalation_001 — optional human-in-the-loop escalation, off by default.
+      // Existing tenants keep today's behavior until it is switched on per tenant.
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS human_escalation_enabled BOOLEAN NOT NULL DEFAULT false`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS human_escalation_number TEXT`,
+      `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS human_escalation_timeout_minutes INTEGER NOT NULL DEFAULT 15`,
+      `ALTER TABLE hotel_departments ADD COLUMN IF NOT EXISTS escalation_number TEXT`,
+      `ALTER TABLE gb_departments ADD COLUMN IF NOT EXISTS escalation_number TEXT`,
+      `ALTER TABLE airbnb_departments ADD COLUMN IF NOT EXISTS escalation_number TEXT`,
+      `CREATE TABLE IF NOT EXISTS staff_escalations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id TEXT NOT NULL REFERENCES tenants(id),
+  tenant_type TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  guest_question TEXT NOT NULL,
+  department_id TEXT,
+  staff_number TEXT NOT NULL,
+  alert_code TEXT NOT NULL,
+  alert_message_id TEXT,
+  status TEXT NOT NULL DEFAULT 'waiting',
+  staff_answer TEXT,
+  guest_reply TEXT,
+  faq_prompt_message_id TEXT,
+  faq_decision TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  answered_at TIMESTAMPTZ
+)`,
+      `CREATE INDEX IF NOT EXISTS idx_staff_escalations_open ON staff_escalations (status, expires_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_staff_escalations_alert_msg ON staff_escalations (alert_message_id)`,
+      // A short alert code must identify exactly one escalation while it can still be answered.
+      // timed_out rows stay answerable (late replies are relayed), so they hold their code too.
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_staff_escalations_open_code
+       ON staff_escalations (tenant_id, alert_code) WHERE status IN ('waiting', 'timed_out')`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));

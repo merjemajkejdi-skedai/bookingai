@@ -266,7 +266,7 @@ function DepartmentsTab() {
   const [departments, setDepartments] = useState<GbDepartment[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<GbDepartment | null>(null);
-  const [form, setForm] = useState({ name: '', whatsapp_number: '', request_types: '', response_time_minutes: '60' });
+  const [form, setForm] = useState({ name: '', whatsapp_number: '', escalation_number: '', request_types: '', response_time_minutes: '60' });
 
   const load = useCallback(async () => {
     try { setDepartments(await gbApi.getDepartments()); } catch {}
@@ -278,13 +278,14 @@ function DepartmentsTab() {
       const data = {
         name: form.name,
         whatsapp_number: form.whatsapp_number || undefined,
+        escalation_number: form.escalation_number.trim(),
         request_types: form.request_types.split(',').map(s => s.trim()).filter(Boolean),
         response_time_minutes: parseInt(form.response_time_minutes) || 60,
       };
       if (editing) await gbApi.updateDepartment(editing.id, data as any);
       else await gbApi.createDepartment(data as any);
       setShowForm(false); setEditing(null);
-      setForm({ name: '', whatsapp_number: '', request_types: '', response_time_minutes: '60' });
+      setForm({ name: '', whatsapp_number: '', escalation_number: '', request_types: '', response_time_minutes: '60' });
       await load();
     } catch (e: any) { alert(e.message); }
   }
@@ -297,7 +298,7 @@ function DepartmentsTab() {
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <button onClick={() => { setShowForm(true); setEditing(null); setForm({ name: '', whatsapp_number: '', request_types: '', response_time_minutes: '60' }); }}
+        <button onClick={() => { setShowForm(true); setEditing(null); setForm({ name: '', whatsapp_number: '', escalation_number: '', request_types: '', response_time_minutes: '60' }); }}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-500 text-white text-sm font-medium hover:bg-brand-600 transition-colors">
           <Plus size={14} /> Add Department
         </button>
@@ -308,6 +309,11 @@ function DepartmentsTab() {
             className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
           <input value={form.whatsapp_number} onChange={e => setForm({ ...form, whatsapp_number: e.target.value })} placeholder="WhatsApp number (optional)"
             className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
+          <div>
+            <input value={form.escalation_number} onChange={e => setForm({ ...form, escalation_number: e.target.value })} placeholder="Escalation number (optional)"
+              className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
+            <p className="text-xs text-slate-400 mt-1">Where "check with staff" questions for this department are sent. Leave empty to use the tenant default.</p>
+          </div>
           <input value={form.request_types} onChange={e => setForm({ ...form, request_types: e.target.value })} placeholder="Request types (comma-separated)"
             className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
           <input type="number" value={form.response_time_minutes} onChange={e => setForm({ ...form, response_time_minutes: e.target.value })} placeholder="Response time (minutes)"
@@ -334,7 +340,7 @@ function DepartmentsTab() {
             </div>
           </div>
           <div className="flex items-center gap-1">
-            <button onClick={() => { setEditing(d); setForm({ name: d.name, whatsapp_number: d.whatsapp_number || '', request_types: (d.request_types || []).join(', '), response_time_minutes: String(d.response_time_minutes) }); setShowForm(false); }}
+            <button onClick={() => { setEditing(d); setForm({ name: d.name, whatsapp_number: d.whatsapp_number || '', escalation_number: d.escalation_number || '', request_types: (d.request_types || []).join(', '), response_time_minutes: String(d.response_time_minutes) }); setShowForm(false); }}
               className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-50 transition-colors"><Pencil size={14} /></button>
             <button onClick={() => handleDelete(d.id)}
               className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 transition-colors"><Trash2 size={14} /></button>

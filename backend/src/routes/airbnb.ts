@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import crypto from 'crypto';
 import { requireAuth, resolveTenantId } from '../middleware/auth.js';
+import { parseEscalationNumberInput, setDepartmentEscalationNumber } from '../escalation/config.js';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { sendWhatsAppMessage } from '../whatsapp/twilio.js';
 import { sendInstagramMessage } from '../channels/instagram.js';
@@ -365,12 +366,15 @@ airbnbRouter.post('/departments', requireAuth, async (req: Request, res: Respons
   const tenantId = resolveTenantId(req);
   const { name, notification_number } = req.body;
   if (!name || !notification_number) return err(res, 'name and notification_number are required');
+  const escNum = parseEscalationNumberInput(req.body?.escalation_number);
+  if (!escNum.ok) return err(res, escNum.error);
   try {
     const id = crypto.randomUUID();
     await dbRun(
       `INSERT INTO airbnb_departments (id, tenant_id, name, notification_number) VALUES (?,?,?,?)`,
       id, tenantId, name, notification_number,
     );
+    if (req.body?.escalation_number !== undefined) await setDepartmentEscalationNumber('airbnb', id, tenantId, escNum.value);
     const row = await dbGet('SELECT * FROM airbnb_departments WHERE id = ?', id);
     ok(res, row);
   } catch (e: any) { err(res, e.message, 500); }
@@ -379,6 +383,8 @@ airbnbRouter.post('/departments', requireAuth, async (req: Request, res: Respons
 airbnbRouter.put('/departments/:id', requireAuth, async (req: Request, res: Response) => {
   const tenantId = resolveTenantId(req);
   const { name, notification_number, is_active } = req.body;
+  const escNum = parseEscalationNumberInput(req.body?.escalation_number);
+  if (!escNum.ok) return err(res, escNum.error);
   try {
     await dbRun(
       `UPDATE airbnb_departments SET
@@ -388,6 +394,7 @@ airbnbRouter.put('/departments/:id', requireAuth, async (req: Request, res: Resp
        WHERE id = ? AND tenant_id = ?`,
       name ?? null, notification_number ?? null, is_active ?? null, req.params.id, tenantId,
     );
+    if (req.body && 'escalation_number' in req.body) await setDepartmentEscalationNumber('airbnb', req.params.id, tenantId, escNum.value);
     const row = await dbGet('SELECT * FROM airbnb_departments WHERE id = ?', req.params.id);
     ok(res, row);
   } catch (e: any) { err(res, e.message, 500); }

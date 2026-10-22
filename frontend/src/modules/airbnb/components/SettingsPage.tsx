@@ -2,6 +2,7 @@ import { useState, useEffect, type ReactNode } from 'react';
 import { Copy, Check, RefreshCw } from 'lucide-react';
 import { airbnbApi } from '../api';
 import type { AirbnbListing } from '../types';
+import { EscalationSettings } from '../../../shared/components/EscalationSettings';
 
 // Tenant-wide settings — anything that isn't specific to one listing lives
 // here as another <Section>, rather than getting its own ad-hoc screen.
@@ -77,6 +78,8 @@ export function AirbnbSettingsPage() {
               : `${sharingCount} of ${listings.length} listing${listings.length !== 1 ? 's' : ''} use${sharingCount === 1 ? 's' : ''} this address.`}
           </p>
         </Section>
+
+        <EscalationSettings />
       </div>
     </div>
   );

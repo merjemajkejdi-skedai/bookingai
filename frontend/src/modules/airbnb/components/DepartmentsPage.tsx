@@ -12,7 +12,7 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
   );
 }
 
-const EMPTY_FORM = { name: '', notification_number: '' };
+const EMPTY_FORM = { name: '', notification_number: '', escalation_number: '' };
 
 export function AirbnbDepartmentsPage() {
   const [departments, setDepartments] = useState<AirbnbDepartment[]>([]);
@@ -29,7 +29,7 @@ export function AirbnbDepartmentsPage() {
   function startCreate() { setEditing(null); setForm(EMPTY_FORM); setShowForm(true); }
   function startEdit(d: AirbnbDepartment) {
     setEditing(d);
-    setForm({ name: d.name, notification_number: d.notification_number });
+    setForm({ name: d.name, notification_number: d.notification_number, escalation_number: d.escalation_number ?? '' });
     setShowForm(true);
   }
 
@@ -77,6 +77,11 @@ export function AirbnbDepartmentsPage() {
             className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
           <input value={form.notification_number} onChange={e => setForm({ ...form, notification_number: e.target.value })} placeholder="WhatsApp number, e.g. +355691234567"
             className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
+          <div>
+            <input value={form.escalation_number} onChange={e => setForm({ ...form, escalation_number: e.target.value })} placeholder="Escalation number (optional), e.g. +355691234567"
+              className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
+            <p className="text-xs text-slate-400 mt-1">Where "check with staff" questions for this department are sent. Leave empty to use the tenant default.</p>
+          </div>
           <div className="flex justify-end gap-2">
             <button onClick={() => { setShowForm(false); setEditing(null); }}
               className="px-4 py-2 rounded-lg text-sm text-slate-500 hover:bg-slate-50 transition-colors">Cancel</button>
@@ -94,6 +99,7 @@ export function AirbnbDepartmentsPage() {
             <div className="min-w-0">
               <p className="text-sm font-medium text-slate-800">{d.name}</p>
               <p className="text-xs text-slate-500">{d.notification_number}</p>
+              {d.escalation_number && <p className="text-xs text-slate-400">Escalation: {d.escalation_number}</p>}
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               <Toggle on={d.is_active} onChange={() => toggleActive(d)} />
