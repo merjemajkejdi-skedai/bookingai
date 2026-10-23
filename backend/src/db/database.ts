@@ -2660,6 +2660,10 @@ export async function runMigrations() {
        ON staff_escalations (tenant_id, conversation_id) WHERE status = 'waiting'`,
       // Set when the staff answer could not be turned into / delivered as a guest message.
       `ALTER TABLE staff_escalations ADD COLUMN IF NOT EXISTS relay_error TEXT`,
+      // The FAQ entry proposed to staff after a question was answered, and how often we re-asked YES/NO.
+      `ALTER TABLE staff_escalations ADD COLUMN IF NOT EXISTS faq_question TEXT`,
+      `ALTER TABLE staff_escalations ADD COLUMN IF NOT EXISTS faq_answer TEXT`,
+      `ALTER TABLE staff_escalations ADD COLUMN IF NOT EXISTS faq_reask_count INTEGER NOT NULL DEFAULT 0`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));

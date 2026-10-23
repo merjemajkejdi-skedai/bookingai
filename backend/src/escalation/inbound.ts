@@ -11,6 +11,8 @@ import { sendWhatsAppMessage } from '../whatsapp/twilio.js';
 import { normalizeEscalationNumber, listEscalationNumbers } from './config.js';
 import { relayAnswerToGuest } from './relayReal.js';
 import type { RelayOutcome } from './relay.js';
+import { parseDecision, FAQ_WHICH_MESSAGE, type FaqPromptRow } from './faq.js';
+import { sendFaqPrompt, decideFaq, findFaqPromptByQuote, listPendingFaq } from './faqReal.js';
 
 export interface EscalationRow {
   id: string;
@@ -38,6 +40,13 @@ export interface InboundDeps {
   isExistingStaffNumber(tenant: any, e164: string): Promise<boolean>;
   /** Turns the recorded answer into a guest message and sends it. Never throws. */
   relay(escalationId: string): Promise<RelayOutcome>;
+  /** Sends the "save as FAQ?" prompt. true = sent (it also confirms delivery to the guest). Never throws. */
+  sendFaqPrompt(escalationId: string): Promise<boolean>;
+  findFaqPromptByQuote(tenantId: string, staffNumber: string, quotedId: string): Promise<FaqPromptRow | null>;
+  /** FAQ prompts still waiting for YES/NO for this number (last 24h), newest first. */
+  listPendingFaq(tenantId: string, staffNumber: string): Promise<FaqPromptRow[]>;
+  /** Applies a YES/NO. Returns the text to send back to the staff member, or null to stay silent. */
+  decideFaq(row: FaqPromptRow, text: string): Promise<string | null>;
   send(tenant: any, toE164: string, text: string): Promise<void>;
 }
 
@@ -94,10 +103,32 @@ export function createStaffInterceptor(deps: InboundDeps) {
       const text = (input.text ?? '').trim();
 
       let row: EscalationRow | null = null;
-      if (input.quotedMessageId) row = await deps.findByQuotedId(tenant.id, sender, input.quotedMessageId);
-      if (!row) {
+      let faqRow: FaqPromptRow | null = null;
+      if (input.quotedMessageId) {
+        row = await deps.findByQuotedId(tenant.id, sender, input.quotedMessageId);
+        if (!row) faqRow = await deps.findFaqPromptByQuote(tenant.id, sender, input.quotedMessageId);
+      }
+      if (!row && !faqRow) {
         const code = extractRefCode(text);
         if (code) row = await deps.findByCode(tenant.id, sender, code);
+      }
+
+      // No quote and no Ref: a reply can still answer the one "save as FAQ?" prompt waiting for this number.
+      if (!row && !faqRow) {
+        const pending = await deps.listPendingFaq(tenant.id, sender);
+        if (pending.length === 1) {
+          // Unclear text from a number with its own staff flow (hotel "205 done", shop commands) is not for us.
+          if (parseDecision(text) || !(await deps.isExistingStaffNumber(tenant, sender))) faqRow = pending[0];
+        } else if (pending.length > 1 && parseDecision(text)) {
+          await say(tenant, sender, FAQ_WHICH_MESSAGE);
+          return true;
+        }
+      }
+
+      if (faqRow) {
+        const reply = await deps.decideFaq(faqRow, text);
+        if (reply) await say(tenant, sender, reply);
+        return true;
       }
 
       if (!row) {
@@ -125,8 +156,10 @@ export function createStaffInterceptor(deps: InboundDeps) {
       }
       const outcome = await deps.relay(row.id);
       if (!outcome.ok) await say(tenant, sender, RELAY_FAILED_MESSAGE);
-      else if (row.kind === 'request') await say(tenant, sender, RELAYED_MESSAGE);
-      // kind 'question' + delivered: stage 5 follows up with the save-as-FAQ prompt.
+      else if (row.kind === 'question') {
+        // The FAQ prompt doubles as the delivery confirmation; if it can't be offered, confirm plainly.
+        if (!(await deps.sendFaqPrompt(row.id))) await say(tenant, sender, RELAYED_MESSAGE);
+      } else await say(tenant, sender, RELAYED_MESSAGE);
       return true;
     } catch (e: any) {
       console.error('[Escalation] inbound interception failed — falling back to normal handling:', e.message);
@@ -196,6 +229,10 @@ const realDeps: InboundDeps = {
   },
 
   relay: relayAnswerToGuest,
+  sendFaqPrompt,
+  findFaqPromptByQuote,
+  listPendingFaq,
+  decideFaq,
 
   async send(tenant, toE164Number, text) {
     await sendWhatsAppMessage(toE164Number, text, tenant);
