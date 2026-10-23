@@ -35,6 +35,28 @@ export function withoutConciergeQuestion(tools: Anthropic.Tool[]): Anthropic.Too
   });
 }
 
+// The base hotel prompt's CASE 2 (unanswered question) tells the model to say "let me check with our team", ask for a
+// room number and name, and file a concierge_question request. Appending the escalation rules after it left two
+// contradictory instructions: measured with the real model, only 4 of 12 unanswerable questions escalated. Replacing CASE 2
+// while escalation is active makes it 12 of 12.
+const CASE2_START = '  CASE 2 — UNANSWERED QUESTION';
+const CASE2_END = '═══════════════════════════════════════════════\nQUICK LINKS';
+const CASE2_ESCALATION = `  CASE 2 — UNANSWERED QUESTION (human check is ON for this hotel)
+  (guest asked something requiring specific hotel policy you genuinely don't know)
+
+  → Call escalate_to_staff with kind "question" and a clear standalone summary of what the guest asked. This REPLACES creating a request for it: do NOT call create_request for an unanswered question.
+  → Then tell the guest, in their language, that you need a moment to check this with your colleagues. Do NOT ask for their room number or name for this, and never say a request was created.
+
+`;
+
+/** Swaps the base prompt's CASE 2 for the escalation version. Unchanged if CASE 2 can't be found. */
+export function withEscalationCase2(prompt: string): string {
+  const start = prompt.indexOf(CASE2_START);
+  const end = prompt.indexOf(CASE2_END);
+  if (start < 0 || end <= start) return prompt;
+  return prompt.slice(0, start) + CASE2_ESCALATION + prompt.slice(end);
+}
+
 export async function executeHotelEscalation(
   input: Record<string, unknown>,
   tenantId: string,

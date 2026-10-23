@@ -7,7 +7,7 @@ import { alertError } from '../utils/errorMonitor.js';
 import { RaceState, sendLateFollowUp } from '../whatsapp/raceState.js';
 import { getModelForTenant } from '../utils/modelForTenant.js';
 import { getEscalationState, escalateToStaffTool, ESCALATION_PROMPT_ACTIVE, escalationPromptPending } from '../escalation/alert.js';
-import { hotelConversationId, withoutConciergeQuestion } from './escalation.js';
+import { hotelConversationId, withoutConciergeQuestion, withEscalationCase2 } from './escalation.js';
 
 async function dbGet(sql: string, ...p: unknown[]) {
   return isPg ? queryOne(sql, p) : prepare(sql).get(...p);
@@ -359,7 +359,7 @@ export async function runHotelAgent(
     if (esc?.openQuestion) {
       systemPrompt += escalationPromptPending(esc.openQuestion);
     } else if (esc) {
-      systemPrompt += ESCALATION_PROMPT_ACTIVE;
+      systemPrompt = withEscalationCase2(systemPrompt) + ESCALATION_PROMPT_ACTIVE;
       activeTools = [...withoutConciergeQuestion(activeTools), escalateToStaffTool];
     }
   }
