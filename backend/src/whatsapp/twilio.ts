@@ -66,7 +66,7 @@ async function sendViaTwilio(
   message: string,
   fromNumber: string,
   tenant?: any,
-): Promise<void> {
+): Promise<string | null> {
   const accountSid = tenant?.twilio_account_sid || process.env.TWILIO_ACCOUNT_SID;
   const authToken  = tenant?.twilio_auth_token  || process.env.TWILIO_AUTH_TOKEN;
 
@@ -74,12 +74,13 @@ async function sendViaTwilio(
   const toNum   = to.startsWith('whatsapp:')        ? to         : `whatsapp:${to}`;
   const fromNum = fromNumber.startsWith('whatsapp:') ? fromNumber : `whatsapp:${fromNumber}`;
 
-  await client.messages.create({ body: message, from: fromNum, to: toNum });
+  const sent = await client.messages.create({ body: message, from: fromNum, to: toNum });
+  return sent?.sid ?? null;
 }
 
 // ── Send via Meta Cloud API ───────────────────────────────────────────────────
 
-async function sendViaMeta(to: string, message: string, tenant: any): Promise<void> {
+async function sendViaMeta(to: string, message: string, tenant: any): Promise<string | null> {
   // Meta API expects the phone without +, spaces, or whatsapp: prefix
   const phone = to.replace('whatsapp:', '').replace('+', '').replace(/\s/g, '');
 
@@ -106,6 +107,8 @@ async function sendViaMeta(to: string, message: string, tenant: any): Promise<vo
     console.error('[Meta send error]', JSON.stringify(err));
     throw new Error(`Meta API error: ${(err as any)?.error?.message ?? res.status}`);
   }
+  const data = await res.json().catch(() => null) as any;
+  return data?.messages?.[0]?.id ?? null;
 }
 
 // ── Send media (PDF/image) via WhatsApp ──────────────────────────────────────
@@ -175,7 +178,7 @@ export async function sendWhatsAppMessage(
   to: string,
   message: string,
   tenantOrFromNumber?: any,
-): Promise<void> {
+): Promise<string | null> {
   try {
     if (typeof tenantOrFromNumber === 'string' || tenantOrFromNumber === undefined) {
       // Legacy / simple call — Twilio with global credentials
@@ -183,8 +186,7 @@ export async function sendWhatsAppMessage(
         typeof tenantOrFromNumber === 'string'
           ? tenantOrFromNumber
           : (process.env.TWILIO_WHATSAPP_FROM ?? 'whatsapp:+14155238886');
-      await sendViaTwilio(to, message, fromNumber);
-      return;
+      return await sendViaTwilio(to, message, fromNumber);
     }
 
     // Tenant object — route by provider
@@ -199,16 +201,18 @@ export async function sendWhatsAppMessage(
       throw new Error(`WhatsApp not connected for tenant ${tenant?.id ?? 'unknown'}`);
     }
     if (tenant?.provider === 'meta') {
-      await sendViaMeta(to, message, tenant);
+      const messageId = await sendViaMeta(to, message, tenant);
       if (tenant?.id) { logMessage(tenant.id, 'outbound', 'meta'); logWhatsAppSend(tenant.id, 'meta', true); }
+      return messageId;
     } else {
       // Twilio — use tenant's WhatsApp number; tenant credentials if set
       const fromNumber =
         tenant?.whatsapp_number ||
         process.env.TWILIO_WHATSAPP_FROM ||
         'whatsapp:+14155238886';
-      await sendViaTwilio(to, message, fromNumber, tenant);
+      const messageId = await sendViaTwilio(to, message, fromNumber, tenant);
       if (tenant?.id) { logMessage(tenant.id, 'outbound', 'twilio'); logWhatsAppSend(tenant.id, 'twilio', true); }
+      return messageId;
     }
   } catch (err: any) {
     const tenant = typeof tenantOrFromNumber === 'object' ? tenantOrFromNumber : undefined;

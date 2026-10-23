@@ -2655,6 +2655,9 @@ export async function runMigrations() {
       // timed_out rows stay answerable (late replies are relayed), so they hold their code too.
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_staff_escalations_open_code
        ON staff_escalations (tenant_id, alert_code) WHERE status IN ('waiting', 'timed_out')`,
+      // At most one escalation waiting per conversation (the second unanswerable thing takes the old request path).
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_staff_escalations_one_open
+       ON staff_escalations (tenant_id, conversation_id) WHERE status = 'waiting'`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));

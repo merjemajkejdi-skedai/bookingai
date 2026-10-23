@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { getDepartmentSchedule, type ScheduleWindow, type AfterHours } from './scheduleHelper.js';
 import { logUnansweredQuestion } from '../faqGap/logUnansweredQuestion.js';
+import { executeHotelEscalation } from './escalation.js';
 
 const anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY });
 
@@ -161,6 +162,9 @@ export async function executeHotelTool(
   guestPhone: string,
 ): Promise<unknown> {
   switch (name) {
+
+    case 'escalate_to_staff':
+      return executeHotelEscalation(input, tenantId, guestPhone);
 
     case 'log_unanswered_question': {
       const { guest_question, topic_hint } = input as { guest_question: string; topic_hint: string };

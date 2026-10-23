@@ -6,6 +6,8 @@ import { getHotelHistory, saveHotelConversation, saveGuestMessage } from './sess
 import { alertError } from '../utils/errorMonitor.js';
 import { RaceState, sendLateFollowUp } from '../whatsapp/raceState.js';
 import { getModelForTenant } from '../utils/modelForTenant.js';
+import { getEscalationState, escalateToStaffTool, ESCALATION_PROMPT_ACTIVE, escalationPromptPending } from '../escalation/alert.js';
+import { hotelConversationId, withoutConciergeQuestion } from './escalation.js';
 
 async function dbGet(sql: string, ...p: unknown[]) {
   return isPg ? queryOne(sql, p) : prepare(sql).get(...p);
@@ -341,14 +343,26 @@ export async function runHotelAgent(
     : 0;
   const isFreshStart = gapMinutes >= 300;
 
-  const systemPrompt = buildHotelSystemPrompt(tenantRow, hotelConfig, isFreshStart);
+  let systemPrompt = buildHotelSystemPrompt(tenantRow, hotelConfig, isFreshStart);
   const model = await getModelForTenant(tenantId);
 
   // When message_forward is OFF, the agent only reads FAQ/config — never creates requests
   const messageForward = (hotelConfig as any)?.message_forward !== 0;
-  const activeTools    = messageForward
+  let activeTools      = messageForward
     ? hotelTools
     : hotelTools.filter(t => t.name !== 'create_request');
+
+  // Human escalation (off by default; null = not in play, nothing below changes). Only offered when the
+  // hotel lets the agent create requests at all, since escalation replaces that path for unanswerable things.
+  if (messageForward) {
+    const esc = await getEscalationState(tenantId, () => hotelConversationId(tenantId, customerPhone));
+    if (esc?.openQuestion) {
+      systemPrompt += escalationPromptPending(esc.openQuestion);
+    } else if (esc) {
+      systemPrompt += ESCALATION_PROMPT_ACTIVE;
+      activeTools = [...withoutConciergeQuestion(activeTools), escalateToStaffTool];
+    }
+  }
 
   // ── Claude tool-use loop ──────────────────────────────────────────────────
   try {
