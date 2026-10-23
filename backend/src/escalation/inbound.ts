@@ -9,6 +9,8 @@
 import { isPg, prepare, query, queryOne } from '../db/database.js';
 import { sendWhatsAppMessage } from '../whatsapp/twilio.js';
 import { normalizeEscalationNumber, listEscalationNumbers } from './config.js';
+import { relayAnswerToGuest } from './relayReal.js';
+import type { RelayOutcome } from './relay.js';
 
 export interface EscalationRow {
   id: string;
@@ -16,6 +18,7 @@ export interface EscalationRow {
   status: string;
   staff_number: string;
   alert_code: string;
+  kind: string;
 }
 
 export interface StaffInboundInput {
@@ -33,11 +36,15 @@ export interface InboundDeps {
   /** Atomically waiting|timed_out -> answered. False if another request got there first. */
   recordAnswer(id: string, answer: string): Promise<boolean>;
   isExistingStaffNumber(tenant: any, e164: string): Promise<boolean>;
+  /** Turns the recorded answer into a guest message and sends it. Never throws. */
+  relay(escalationId: string): Promise<RelayOutcome>;
   send(tenant: any, toE164: string, text: string): Promise<void>;
 }
 
 export const HINT_MESSAGE = 'Please reply directly to the alert message so I know which guest this is for.';
 export const ALREADY_HANDLED_MESSAGE = 'This one has already been handled — thank you.';
+export const RELAY_FAILED_MESSAGE = "I couldn't pass your answer on to the guest automatically — please contact them directly.";
+export const RELAYED_MESSAGE = 'Sent to the guest.';
 
 /** "355697990681" (Meta) / "whatsapp:+355…" (Twilio) / "+355…" -> "+355…" or null. */
 export function toE164(raw: string): string | null {
@@ -116,7 +123,10 @@ export function createStaffInterceptor(deps: InboundDeps) {
         await say(tenant, sender, ALREADY_HANDLED_MESSAGE);
         return true;
       }
-      // Stage 4 continues from here: turn the answer into a guest message and relay it.
+      const outcome = await deps.relay(row.id);
+      if (!outcome.ok) await say(tenant, sender, RELAY_FAILED_MESSAGE);
+      else if (row.kind === 'request') await say(tenant, sender, RELAYED_MESSAGE);
+      // kind 'question' + delivered: stage 5 follows up with the save-as-FAQ prompt.
       return true;
     } catch (e: any) {
       console.error('[Escalation] inbound interception failed — falling back to normal handling:', e.message);
@@ -139,7 +149,7 @@ const realDeps: InboundDeps = {
 
   async findByQuotedId(tenantId, staffNumber, quotedId) {
     return (await dbGet(
-      `SELECT id, tenant_id, status, staff_number, alert_code FROM staff_escalations
+      `SELECT id, tenant_id, status, staff_number, alert_code, kind FROM staff_escalations
        WHERE tenant_id = ? AND alert_message_id = ? AND staff_number = ? LIMIT 1`,
       tenantId, quotedId, staffNumber,
     )) as unknown as EscalationRow | null ?? null;
@@ -147,7 +157,7 @@ const realDeps: InboundDeps = {
 
   async findByCode(tenantId, staffNumber, code) {
     return (await dbGet(
-      `SELECT id, tenant_id, status, staff_number, alert_code FROM staff_escalations
+      `SELECT id, tenant_id, status, staff_number, alert_code, kind FROM staff_escalations
        WHERE tenant_id = ? AND alert_code = ? AND staff_number = ? AND status IN ('waiting', 'timed_out')
        ORDER BY created_at DESC LIMIT 1`,
       tenantId, code, staffNumber,
@@ -184,6 +194,8 @@ const realDeps: InboundDeps = {
     }
     return false;
   },
+
+  relay: relayAnswerToGuest,
 
   async send(tenant, toE164Number, text) {
     await sendWhatsAppMessage(toE164Number, text, tenant);

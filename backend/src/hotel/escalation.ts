@@ -10,8 +10,8 @@ async function rows(sql: string, params: unknown[]): Promise<any[]> {
 
 export async function hotelConversationId(tenantId: string, guestPhone: string): Promise<string | null> {
   const r = await rows(
-    `SELECT id FROM hotel_conversations WHERE tenant_id = ? AND guest_phone = ? LIMIT 1`,
-    [tenantId, guestPhone],
+    `SELECT id FROM hotel_conversations WHERE tenant_id = ? AND (guest_phone = ? OR channel_user_id = ?) LIMIT 1`,
+    [tenantId, guestPhone, guestPhone],
   );
   return r[0]?.id ? String(r[0].id) : null;
 }

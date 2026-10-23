@@ -1,6 +1,7 @@
 // Run: npx tsx src/escalation/inbound.test.ts
 import {
   createStaffInterceptor, extractRefCode, toE164, HINT_MESSAGE, ALREADY_HANDLED_MESSAGE,
+  RELAY_FAILED_MESSAGE, RELAYED_MESSAGE,
   type InboundDeps, type EscalationRow,
 } from './inbound.js';
 
@@ -16,18 +17,20 @@ const ON = { id: 't1', type: 'airbnb', human_escalation_enabled: true, human_esc
 function harness(over: Partial<InboundDeps> = {}, rowsByQuote: Record<string, EscalationRow> = {}, rowsByCode: Record<string, EscalationRow> = {}) {
   const sent: string[] = [];
   const recorded: { id: string; answer: string }[] = [];
+  const relayed: string[] = [];
   const deps: InboundDeps = {
     listNumbers: async () => [STAFF],
     findByQuotedId: async (_t, _s, q) => rowsByQuote[q] ?? null,
     findByCode: async (_t, _s, c) => rowsByCode[c] ?? null,
     recordAnswer: async (id, answer) => { recorded.push({ id, answer }); return true; },
     isExistingStaffNumber: async () => false,
+    relay: async id => { relayed.push(id); return { ok: true, guestReply: 'ok' }; },
     send: async (_t, _to, text) => { sent.push(text); },
     ...over,
   };
-  return { run: createStaffInterceptor(deps), sent, recorded };
+  return { run: createStaffInterceptor(deps), sent, recorded, relayed };
 }
-const row = (status: string): EscalationRow => ({ id: 'e1', tenant_id: 't1', status, staff_number: STAFF, alert_code: 'A12' });
+const row = (status: string, kind = 'question'): EscalationRow => ({ id: 'e1', tenant_id: 't1', status, staff_number: STAFF, alert_code: 'A12', kind });
 
 (async () => {
   // helpers
@@ -96,6 +99,36 @@ const row = (status: string): EscalationRow => ({ id: 'e1', tenant_id: 't1', sta
     const a = await h.run({ tenant: ON, from: STAFF, text: 'yes', quotedMessageId: 'q', messageId: 'dup-1' });
     const b = await h.run({ tenant: ON, from: STAFF, text: 'yes', quotedMessageId: 'q', messageId: 'dup-1' });
     check('webhook retry deduped (recorded once, no extra message)', a && b && h.recorded.length === 1 && h.sent.length === 0, h); }
+
+  { const h = harness({}, { q: row('waiting') });
+    await h.run({ tenant: ON, from: STAFF, text: 'yes', quotedMessageId: 'q' });
+    check('answer is relayed to the guest exactly once', h.relayed.length === 1 && h.relayed[0] === 'e1', h); }
+
+  { const h = harness({}, { q: row('timed_out') });
+    await h.run({ tenant: ON, from: STAFF, text: 'late but yes', quotedMessageId: 'q' });
+    check('late answer to a timed_out escalation is relayed too', h.relayed.length === 1, h); }
+
+  for (const s of ['answered', 'cancelled', 'failed']) {
+    const h = harness({}, { q: row(s) });
+    await h.run({ tenant: ON, from: STAFF, text: 'again', quotedMessageId: 'q' });
+    check(`nothing is relayed for a ${s} escalation`, h.relayed.length === 0, h);
+  }
+
+  { const h = harness({ recordAnswer: async () => false }, { q: row('waiting') });
+    await h.run({ tenant: ON, from: STAFF, text: 'yes', quotedMessageId: 'q' });
+    check('lost race -> not relayed', h.relayed.length === 0, h); }
+
+  { const h = harness({ relay: async () => ({ ok: false, error: 'delivery_failed: x' }) }, { q: row('waiting') });
+    const r = await h.run({ tenant: ON, from: STAFF, text: 'yes', quotedMessageId: 'q' });
+    check('relay failure -> staff is told to contact the guest, still a staff message', r === true && h.sent[0] === RELAY_FAILED_MESSAGE, h); }
+
+  { const h = harness({}, { q: row('waiting', 'request') });
+    await h.run({ tenant: ON, from: STAFF, text: 'towels on the way', quotedMessageId: 'q' });
+    check('request kind + delivered -> short confirmation to staff', h.sent[0] === RELAYED_MESSAGE && h.sent.length === 1, h); }
+
+  { const h = harness({}, { q: row('waiting', 'question') });
+    await h.run({ tenant: ON, from: STAFF, text: 'yes', quotedMessageId: 'q' });
+    check('question kind + delivered -> no extra message yet (FAQ prompt is stage 5)', h.sent.length === 0, h); }
 
   console.log(failures === 0 ? '\nALL PASSED' : `\n${failures} FAILED`);
   process.exit(failures === 0 ? 0 : 1);

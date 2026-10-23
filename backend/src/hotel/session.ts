@@ -222,6 +222,43 @@ export async function appendStaffMessage(
 }
 
 // ---------------------------------------------------------------------------
+// appendAssistantMessage — add a message the assistant sent outside a normal agent turn
+// (e.g. a staff answer relayed after an escalation). Unlike saveHotelConversation, which
+// overwrites the DB from the in-memory copy, this reads the DB first so nothing is lost,
+// then refreshes (or, for email, drops) the in-memory session so the next turn sees it.
+// ---------------------------------------------------------------------------
+export async function appendAssistantMessage(opts: {
+  tenantId: string;
+  conversationId: string;
+  sessionPhone: string;          // key the agent uses for its in-memory session
+  content: string;
+  extra?: Record<string, unknown>;
+  keepInMemory?: boolean;
+}): Promise<void> {
+  const { tenantId, conversationId, sessionPhone, content, extra, keepInMemory = true } = opts;
+  const key = `${tenantId}:${sessionPhone}`;
+  const limit = keepInMemory ? MAX_MESSAGES : 200;   // email conversations keep a longer history
+  const msg = { role: 'assistant', content, ts: new Date().toISOString(), ...(extra ?? {}) } as HotelMessage;
+
+  const row = await dbGet(
+    'SELECT messages FROM hotel_conversations WHERE id = ? AND tenant_id = ?',
+    conversationId, tenantId,
+  ) as any;
+  if (!row) throw new Error('conversation not found');
+
+  const updated: HotelMessage[] = [...parseMessages(row.messages), msg].slice(-limit);
+  await dbRun(
+    `UPDATE hotel_conversations
+     SET messages = ?, last_message = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+     WHERE id = ? AND tenant_id = ?`,
+    JSON.stringify(updated), conversationId, tenantId,
+  );
+
+  if (keepInMemory) sessions.set(key, { messages: updated.slice(-MAX_MESSAGES), lastActivity: new Date() });
+  else sessions.delete(key);
+}
+
+// ---------------------------------------------------------------------------
 // Periodic cleanup of expired in-memory sessions
 // ---------------------------------------------------------------------------
 setInterval(() => {
