@@ -2664,6 +2664,10 @@ export async function runMigrations() {
       `ALTER TABLE staff_escalations ADD COLUMN IF NOT EXISTS faq_question TEXT`,
       `ALTER TABLE staff_escalations ADD COLUMN IF NOT EXISTS faq_answer TEXT`,
       `ALTER TABLE staff_escalations ADD COLUMN IF NOT EXISTS faq_reask_count INTEGER NOT NULL DEFAULT 0`,
+      // Alert delivery (Twilio reports rejections after the send) and fallback problems — read by the health page.
+      `ALTER TABLE staff_escalations ADD COLUMN IF NOT EXISTS alert_delivery TEXT`,
+      `ALTER TABLE staff_escalations ADD COLUMN IF NOT EXISTS alert_error TEXT`,
+      `ALTER TABLE staff_escalations ADD COLUMN IF NOT EXISTS fallback_error TEXT`,
     ];
     for (const sql of pgAlters) {
       await pool.query(sql).catch((e: any) => console.warn('PG alter skipped:', e.message));

@@ -20,42 +20,48 @@ function parseMessages(raw: unknown): any[] {
   try { return JSON.parse(String(raw || '[]')); } catch { return []; }
 }
 
+/**
+ * Loads an escalation together with its guest conversation and tenant.
+ * requireAnswer: the relay needs the staff answer; the timeout fallback has none (staff never replied).
+ */
+export async function loadContext(escalationId: string, requireAnswer: boolean): Promise<RelayContext | null> {
+  const [esc] = await rows(
+    `SELECT id, tenant_id, tenant_type, conversation_id, kind, guest_question, staff_answer
+     FROM staff_escalations WHERE id = ?`,
+    [escalationId],
+  );
+  if (!esc || (requireAnswer && !esc.staff_answer)) return null;
+
+  const table = getConversationsTable(esc.tenant_type);
+  const [conv] = await rows(`SELECT * FROM ${table} WHERE id = ? AND tenant_id = ?`, [esc.conversation_id, esc.tenant_id]);
+  const [tenant] = await rows(`SELECT * FROM tenants WHERE id = ?`, [esc.tenant_id]);
+  if (!conv || !tenant) return null;
+
+  const recent: RelayMessage[] = parseMessages(conv.messages)
+    .filter(m => (m?.role === 'user' || m?.role === 'assistant') && typeof m.content === 'string' && m.content.trim())
+    .slice(-6)
+    .map(m => ({ role: m.role, content: m.content }));
+
+  return {
+    escalation: {
+      id: String(esc.id), tenant_id: esc.tenant_id, tenant_type: esc.tenant_type,
+      conversation_id: esc.conversation_id, kind: esc.kind,
+      guest_question: esc.guest_question, staff_answer: esc.staff_answer ?? '',
+    },
+    tenant,
+    conversation: {
+      id: String(conv.id),
+      guestId: conv.guest_phone,
+      channel: conv.channel || 'whatsapp',
+      channelUserId: conv.channel_user_id ?? null,
+      guestName: conv.guest_name ?? null,
+      recent,
+    },
+  };
+}
+
 const realDeps: RelayDeps = {
-  async load(escalationId): Promise<RelayContext | null> {
-    const [esc] = await rows(
-      `SELECT id, tenant_id, tenant_type, conversation_id, kind, guest_question, staff_answer
-       FROM staff_escalations WHERE id = ?`,
-      [escalationId],
-    );
-    if (!esc?.staff_answer) return null;
-
-    const table = getConversationsTable(esc.tenant_type);
-    const [conv] = await rows(`SELECT * FROM ${table} WHERE id = ? AND tenant_id = ?`, [esc.conversation_id, esc.tenant_id]);
-    const [tenant] = await rows(`SELECT * FROM tenants WHERE id = ?`, [esc.tenant_id]);
-    if (!conv || !tenant) return null;
-
-    const recent: RelayMessage[] = parseMessages(conv.messages)
-      .filter(m => (m?.role === 'user' || m?.role === 'assistant') && typeof m.content === 'string' && m.content.trim())
-      .slice(-6)
-      .map(m => ({ role: m.role, content: m.content }));
-
-    return {
-      escalation: {
-        id: String(esc.id), tenant_id: esc.tenant_id, tenant_type: esc.tenant_type,
-        conversation_id: esc.conversation_id, kind: esc.kind,
-        guest_question: esc.guest_question, staff_answer: esc.staff_answer,
-      },
-      tenant,
-      conversation: {
-        id: String(conv.id),
-        guestId: conv.guest_phone,
-        channel: conv.channel || 'whatsapp',
-        channelUserId: conv.channel_user_id ?? null,
-        guestName: conv.guest_name ?? null,
-        recent,
-      },
-    };
-  },
+  load: id => loadContext(id, true),
 
   async compose(i: ComposeInput): Promise<string | null> {
     const response = await client.messages.create({

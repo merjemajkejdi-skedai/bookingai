@@ -79,7 +79,6 @@ export async function executeHotelEscalation(
        WHERE tenant_id = ? AND (guest_phone = ? OR guest_phone = ?) AND status = 'checked_in' LIMIT 1`,
       [tenantId, guestPhone, plus],
     );
-    const [conv] = await rows(`SELECT room_number FROM hotel_conversations WHERE id = ?`, [conversationId]);
 
     let dept: any = null;
     if (typeof input.department === 'string' && input.department.trim()) {
@@ -93,7 +92,7 @@ export async function executeHotelEscalation(
     const [cfg] = await rows(`SELECT hotel_name FROM hotel_config WHERE tenant_id = ?`, [tenantId]);
     const [tenant] = await rows(`SELECT name FROM tenants WHERE id = ?`, [tenantId]);
 
-    const room = stay?.room_number || (typeof input.room_number === 'string' ? input.room_number.trim() : '') || conv?.room_number || null;
+    const room = stay?.room_number || (typeof input.room_number === 'string' ? input.room_number.trim() : '') || null;
     const guestName = stay?.guest_name || (typeof input.guest_name === 'string' ? input.guest_name.trim() : '') || null;
 
     const result = await escalateToStaff({

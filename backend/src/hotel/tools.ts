@@ -160,6 +160,9 @@ export async function executeHotelTool(
   input: Record<string, unknown>,
   tenantId: string,
   guestPhone: string,
+  // Internal only (never set from the model's tool input): the escalation timeout fallback may file a request
+  // for a guest whose room number is unknown. Normal chats still have to collect one.
+  opts?: { allowMissingRoom?: boolean },
 ): Promise<unknown> {
   switch (name) {
 
@@ -491,7 +494,7 @@ Text to translate: ${description}`,
       }
 
       // ── GUARD: room number required to log a request ─────────────────────────
-      if (!finalRoom) {
+      if (!finalRoom && !opts?.allowMissingRoom) {
         return {
           success:          false,
           need_room_number: true,
