@@ -7,6 +7,7 @@ import { sendWhatsAppMessage } from './twilio.js';
 import { downloadMetaMedia } from './meta.js';
 import { uploadToR2 } from '../utils/r2.js';
 import { logMessage } from './messageLog.js';
+import { interceptStaffMessage } from '../escalation/inbound.js';
 import { runHotelAgent } from '../hotel/agent.js';
 import { runShopAgent } from '../shop/agent.js';
 import { runSkedAIAgent } from '../skedai/agent.js';
@@ -181,6 +182,12 @@ metaRouter.post('/meta/webhook', async (req: Request, res: Response) => {
           }
 
           logMessage(tenant.id, 'inbound', 'meta');
+
+          // Human escalation: a staff member answering an alert is never a guest (no-op unless the tenant enabled it).
+          if (await interceptStaffMessage({
+            tenant, from: customerPhone, text: messageText,
+            quotedMessageId: message.context?.id, messageId: message.id,
+          })) continue;
 
           const tenantType  = (tenant.type || '').toLowerCase();
           const textToAgent = messageText || (mediaId ? '[Guest sent a photo]' : '');

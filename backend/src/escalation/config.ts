@@ -5,6 +5,9 @@ import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 async function dbGet(sql: string, ...p: unknown[]) {
   return isPg ? queryOne(sql, p) : prepare(sql).get(...p);
 }
+async function dbAll(sql: string, ...p: unknown[]) {
+  return (isPg ? query(sql, p) : prepare(sql).all(...p)) as Promise<any[]> | any[];
+}
 async function dbRun(sql: string, ...p: unknown[]) {
   if (isPg) return queryRun(sql, p);
   prepare(sql).run(...p);
@@ -64,6 +67,27 @@ async function anyDepartmentHasNumber(tenantId: string, type: string): Promise<b
     tenantId,
   );
   return !!row;
+}
+
+/** Every number that can answer escalations for this tenant: the default plus active departments' own. */
+export async function listEscalationNumbers(tenantId: string, type: string, defaultNumber: unknown): Promise<string[]> {
+  const out = new Set<string>();
+  const def = normalizeEscalationNumber(defaultNumber);
+  if (def) out.add(def);
+  const d = DEPARTMENT_TABLES[type];
+  if (d) {
+    const rows = await dbAll(
+      `SELECT escalation_number FROM ${d.table}
+       WHERE tenant_id = ? AND escalation_number IS NOT NULL AND escalation_number <> ''
+         AND ${isPg ? d.activePg : d.activeLite}`,
+      tenantId,
+    );
+    for (const r of rows) {
+      const n = normalizeEscalationNumber(r.escalation_number);
+      if (n) out.add(n);
+    }
+  }
+  return [...out];
 }
 
 export interface EscalationConfig {

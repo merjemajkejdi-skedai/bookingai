@@ -12,6 +12,7 @@ import { runGbAgent } from '../generalBusiness/agent.js';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { sendWhatsAppMessage } from './twilio.js';
 import { logMessage } from './messageLog.js';
+import { interceptStaffMessage } from '../escalation/inbound.js';
 import { alertError } from '../utils/errorMonitor.js';
 import { getConversationsTable } from '../utils/conversationsTable.js';
 import { maybeSendNewConversationAlert } from '../skedai/conversationAlert.js';
@@ -426,6 +427,12 @@ async function handleMetaWebhook(req: Request, res: Response) {
     const customerPhone = `+${from}`;
     const tenantType    = (tenant.type || '').toLowerCase();
 
+    // Human escalation: a staff member answering an alert is never a guest (no-op unless the tenant enabled it).
+    if (await interceptStaffMessage({
+      tenant, from: customerPhone, text: body,
+      quotedMessageId: message.context?.id, messageId: message.id,
+    })) return;
+
     console.log(`[Meta] 🏪 Tenant: ${tenant.id} (type: ${tenantType})`);
 
     let reply = '';
@@ -652,6 +659,12 @@ whatsappRouter.post('/webhook', async (req: Request, res: Response) => {
 
     // Log inbound (fire-and-forget)
     logMessage(tenant.id, 'inbound', (tenant.provider === 'meta' ? 'meta' : 'twilio'));
+
+    // Human escalation: a staff member answering an alert is never a guest (no-op unless the tenant enabled it).
+    if (await interceptStaffMessage({
+      tenant, from: phone, text: rawBody,
+      quotedMessageId: req.body.OriginalRepliedMessageSid, messageId: req.body.MessageSid,
+    })) return;
 
     // Download Twilio media immediately — protected Twilio URL → public Railway URL.
     // Must happen before the agent so it stores and forwards a publicly accessible URL.
