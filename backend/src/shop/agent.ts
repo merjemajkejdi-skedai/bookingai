@@ -8,6 +8,8 @@ import { alertError } from '../utils/errorMonitor.js';
 import { RaceState, sendLateFollowUp } from '../whatsapp/raceState.js';
 import { logAgentError } from '../monitoring/logAgentError.js';
 import { getModelForTenant } from '../utils/modelForTenant.js';
+import { getEscalationState, escalateToStaffTool, ESCALATION_PROMPT_ACTIVE, escalationPromptPending } from '../escalation/alert.js';
+import { withShopEscalationRule } from './escalation.js';
 
 const anthropic = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
 
@@ -118,7 +120,7 @@ export async function runShopAgent(
 
     history.push({ role: 'user', content: message });
 
-    const systemPrompt = buildShopSystemPrompt(tenant, config, deliveryInfo);
+    let systemPrompt = buildShopSystemPrompt(tenant, config, deliveryInfo);
     const model = await getModelForTenant(tenantId);
     const messages = [...history];
     let finalReply = '';
@@ -140,6 +142,16 @@ export async function runShopAgent(
       return { reply, toolsUsed: [] };
     }
 
+    // Human escalation (off by default; null = not in play, nothing below changes). Not in reminder mode above.
+    let tools = shopTools;
+    const esc = await getEscalationState(tenantId, async () => String(conv.id));
+    if (esc?.openQuestion) {
+      systemPrompt += escalationPromptPending(esc.openQuestion);
+    } else if (esc) {
+      systemPrompt = withShopEscalationRule(systemPrompt) + ESCALATION_PROMPT_ACTIVE;
+      tools = [...shopTools, escalateToStaffTool];
+    }
+
     const toolsUsed: string[] = [];
 
     // Agentic tool-use loop
@@ -149,7 +161,7 @@ export async function runShopAgent(
         model,
         max_tokens: 1024,
         system: systemPrompt,
-        tools: shopTools,
+        tools,
         tool_choice: { type: 'auto' },
         messages,
       });

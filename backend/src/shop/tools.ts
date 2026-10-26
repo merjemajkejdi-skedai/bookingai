@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import crypto from 'crypto';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { logUnansweredQuestion } from '../faqGap/logUnansweredQuestion.js';
+import { executeShopEscalation } from './escalation.js';
 
 async function dbAll(sql: string, ...p: unknown[]) { return (isPg ? query(sql, p) : prepare(sql).all(...p)) as any[]; }
 async function dbGet(sql: string, ...p: unknown[]) { return (isPg ? queryOne(sql, p) : prepare(sql).get(...p)) as any; }
@@ -158,6 +159,8 @@ export async function executeShopTool(
 ): Promise<any> {
   console.log(`[Shop] tool call: ${toolName}`, JSON.stringify(input));
   switch (toolName) {
+    case 'escalate_to_staff':
+      return executeShopEscalation(input, tenantId, guestPhone);
     case 'log_unanswered_question': {
       const { guest_question, topic_hint } = input as { guest_question: string; topic_hint: string };
       logUnansweredQuestion(tenantId, 'shop', guest_question, topic_hint).catch(() => {});

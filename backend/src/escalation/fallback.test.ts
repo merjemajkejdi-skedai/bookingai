@@ -1,7 +1,7 @@
 // Run: npx tsx src/escalation/fallback.test.ts
 import {
   classifyTwilioStatus, chooseNotice, buildNoticePrompt, DEFAULT_NOTICE, NOTICE_SYSTEM,
-  createFallback, createTimeoutJob, type FallbackRow, type FallbackDeps, type TimeoutDeps,
+  createFallback, createTimeoutJob, buildShopNotice, DEFAULT_SHOP_APOLOGY, SHOP_NOTICE_SYSTEM, type FallbackRow, type FallbackDeps, type TimeoutDeps,
 } from './fallback.js';
 
 let failures = 0;
@@ -25,6 +25,14 @@ const row = (id = 'e1'): FallbackRow => ({ id, tenant_id: 't1', tenant_type: 'ho
   check('notice: invented number -> default', chooseNotice("They'll reply within 15 minutes.", src) === DEFAULT_NOTICE);
   check('notice: absurdly long -> default', chooseNotice('x'.repeat(401), src) === DEFAULT_NOTICE);
   check('notice: prompt wraps data and forbids promises', buildNoticePrompt('Q?', [{ role: 'user', content: 'hi' }]).includes('<guest_question>\nQ?\n</guest_question>') && NOTICE_SYSTEM.includes('Do not promise'));
+
+  // shop note: honest apology + deterministic contact lines
+  const lines = ['📱 +355 69 000 0000', 'Instagram: https://instagram.com/bloom'];
+  check('shop note: model apology then the shop contact lines', buildShopNotice('Më vjen keq, nuk e mora dot përgjigjen.', src, lines) === 'Më vjen keq, nuk e mora dot përgjigjen.\n📱 +355 69 000 0000\nInstagram: https://instagram.com/bloom');
+  check('shop note: unsafe model text -> default apology, contact lines kept', buildShopNotice('Someone will call you within 10 minutes.', src, lines).startsWith(DEFAULT_SHOP_APOLOGY) && buildShopNotice('Someone will call you within 10 minutes.', src, lines).endsWith('instagram.com/bloom'));
+  check('shop note: no contact details -> apology alone', buildShopNotice(null, src, []) === DEFAULT_SHOP_APOLOGY);
+  check('shop note: phone digits in the contact lines never trip the number guard', buildShopNotice('Sorry about that.', src, lines).includes('+355 69 000 0000'));
+  check('shop note never says it was passed on', !/passed|get back to you/i.test(DEFAULT_SHOP_APOLOGY) && SHOP_NOTICE_SYSTEM.includes('Do not promise that anyone will get back'));
 
   // fallback
   function fb(over: Partial<FallbackDeps> = {}) {
