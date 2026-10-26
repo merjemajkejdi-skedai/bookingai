@@ -7,6 +7,8 @@ import { alertError } from '../utils/errorMonitor.js';
 import { RaceState, sendLateFollowUp } from '../whatsapp/raceState.js';
 import { logAgentError } from '../monitoring/logAgentError.js';
 import { getModelForTenant } from '../utils/modelForTenant.js';
+import { getEscalationState, escalateToStaffTool, ESCALATION_PROMPT_ACTIVE, escalationPromptPending } from '../escalation/alert.js';
+import { gbConversationId, withGbEscalationRules } from './escalation.js';
 
 async function dbGet(sql: string, ...p: unknown[]) {
   return isPg ? queryOne(sql, p) : prepare(sql).get(...p);
@@ -55,8 +57,17 @@ export async function runGbAgent(
   }
 
   const menuEnabled = !!(tenant as any)?.menu_enabled;
-  const systemPrompt = await buildGbSystemPrompt(tenantId);
-  const tools = getGbTools(menuEnabled);
+  let systemPrompt = await buildGbSystemPrompt(tenantId);
+  let tools = getGbTools(menuEnabled);
+
+  // Human escalation (off by default; null = not in play, nothing below changes).
+  const esc = await getEscalationState(tenantId, () => gbConversationId(tenantId, customerPhone));
+  if (esc?.openQuestion) {
+    systemPrompt += escalationPromptPending(esc.openQuestion);
+  } else if (esc) {
+    systemPrompt = withGbEscalationRules(systemPrompt) + ESCALATION_PROMPT_ACTIVE;
+    tools = [...tools, escalateToStaffTool];
+  }
   const model = await getModelForTenant(tenantId);
 
   const anthropicHistory: Anthropic.MessageParam[] = gbHistory

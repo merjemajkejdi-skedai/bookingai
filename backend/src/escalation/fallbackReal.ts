@@ -6,6 +6,7 @@ import { createFallback, NOTICE_SYSTEM, buildNoticePrompt, chooseNotice, type Fa
 import { loadContext } from './relayReal.js';
 import { deliverToGuest, appendRelayedToHistory } from './relayDeliver.js';
 import { createHotelFallbackRequest } from '../hotel/escalationFallback.js';
+import { createGbFallbackRequest } from '../generalBusiness/escalationFallback.js';
 
 const client = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
 
@@ -28,6 +29,7 @@ async function composeNotice(row: FallbackRow, recent: { role: string; content: 
 const realDeps: FallbackDeps = {
   async createRequest(row) {
     if (row.tenant_type === 'hotel') return createHotelFallbackRequest(row);
+    if (row.tenant_type === 'general_business') return createGbFallbackRequest(row);
     throw new Error(`no normal-request fallback for tenant type ${row.tenant_type} yet`);
   },
 

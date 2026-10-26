@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { sendWhatsAppMessage } from '../whatsapp/twilio.js';
 import { logUnansweredQuestion } from '../faqGap/logUnansweredQuestion.js';
+import { executeGbEscalation } from './escalation.js';
 
 async function dbAll(sql: string, ...p: unknown[]) { return isPg ? query(sql, p) : prepare(sql).all(...p); }
 async function dbGet(sql: string, ...p: unknown[]) { return isPg ? queryOne(sql, p) : prepare(sql).get(...p); }
@@ -92,6 +93,7 @@ export async function executeGbTool(
       logUnansweredQuestion(tenantId, 'general_business', guest_question, topic_hint, conversationId).catch(() => {});
       return JSON.stringify({ logged: true });
     }
+    if (toolName === 'escalate_to_staff') return JSON.stringify(await executeGbEscalation(toolInput, tenantId, customerPhone));
     if (toolName === 'create_request') return await handleCreateRequest(toolInput, tenantId, customerPhone, conversationId);
     if (toolName === 'get_document')   return await handleGetDocument(toolInput, tenantId);
     if (toolName === 'create_order')   return await handleCreateOrder(toolInput, tenantId, customerPhone, conversationId);

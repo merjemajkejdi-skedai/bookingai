@@ -265,3 +265,30 @@ export function escalationToolResult(r: EscalateResult): Record<string, unknown>
     instruction: "Staff could not be reached this way. Handle it with create_request as you normally would (use request_type 'other' for a question you cannot answer).",
   };
 }
+
+/**
+ * Shared tool handler for agents other than the hotel: validates the model's tool input, hands over to the
+ * escalation core, and returns what the model should be told. The agent supplies the context it knows.
+ */
+export async function escalateFromToolInput(p: {
+  tenantId: string;
+  conversationId: string;
+  input: Record<string, unknown>;
+  businessName: string;
+  guestName?: string | null;
+  contextBits?: Array<string | null | undefined>;
+  department?: { id: string; escalation_number?: string | null } | null;
+}): Promise<Record<string, unknown>> {
+  const summary = typeof p.input.question_summary === 'string' ? p.input.question_summary.trim() : '';
+  if (!summary) return escalationToolResult({ ok: false, reason: 'send_failed' });
+  const result = await escalateToStaff({
+    tenantId: p.tenantId,
+    conversationId: p.conversationId,
+    kind: p.input.kind === 'request' ? 'request' : 'question',
+    questionSummary: summary,
+    departmentId: p.department?.id ?? null,
+    departmentNumber: p.department?.escalation_number ?? null,
+    alert: { businessName: p.businessName, contextBits: p.contextBits, guestName: p.guestName ?? null },
+  });
+  return escalationToolResult(result);
+}

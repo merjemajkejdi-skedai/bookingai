@@ -17,13 +17,32 @@ function formatHours(raw: any): string {
   }).join('\n');
 }
 
-export async function buildGbSystemPrompt(tenantId: string): Promise<string> {
+export interface GbPromptData {
+  tenant: any; config: any; locations: any[]; faqs: any[]; docs: any[]; departments: any[]; menuItems: any[];
+}
+
+export async function loadGbPromptData(tenantId: string): Promise<GbPromptData> {
   const tenant = await dbGet('SELECT * FROM tenants WHERE id = ?', tenantId) as any;
   const config = await dbGet('SELECT * FROM gb_business_config WHERE tenant_id = ?', tenantId) as any;
   const locations = await dbAll('SELECT * FROM gb_locations WHERE tenant_id = ? AND is_active = true ORDER BY sort_order', tenantId) as any[];
   const faqs = await dbAll('SELECT * FROM gb_faqs WHERE tenant_id = ? AND is_active = true ORDER BY sort_order', tenantId) as any[];
   const docs = await dbAll('SELECT * FROM gb_documents WHERE tenant_id = ? AND is_active = true', tenantId) as any[];
   const departments = await dbAll('SELECT * FROM gb_departments WHERE tenant_id = ? AND is_active = true', tenantId) as any[];
+  const menuItems = tenant?.menu_enabled
+    ? await dbAll(
+        `SELECT * FROM gb_menu_items WHERE tenant_id = ? AND is_available = ${isPg ? 'true' : '1'} ORDER BY category, sort_order`,
+        tenantId,
+      ) as any[]
+    : [];
+  return { tenant, config, locations, faqs, docs, departments, menuItems };
+}
+
+export async function buildGbSystemPrompt(tenantId: string): Promise<string> {
+  return renderGbSystemPrompt(await loadGbPromptData(tenantId));
+}
+
+export function renderGbSystemPrompt(data: GbPromptData): string {
+  const { tenant, config, locations, faqs, docs, departments } = data;
   const menuEnabled = !!(tenant?.menu_enabled);
 
   const businessName = config?.business_name || tenant?.name || 'the business';
@@ -69,10 +88,7 @@ export async function buildGbSystemPrompt(tenantId: string): Promise<string> {
 
   let menuBlock = '';
   if (menuEnabled) {
-    const items = await dbAll(
-      `SELECT * FROM gb_menu_items WHERE tenant_id = ? AND is_available = ${isPg ? 'true' : '1'} ORDER BY category, sort_order`,
-      tenantId,
-    ) as any[];
+    const items = data.menuItems;
     if (items.length > 0) {
       const byCategory: Record<string, any[]> = {};
       for (const item of items) {

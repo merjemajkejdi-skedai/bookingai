@@ -226,6 +226,36 @@ export async function appendGbStaffMessage(
 }
 
 // ---------------------------------------------------------------------------
+// appendAssistantMessage — add a message the assistant sent outside a normal agent turn
+// (e.g. a staff answer relayed after an escalation). saveGbConversation overwrites the DB
+// from the in-memory copy, so this reads the DB first and then refreshes the session.
+// ---------------------------------------------------------------------------
+export async function appendAssistantMessage(opts: {
+  tenantId: string;
+  conversationId: string;
+  sessionPhone: string;
+  content: string;
+}): Promise<void> {
+  const { tenantId, conversationId, sessionPhone, content } = opts;
+  const msg: GbMessage = { role: 'assistant', content, ts: new Date().toISOString() };
+
+  const row = await dbGet(
+    'SELECT messages FROM gb_conversations WHERE id = ? AND tenant_id = ?',
+    conversationId, tenantId,
+  ) as any;
+  if (!row) throw new Error('conversation not found');
+
+  const updated: GbMessage[] = [...parseMessages(row.messages), msg].slice(-MAX_MESSAGES);
+  await dbRun(
+    `UPDATE gb_conversations
+     SET messages = ?, last_message = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+     WHERE id = ? AND tenant_id = ?`,
+    JSON.stringify(updated), conversationId, tenantId,
+  );
+  sessions.set(`${tenantId}:${sessionPhone}`, { messages: updated, lastActivity: new Date() });
+}
+
+// ---------------------------------------------------------------------------
 // Periodic cleanup of expired in-memory sessions
 // ---------------------------------------------------------------------------
 setInterval(() => {
