@@ -9,6 +9,8 @@ import { sendWhatsAppMessage } from '../../whatsapp/twilio.js';
 import { logUnansweredQuestion } from '../../faqGap/logUnansweredQuestion.js';
 import { RaceState, sendLateFollowUp } from '../../whatsapp/raceState.js';
 import { getModelForTenant } from '../../utils/modelForTenant.js';
+import { getEscalationState, escalateToStaffTool } from '../../escalation/alert.js';
+import { artClassConversationId, applyArtClassEscalation, executeArtClassEscalation } from './escalation.js';
 
 async function dbAll(sql: string, ...p: unknown[]) { return isPg ? query(sql, p) : prepare(sql).all(...p); }
 async function dbGet(sql: string, ...p: unknown[]) { return isPg ? queryOne(sql, p) : prepare(sql).get(...p); }
@@ -146,6 +148,9 @@ async function executeTool(
   const today = format(new Date(), 'yyyy-MM-dd');
 
   switch (name) {
+
+    case 'escalate_to_staff':
+      return JSON.stringify(await executeArtClassEscalation(input, tenantId, customerPhone));
 
     case 'log_unanswered_question': {
       const { guest_question, topic_hint } = input as { guest_question: string; topic_hint: string };
@@ -450,7 +455,10 @@ async function buildSystemPrompt(tenantId: string): Promise<string> {
     'SELECT name, studio_location, studio_emojis, studio_greeting, studio_farewell FROM tenants WHERE id = ?',
     tenantId,
   ) as any;
-  const now = format(new Date(), "EEEE d MMMM yyyy, HH:mm");
+  return renderArtClassPrompt(tenant, format(new Date(), "EEEE d MMMM yyyy, HH:mm"));
+}
+
+export function renderArtClassPrompt(tenant: any, now: string): string {
   const studioName     = tenant?.name             || 'our art studio';
   const studioLocation = tenant?.studio_location  || '';
   const studioGreeting = tenant?.studio_greeting  || '';
@@ -695,12 +703,16 @@ export async function runArtClassAgent(
     { role: 'user', content: customerMessage },
   ];
 
+  // Human escalation (off by default; null = not in play, nothing below changes).
+  const esc = await getEscalationState(tenantId, () => artClassConversationId(tenantId, customerPhone));
+  const activeTools = esc && !esc.openQuestion ? [...tools, escalateToStaffTool] : tools;
+
   while (true) {
     const response = await callClaudeWithRetry({
       model,
       max_tokens: 1024,
-      system: [{ type: 'text' as const, text: await buildSystemPrompt(tenantId), cache_control: { type: 'ephemeral' } }],
-      tools,
+      system: [{ type: 'text' as const, text: applyArtClassEscalation(await buildSystemPrompt(tenantId), esc), cache_control: { type: 'ephemeral' } }],
+      tools: activeTools,
       messages,
     });
 
@@ -727,3 +739,5 @@ export async function runArtClassAgent(
     return reply;
   }
 }
+// Exposed so the escalation measurements can run against the real tool definitions.
+export { tools as artClassTools };

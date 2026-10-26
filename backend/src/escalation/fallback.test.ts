@@ -1,7 +1,7 @@
 // Run: npx tsx src/escalation/fallback.test.ts
 import {
   classifyTwilioStatus, chooseNotice, buildNoticePrompt, DEFAULT_NOTICE, NOTICE_SYSTEM,
-  createFallback, createTimeoutJob, buildShopNotice, DEFAULT_SHOP_APOLOGY, SHOP_NOTICE_SYSTEM, type FallbackRow, type FallbackDeps, type TimeoutDeps,
+  createFallback, createTimeoutJob, buildShopNotice, DEFAULT_SHOP_APOLOGY, SHOP_NOTICE_SYSTEM, STUDIO_NOTICE_SYSTEM, type FallbackRow, type FallbackDeps, type TimeoutDeps,
 } from './fallback.js';
 
 let failures = 0;
@@ -32,6 +32,8 @@ const row = (id = 'e1'): FallbackRow => ({ id, tenant_id: 't1', tenant_type: 'ho
   check('shop note: unsafe model text -> default apology, contact lines kept', buildShopNotice('Someone will call you within 10 minutes.', src, lines).startsWith(DEFAULT_SHOP_APOLOGY) && buildShopNotice('Someone will call you within 10 minutes.', src, lines).endsWith('instagram.com/bloom'));
   check('shop note: no contact details -> apology alone', buildShopNotice(null, src, []) === DEFAULT_SHOP_APOLOGY);
   check('shop note: phone digits in the contact lines never trip the number guard', buildShopNotice('Sorry about that.', src, lines).includes('+355 69 000 0000'));
+  check('studio note: same rules, says studio', STUDIO_NOTICE_SYSTEM.includes("a studio's friendly AI assistant") && STUDIO_NOTICE_SYSTEM.includes('contact the studio directly') && !STUDIO_NOTICE_SYSTEM.includes('shop'));
+  check('shop note text is unchanged by the generalisation', SHOP_NOTICE_SYSTEM.startsWith("You write ONE short chat message from a shop's friendly AI assistant to a customer.\nThe message apologises that you could not get an answer to their question just now and asks them to contact the shop directly. The shop's contact details are added"));
   check('shop note never says it was passed on', !/passed|get back to you/i.test(DEFAULT_SHOP_APOLOGY) && SHOP_NOTICE_SYSTEM.includes('Do not promise that anyone will get back'));
 
   // fallback

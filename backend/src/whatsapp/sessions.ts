@@ -46,6 +46,16 @@ export function updateSession(
   sessions.set(phone, { history: trimmed, lastActivity: new Date() });
 }
 
+// Adds an assistant message sent outside a normal agent turn (e.g. a staff answer relayed after an escalation).
+// Only into a live session: creating one would start the history with an assistant turn, which the API rejects.
+// The database keeps the full conversation either way.
+export function appendAssistantToSession(phone: string, content: string): void {
+  const session = sessions.get(phone);
+  if (!session || Date.now() - session.lastActivity.getTime() > SESSION_TTL_MS) return;
+  session.history.push({ role: 'assistant', content });
+  sessions.set(phone, { history: session.history.slice(-MAX_HISTORY), lastActivity: new Date() });
+}
+
 export function clearSession(phone: string): void {
   sessions.delete(phone);
 }

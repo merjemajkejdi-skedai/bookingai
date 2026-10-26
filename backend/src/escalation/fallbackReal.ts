@@ -2,7 +2,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { query } from '../db/database.js';
 import { getModelForTenant } from '../utils/modelForTenant.js';
-import { createFallback, NOTICE_SYSTEM, SHOP_NOTICE_SYSTEM, buildNoticePrompt, chooseNotice, buildShopNotice, type FallbackDeps, type FallbackRow } from './fallback.js';
+import { createFallback, NOTICE_SYSTEM, SHOP_NOTICE_SYSTEM, STUDIO_NOTICE_SYSTEM, buildNoticePrompt, chooseNotice, buildShopNotice, type FallbackDeps, type FallbackRow } from './fallback.js';
 import { loadContext } from './relayReal.js';
 import { deliverToGuest, appendRelayedToHistory } from './relayDeliver.js';
 import { createHotelFallbackRequest } from '../hotel/escalationFallback.js';
@@ -27,15 +27,19 @@ async function composeNotice(row: FallbackRow, recent: { role: string; content: 
   }
 }
 
-// Shop: the note sends the customer to the shop, with the shop's own contact details added by code (never by the model).
-async function shopNoticeText(row: FallbackRow, recent: { role: string; content: string }[], sources: string[]): Promise<string> {
-  const [cfg] = (await query(`SELECT phone, instagram_url, website_url FROM shop_config WHERE tenant_id = ?`, [row.tenant_id])) as any[];
-  const contactLines = [
-    cfg?.phone && `📱 ${cfg.phone}`,
-    cfg?.instagram_url && `Instagram: ${cfg.instagram_url}`,
-    cfg?.website_url && `Website: ${cfg.website_url}`,
-  ].filter(Boolean) as string[];
-  return buildShopNotice(await composeNotice(row, recent, SHOP_NOTICE_SYSTEM), sources, contactLines);
+// Shops and art studios have no "request" that someone follows up: the note sends the customer to the business
+// directly, with its own contact details added by code (never by the model).
+async function contactNoticeText(row: FallbackRow, recent: { role: string; content: string }[], sources: string[]): Promise<string> {
+  let contactLines: string[] = [];
+  if (row.tenant_type === 'shop') {
+    const [cfg] = (await query(`SELECT phone, instagram_url, website_url FROM shop_config WHERE tenant_id = ?`, [row.tenant_id])) as any[];
+    contactLines = [cfg?.phone && `📱 ${cfg.phone}`, cfg?.instagram_url && `Instagram: ${cfg.instagram_url}`, cfg?.website_url && `Website: ${cfg.website_url}`].filter(Boolean) as string[];
+  } else {
+    const [t] = (await query(`SELECT owner_whatsapp FROM tenants WHERE id = ?`, [row.tenant_id])) as any[];   // same number get_owner_contact shares
+    contactLines = [t?.owner_whatsapp && `📱 ${t.owner_whatsapp}`].filter(Boolean) as string[];
+  }
+  const system = row.tenant_type === 'shop' ? SHOP_NOTICE_SYSTEM : STUDIO_NOTICE_SYSTEM;
+  return buildShopNotice(await composeNotice(row, recent, system), sources, contactLines);
 }
 
 const realDeps: FallbackDeps = {
@@ -43,9 +47,10 @@ const realDeps: FallbackDeps = {
     if (row.tenant_type === 'hotel') return createHotelFallbackRequest(row);
     if (row.tenant_type === 'general_business') return createGbFallbackRequest(row);
     if (row.tenant_type === 'airbnb') return createAirbnbFallbackRequest(row);
-    // Shops have no request concept: today an unanswerable question is logged as a content gap by the agent
-    // (log_unanswered_question, already done at escalation time) and the customer is sent to the shop. Nothing to create.
-    if (row.tenant_type === 'shop') return;
+    // Shops and art studios have no request concept: today an unanswerable question is logged as a content gap by the
+    // agent (log_unanswered_question, already done at escalation time) and the customer is sent to the business.
+    // Nothing to create.
+    if (row.tenant_type === 'shop' || row.tenant_type === 'art_class') return;
     throw new Error(`no normal-request fallback for tenant type ${row.tenant_type} yet`);
   },
 
@@ -53,8 +58,8 @@ const realDeps: FallbackDeps = {
     const ctx = await loadContext(row.id, false);
     if (!ctx) throw new Error('conversation not found');
     const sources = [row.guest_question, ...ctx.conversation.recent.map(m => m.content)];
-    const text = row.tenant_type === 'shop'
-      ? await shopNoticeText(row, ctx.conversation.recent, sources)
+    const text = (row.tenant_type === 'shop' || row.tenant_type === 'art_class')
+      ? await contactNoticeText(row, ctx.conversation.recent, sources)
       : chooseNotice(await composeNotice(row, ctx.conversation.recent), sources);
     await deliverToGuest(ctx, text);
     try { await appendRelayedToHistory(ctx, text); }
