@@ -17,6 +17,8 @@ import {
 } from './notify.js';
 import { RaceState, sendLateFollowUp } from '../whatsapp/raceState.js';
 import { getModelForTenant } from '../utils/modelForTenant.js';
+import { getEscalationState, escalateToStaffTool } from '../escalation/alert.js';
+import { skedaiConversationId, applySkedaiEscalation, executeSkedaiEscalation } from './escalation.js';
 
 async function dbGet(sql: string, ...p: unknown[]) {
   return isPg ? queryOne(sql, p) : prepare(sql).get(...p);
@@ -123,6 +125,37 @@ async function runConversation(
   return textBlock?.text || "Thanks for reaching out! Our team will be with you shortly.";
 }
 
+// Same as runConversation but with tools. Only used while human escalation is active (sales route); the plain
+// runConversation above is untouched. System prompt is a plain string (no cache_control) on purpose.
+async function runConversationWithTools(
+  systemPrompt: string,
+  history: Anthropic.MessageParam[],
+  newMessage: string,
+  model: string,
+  tools: Anthropic.Tool[],
+  runTool: (name: string, input: Record<string, unknown>) => Promise<unknown>,
+): Promise<string> {
+  const FALLBACK = "Thanks for reaching out! Our team will be with you shortly.";
+  const messages: Anthropic.MessageParam[] = [...history, { role: 'user', content: newMessage }];
+  for (let i = 0; i < 4; i++) {
+    const response = await client.messages.create({ model, max_tokens: 512, system: systemPrompt, tools, messages });
+    if (response.stop_reason === 'tool_use') {
+      messages.push({ role: 'assistant', content: response.content });
+      const results: Anthropic.ToolResultBlockParam[] = [];
+      for (const block of response.content) {
+        if (block.type === 'tool_use') {
+          results.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(await runTool(block.name, block.input as Record<string, unknown>)) });
+        }
+      }
+      messages.push({ role: 'user', content: results });
+      continue;
+    }
+    const textBlock = response.content.find(b => b.type === 'text') as any;
+    return textBlock?.text || FALLBACK;
+  }
+  return FALLBACK;
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
 export async function runSkedAIAgent(
   message: string,
@@ -169,7 +202,20 @@ export async function runSkedAIAgent(
 
     } else if (route === 'sales') {
       const salesPrompt = buildSalesPrompt(config?.industries || [], config?.calendlyUrl || '', config?.supportFaq || []);
-      reply = await runConversation(salesPrompt, history, message, model);
+
+      // Human escalation (off by default; null = not in play, nothing changes). Sales route only: the support
+      // route already alerts the team on every message.
+      const esc = await getEscalationState(tenantId, () => skedaiConversationId(tenantId, phone));
+      if (esc && !esc.openQuestion) {
+        reply = await runConversationWithTools(
+          applySkedaiEscalation(salesPrompt, esc), history, message, model, [escalateToStaffTool],
+          (name, input) => name === 'escalate_to_staff'
+            ? executeSkedaiEscalation(input, tenantId, phone)
+            : Promise.resolve({ error: `Unknown tool: ${name}` }),
+        );
+      } else {
+        reply = await runConversation(applySkedaiEscalation(salesPrompt, esc), history, message, model);
+      }
 
       // Notify on first message (new lead)
       if (isFirstMessage) {

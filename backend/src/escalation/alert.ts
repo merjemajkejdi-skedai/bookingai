@@ -231,26 +231,30 @@ export const escalateToStaffTool: Anthropic.Tool = {
 // Wording for "who is being asked". Defaults keep the existing hotel / general_business text byte-identical.
 const bare = (who: string) => who.replace(/^your /, '');
 
-export const escalationPromptActive = (who = 'your colleagues'): string => `
+// For agents with no create_request tool (SkedAI): there is nothing to "fall back" to, so say so honestly.
+const NO_REQUEST_UNREACHABLE = 'tell the customer you cannot confirm that right now and that the team will follow up. Do not guess.';
+const NO_REQUEST_DIFFERENT = 'say you cannot confirm it right now and that the team will follow up. Do not guess.';
+
+export const escalationPromptActive = (who = 'your colleagues', noRequestTool = false): string => `
 
 ## CHECKING WITH COLLEAGUES (staff escalation)
 When a guest asks something you cannot answer from the information you have, or asks for something you cannot do yourself, do NOT create a request for it. Call escalate_to_staff (kind "question" for information you don't have, kind "request" for something you can't action), then tell the guest, in their language, that you need a moment to check with ${who}. Never say a request was created for this.
 Everything you can already handle (housekeeping, maintenance, room service, complaints, etc.) works exactly as before.
-If escalate_to_staff says it could not reach staff, fall back to create_request as usual.`;
+If escalate_to_staff says it could not reach staff, ${noRequestTool ? NO_REQUEST_UNREACHABLE : 'fall back to create_request as usual.'}`;
 
 export const ESCALATION_PROMPT_ACTIVE = escalationPromptActive();
 
-export function escalationPromptPending(openQuestion: string, who = 'your colleagues'): string {
+export function escalationPromptPending(openQuestion: string, who = 'your colleagues', noRequestTool = false): string {
   return `
 
 ## PENDING CHECK WITH COLLEAGUES
 You are already checking this with ${bare(who)} for this guest: "${openQuestion}".
 If the guest repeats it or follows up on it, tell them you are still checking and will come back as soon as you have an answer. Do not create anything new for it.
-If they ask something different that you cannot answer, create a normal request with create_request as usual.`;
+If they ask something different that you cannot answer, ${noRequestTool ? NO_REQUEST_DIFFERENT : 'create a normal request with create_request as usual.'}`;
 }
 
 /** What the model is told after calling escalate_to_staff. */
-export function escalationToolResult(r: EscalateResult, who = 'your colleagues'): Record<string, unknown> {
+export function escalationToolResult(r: EscalateResult, who = 'your colleagues', noRequestTool = false): Record<string, unknown> {
   if (r.ok) {
     return {
       escalated: true,
@@ -262,12 +266,14 @@ export function escalationToolResult(r: EscalateResult, who = 'your colleagues')
       escalated: false,
       already_waiting: true,
       pending_question: r.openQuestion ?? null,
-      instruction: `A check with ${bare(who)} is already in progress for this guest. If they are repeating or following up on it, tell them you are still checking. If it is a different thing you cannot answer, use create_request as usual.`,
+      instruction: `A check with ${bare(who)} is already in progress for this guest. If they are repeating or following up on it, tell them you are still checking. If it is a different thing you cannot answer, ${noRequestTool ? NO_REQUEST_DIFFERENT : 'use create_request as usual.'}`,
     };
   }
   return {
     escalated: false,
-    instruction: "Staff could not be reached this way. Handle it with create_request as you normally would (use request_type 'other' for a question you cannot answer).",
+    instruction: noRequestTool
+      ? 'Staff could not be reached this way. Tell the customer you cannot confirm that right now and that the team will follow up. Do not guess.'
+      : "Staff could not be reached this way. Handle it with create_request as you normally would (use request_type 'other' for a question you cannot answer).",
   };
 }
 
@@ -284,9 +290,10 @@ export async function escalateFromToolInput(p: {
   contextBits?: Array<string | null | undefined>;
   department?: { id: string; escalation_number?: string | null } | null;
   who?: string;
+  noRequestTool?: boolean;
 }): Promise<Record<string, unknown>> {
   const summary = typeof p.input.question_summary === 'string' ? p.input.question_summary.trim() : '';
-  if (!summary) return escalationToolResult({ ok: false, reason: 'send_failed' }, p.who);
+  if (!summary) return escalationToolResult({ ok: false, reason: 'send_failed' }, p.who, p.noRequestTool);
   const result = await escalateToStaff({
     tenantId: p.tenantId,
     conversationId: p.conversationId,
@@ -296,5 +303,5 @@ export async function escalateFromToolInput(p: {
     departmentNumber: p.department?.escalation_number ?? null,
     alert: { businessName: p.businessName, contextBits: p.contextBits, guestName: p.guestName ?? null },
   });
-  return escalationToolResult(result, p.who);
+  return escalationToolResult(result, p.who, p.noRequestTool);
 }

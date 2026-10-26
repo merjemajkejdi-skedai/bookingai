@@ -8,6 +8,7 @@ import { deliverToGuest, appendRelayedToHistory } from './relayDeliver.js';
 import { createHotelFallbackRequest } from '../hotel/escalationFallback.js';
 import { createGbFallbackRequest } from '../generalBusiness/escalationFallback.js';
 import { createAirbnbFallbackRequest } from '../airbnb/escalationFallback.js';
+import { createSkedaiFallbackRequest } from '../skedai/escalationFallback.js';
 
 const client = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
 
@@ -47,6 +48,7 @@ const realDeps: FallbackDeps = {
     if (row.tenant_type === 'hotel') return createHotelFallbackRequest(row);
     if (row.tenant_type === 'general_business') return createGbFallbackRequest(row);
     if (row.tenant_type === 'airbnb') return createAirbnbFallbackRequest(row);
+    if (row.tenant_type === 'skedai') return createSkedaiFallbackRequest(row);
     // Shops and art studios have no request concept: today an unanswerable question is logged as a content gap by the
     // agent (log_unanswered_question, already done at escalation time) and the customer is sent to the business.
     // Nothing to create.
