@@ -3,6 +3,7 @@ import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { sendWhatsAppMessage } from '../whatsapp/twilio.js';
 import { setConversationListing } from './session.js';
 import { handleLookupReservation } from './reservations/lookup.js';
+import { executeAirbnbEscalation } from './escalation.js';
 
 async function dbAll(sql: string, ...p: unknown[]) { return isPg ? query(sql, p) : prepare(sql).all(...p); }
 async function dbGet(sql: string, ...p: unknown[]) { return isPg ? queryOne(sql, p) : prepare(sql).get(...p); }
@@ -117,6 +118,7 @@ export async function executeAirbnbTool(
         (req) => handleCreateRequest(req, tenantId, conversationId),
       );
     }
+    if (toolName === 'escalate_to_staff')  return JSON.stringify(await executeAirbnbEscalation(toolInput, tenantId, conversationId));
     if (toolName === 'identify_listing') return await handleIdentifyListing(toolInput, tenantId, conversationId);
     if (toolName === 'get_faq')            return await handleGetFaq(toolInput, tenantId, conversationId);
     if (toolName === 'create_request')     return await handleCreateRequest(toolInput, tenantId, conversationId);

@@ -13,6 +13,8 @@ import { alertError } from '../utils/errorMonitor.js';
 import { RaceState, sendLateFollowUp } from '../whatsapp/raceState.js';
 import { logAgentError } from '../monitoring/logAgentError.js';
 import { getModelForTenant } from '../utils/modelForTenant.js';
+import { getEscalationState, escalateToStaffTool, escalationPromptActive, escalationPromptPending } from '../escalation/alert.js';
+import { AIRBNB_WHO } from './escalation.js';
 
 async function dbGet(sql: string, ...p: unknown[]) {
   return isPg ? queryOne(sql, p) : prepare(sql).get(...p);
@@ -92,15 +94,27 @@ export async function runAirbnbAgent(
   // listing by the guest's name first; a host without any keeps the original
   // "which property?" flow, unchanged.
   const reservationMode = !listing && await tenantHasReservations(tenantId).catch(() => false);
-  const systemPrompt = listing
+  let systemPrompt = listing
     ? buildAirbnbSystemPrompt(tenant, listing)
     : reservationMode
       ? buildAirbnbReservationOnboardingPrompt(tenant)
       : buildAirbnbOnboardingPrompt(tenant);
   const model = await getModelForTenant(tenantId);
-  const tools = reservationMode
+  let tools = reservationMode
     ? airbnbTools
     : airbnbTools.filter(t => t.name !== 'lookup_reservation_by_name');
+
+  // Human escalation (off by default; null = not in play, nothing below changes). Only once the listing is
+  // known: the onboarding prompts never answer questions, so there is nothing to escalate there.
+  if (listing) {
+    const esc = await getEscalationState(tenantId, async () => conv.id);
+    if (esc?.openQuestion) {
+      systemPrompt += escalationPromptPending(esc.openQuestion, AIRBNB_WHO);
+    } else if (esc) {
+      systemPrompt += escalationPromptActive(AIRBNB_WHO);
+      tools = [...tools, escalateToStaffTool];
+    }
+  }
 
   try {
     while (true) {

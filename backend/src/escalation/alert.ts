@@ -228,28 +228,33 @@ export const escalateToStaffTool: Anthropic.Tool = {
   },
 };
 
-export const ESCALATION_PROMPT_ACTIVE = `
+// Wording for "who is being asked". Defaults keep the existing hotel / general_business text byte-identical.
+const bare = (who: string) => who.replace(/^your /, '');
+
+export const escalationPromptActive = (who = 'your colleagues'): string => `
 
 ## CHECKING WITH COLLEAGUES (staff escalation)
-When a guest asks something you cannot answer from the information you have, or asks for something you cannot do yourself, do NOT create a request for it. Call escalate_to_staff (kind "question" for information you don't have, kind "request" for something you can't action), then tell the guest, in their language, that you need a moment to check with your colleagues. Never say a request was created for this.
+When a guest asks something you cannot answer from the information you have, or asks for something you cannot do yourself, do NOT create a request for it. Call escalate_to_staff (kind "question" for information you don't have, kind "request" for something you can't action), then tell the guest, in their language, that you need a moment to check with ${who}. Never say a request was created for this.
 Everything you can already handle (housekeeping, maintenance, room service, complaints, etc.) works exactly as before.
 If escalate_to_staff says it could not reach staff, fall back to create_request as usual.`;
 
-export function escalationPromptPending(openQuestion: string): string {
+export const ESCALATION_PROMPT_ACTIVE = escalationPromptActive();
+
+export function escalationPromptPending(openQuestion: string, who = 'your colleagues'): string {
   return `
 
 ## PENDING CHECK WITH COLLEAGUES
-You are already checking this with colleagues for this guest: "${openQuestion}".
+You are already checking this with ${bare(who)} for this guest: "${openQuestion}".
 If the guest repeats it or follows up on it, tell them you are still checking and will come back as soon as you have an answer. Do not create anything new for it.
 If they ask something different that you cannot answer, create a normal request with create_request as usual.`;
 }
 
 /** What the model is told after calling escalate_to_staff. */
-export function escalationToolResult(r: EscalateResult): Record<string, unknown> {
+export function escalationToolResult(r: EscalateResult, who = 'your colleagues'): Record<string, unknown> {
   if (r.ok) {
     return {
       escalated: true,
-      instruction: "Tell the guest briefly, in their language, that you need a moment to check this with your colleagues. Do not say a request was created.",
+      instruction: `Tell the guest briefly, in their language, that you need a moment to check this with ${who}. Do not say a request was created.`,
     };
   }
   if (r.reason === 'already_waiting') {
@@ -257,7 +262,7 @@ export function escalationToolResult(r: EscalateResult): Record<string, unknown>
       escalated: false,
       already_waiting: true,
       pending_question: r.openQuestion ?? null,
-      instruction: 'A check with colleagues is already in progress for this guest. If they are repeating or following up on it, tell them you are still checking. If it is a different thing you cannot answer, use create_request as usual.',
+      instruction: `A check with ${bare(who)} is already in progress for this guest. If they are repeating or following up on it, tell them you are still checking. If it is a different thing you cannot answer, use create_request as usual.`,
     };
   }
   return {
@@ -278,9 +283,10 @@ export async function escalateFromToolInput(p: {
   guestName?: string | null;
   contextBits?: Array<string | null | undefined>;
   department?: { id: string; escalation_number?: string | null } | null;
+  who?: string;
 }): Promise<Record<string, unknown>> {
   const summary = typeof p.input.question_summary === 'string' ? p.input.question_summary.trim() : '';
-  if (!summary) return escalationToolResult({ ok: false, reason: 'send_failed' });
+  if (!summary) return escalationToolResult({ ok: false, reason: 'send_failed' }, p.who);
   const result = await escalateToStaff({
     tenantId: p.tenantId,
     conversationId: p.conversationId,
@@ -290,5 +296,5 @@ export async function escalateFromToolInput(p: {
     departmentNumber: p.department?.escalation_number ?? null,
     alert: { businessName: p.businessName, contextBits: p.contextBits, guestName: p.guestName ?? null },
   });
-  return escalationToolResult(result);
+  return escalationToolResult(result, p.who);
 }

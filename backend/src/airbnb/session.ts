@@ -188,6 +188,21 @@ export async function appendAirbnbStaffMessage(conversationId: string, content: 
 }
 
 // ---------------------------------------------------------------------------
+// appendAssistantMessage — add a message the assistant sent outside a normal agent turn
+// (e.g. the host's answer relayed after an escalation). saveAirbnbConversation overwrites the DB
+// from the in-memory copy, so this reads the DB first and then refreshes the session.
+// ---------------------------------------------------------------------------
+export async function appendAssistantMessage(opts: { conversationId: string; content: string }): Promise<void> {
+  const { conversationId, content } = opts;
+  const row = await dbGet('SELECT messages FROM airbnb_conversations WHERE id = ?', conversationId) as any;
+  if (!row) throw new Error('conversation not found');
+
+  const updated = [...parseMessages(row.messages), { role: 'assistant' as const, content, ts: new Date().toISOString() }].slice(-MAX_MESSAGES);
+  await dbRun('UPDATE airbnb_conversations SET messages = ?, updated_at = NOW() WHERE id = ?', JSON.stringify(updated), conversationId);
+  sessions.set(conversationId, { messages: updated, lastActivity: new Date() });
+}
+
+// ---------------------------------------------------------------------------
 // Periodic cleanup of expired in-memory sessions
 // ---------------------------------------------------------------------------
 setInterval(() => {

@@ -90,7 +90,15 @@ const FAQ_QUESTION_TABLES: Record<string, string> = {
   hotel: 'hotel_faq', shop: 'shop_faq', general_business: 'gb_faqs', art_class: 'art_class_faq', airbnb: 'airbnb_faqs',
 };
 
-async function existingQuestions(tenantType: string, tenantId: string): Promise<string[]> {
+async function existingQuestions(tenantType: string, tenantId: string, conversationId: string): Promise<string[]> {
+  if (tenantType === 'airbnb') {
+    // Airbnb FAQs belong to a listing: only this conversation's listing counts as "already covered".
+    return (await rows(
+      `SELECT question FROM airbnb_faqs WHERE tenant_id = ?
+         AND listing_id = (SELECT listing_id FROM airbnb_conversations WHERE id = ? AND tenant_id = ?)`,
+      [tenantId, conversationId, tenantId],
+    )).map(r => String(r.question));
+  }
   if (tenantType === 'skedai') {
     const [c] = await rows(`SELECT support_faq FROM skedai_config WHERE tenant_id = ?`, [tenantId]);
     return parseJsonArray(c?.support_faq).map((f: any) => String(f?.q ?? ''));

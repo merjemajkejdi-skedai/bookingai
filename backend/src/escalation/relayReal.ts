@@ -51,7 +51,7 @@ export async function loadContext(escalationId: string, requireAnswer: boolean):
     tenant,
     conversation: {
       id: String(conv.id),
-      guestId: conv.guest_phone,
+      guestId: conv.guest_phone ?? conv.channel_user_id,   // airbnb conversations have no guest_phone
       channel: conv.channel || 'whatsapp',
       channelUserId: conv.channel_user_id ?? null,
       guestName: conv.guest_name ?? null,

@@ -9,6 +9,7 @@ import { GraphAdapter } from '../channels/email/GraphAdapter.js';
 import type { EmailAccountRow } from '../channels/email/types.js';
 import { appendAssistantMessage } from '../hotel/session.js';
 import { appendAssistantMessage as appendGbAssistantMessage } from '../generalBusiness/session.js';
+import { appendAssistantMessage as appendAirbnbAssistantMessage } from '../airbnb/session.js';
 import type { RelayContext } from './relay.js';
 
 async function rows(sql: string, params: unknown[]): Promise<any[]> {
@@ -131,6 +132,10 @@ export async function appendRelayedToHistory(ctx: RelayContext, text: string): P
   const { tenant, escalation, conversation: c } = ctx;
   if (escalation.tenant_type === 'general_business') {
     await appendGbAssistantMessage({ tenantId: tenant.id, conversationId: c.id, sessionPhone: c.guestId, content: text });
+    return;
+  }
+  if (escalation.tenant_type === 'airbnb') {
+    await appendAirbnbAssistantMessage({ conversationId: c.id, content: text });
     return;
   }
   if (escalation.tenant_type !== 'hotel') {

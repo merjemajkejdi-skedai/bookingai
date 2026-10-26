@@ -169,7 +169,7 @@ export interface FaqPromptRow {
 }
 
 export interface DecideDeps {
-  existingQuestions(tenantType: string, tenantId: string): Promise<string[]>;
+  existingQuestions(tenantType: string, tenantId: string, conversationId: string): Promise<string[]>;
   insertFaq(row: FaqPromptRow, question: string, answer: string): Promise<void>;        // throws on failure
   /** Atomic: only changes a row that is still 'pending'. */
   setDecision(id: string, decision: 'saved' | 'declined'): Promise<boolean>;
@@ -191,7 +191,7 @@ export function createFaqDecider(deps: DecideDeps) {
     if (decision === 'yes') {
       if (!row.faq_question || !row.faq_answer) return FAQ_FAILED_MESSAGE;
 
-      const existing = await deps.existingQuestions(row.tenant_type, row.tenant_id);
+      const existing = await deps.existingQuestions(row.tenant_type, row.tenant_id, row.conversation_id);
       if (findNearDuplicate(row.faq_question, existing)) {
         await deps.setDecision(row.id, 'declined');
         return FAQ_DUPLICATE_MESSAGE;
