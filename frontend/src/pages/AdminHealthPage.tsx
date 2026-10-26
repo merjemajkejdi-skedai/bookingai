@@ -31,6 +31,7 @@ const SECTIONS: { key: string; title: string; checkTypes: string[] }[] = [
   { key: 'jwt',     title: '1.4 JWT / Auth Health',          checkTypes: ['jwt_secret'] },
   { key: 'quiet',   title: '1.5 Quiet Tenant Detection',     checkTypes: ['quiet_tenant'] },
   { key: 'reports', title: '1.6 Report Delivery Health',     checkTypes: ['report_missed', 'report_duplicate'] },
+  { key: 'escalation', title: '1.7 Human Escalation Health', checkTypes: ['escalation_stuck', 'escalation_alert_failed', 'escalation_relay_failed', 'escalation_fallback_failed'] },
 ];
 
 function timeAgo(iso: string): string {

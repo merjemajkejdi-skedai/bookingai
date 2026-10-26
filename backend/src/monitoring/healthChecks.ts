@@ -5,6 +5,7 @@
 // runtime behaviour.
 import { isPg, query, queryOne } from '../db/database.js';
 import { getConversationsTable } from '../utils/conversationsTable.js';
+import { checkEscalationHealth } from './escalationHealth.js';
 
 export type HealthSeverity = 'critical' | 'warning';
 
@@ -299,6 +300,7 @@ export async function runAllHealthChecks(): Promise<HealthFinding[]> {
     checkJwtHealth,
     checkQuietTenants,
     checkReportDelivery,
+    checkEscalationHealth,
   ]) {
     try {
       results.push(...await check());
