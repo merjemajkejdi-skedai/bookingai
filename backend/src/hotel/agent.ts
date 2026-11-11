@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { hotelTools, executeHotelTool } from './tools.js';
-import { buildHotelSystemPrompt } from './prompts.js';
+import { buildHotelSystemPrompt, buildKnownGuestLine } from './prompts.js';
 import { isPg, prepare, query, queryOne, queryRun } from '../db/database.js';
 import { getHotelHistory, saveHotelConversation, saveGuestMessage } from './session.js';
 import { alertError } from '../utils/errorMonitor.js';
@@ -344,6 +344,19 @@ export async function runHotelAgent(
   const isFreshStart = gapMinutes >= 300;
 
   let systemPrompt = buildHotelSystemPrompt(tenantRow, hotelConfig, isFreshStart);
+
+  // What we already know about this guest (checked-in stay record), so the agent never re-asks for it.
+  // Empty for guests with no stay record, in which case the prompt is unchanged.
+  try {
+    const stay = await dbGet(
+      `SELECT guest_name, room_number FROM hotel_guest_stays
+       WHERE tenant_id = ? AND guest_phone = ? AND status = 'checked_in' LIMIT 1`,
+      tenantId, customerPhone,
+    ) as any;
+    systemPrompt += buildKnownGuestLine({ name: stay?.guest_name, room: stay?.room_number });
+  } catch (e: any) {
+    console.warn('[Hotel] known-guest lookup failed:', e.message);
+  }
   const model = await getModelForTenant(tenantId);
 
   // When message_forward is OFF, the agent only reads FAQ/config — never creates requests
